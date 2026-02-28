@@ -1,0 +1,3603 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>CELLTOWER — Aaron Hightower</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+*{margin:0;padding:0;box-sizing:border-box;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;height:100%;background:#0a0010;overflow:hidden;font-family:'Orbitron',monospace;color:#fff}
+body{background:radial-gradient(ellipse at 20% 50%,#1a0030 0%,#0a0010 60%)}
+#app{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;height:100vh;padding:6px;gap:4px}
+#title{font-size:clamp(1rem,3.5vw,2rem);font-weight:900;letter-spacing:.12em;background:linear-gradient(90deg,#ff00ff,#00ffff,#ffff00,#ff00aa,#00ffff);background-size:300% auto;-webkit-background-clip:text;-webkit-text-fill-color:transparent;animation:tshift 3s linear infinite;filter:drop-shadow(0 0 8px #ff00ff88);flex-shrink:0}
+@keyframes tshift{0%{background-position:0%}100%{background-position:300%}}
+#main-area{display:flex;gap:6px;align-items:flex-start;flex:1;min-height:0;width:100%;justify-content:center}
+#left-panel,#right-panel{display:flex;flex-direction:column;gap:6px;width:clamp(60px,16vw,110px);flex-shrink:0}
+#left-panel{align-self:flex-start}
+.pbox{background:rgba(20,0,40,.85);border:2px solid #5500aa;border-radius:8px;padding:6px;box-shadow:0 0 12px #aa00ff44,inset 0 0 8px #0000aa22}
+.pbox h3{font-size:clamp(.4rem,1.3vw,.6rem);color:#aa88ff;text-transform:uppercase;letter-spacing:.1em;margin-bottom:3px}
+.pval{font-size:clamp(.65rem,2vw,1rem);font-weight:700;color:#00ffff;font-family:'Share Tech Mono',monospace;text-shadow:0 0 8px #00ffff}
+#canvas-wrap{position:relative;flex-shrink:0}
+/* Ticker: fixed height from JS via --ticker-h, never changes with controls */
+#event-ticker{width:100%;height:var(--ticker-h,120px);position:relative;overflow:hidden;pointer-events:none;flex-shrink:0}
+#ticker-canvas{position:absolute;top:0;left:0;width:100%;height:100%;display:block}
+#ticker-canvas{position:absolute;top:0;left:0;width:100%;height:100%;display:block}
+#gc{display:block;border-radius:4px;image-rendering:pixelated}
+
+@keyframes fan{0%{opacity:0;transform:scale(.3) rotate(-5deg)}20%{opacity:1;transform:scale(1.1) rotate(2deg)}40%{opacity:1;transform:scale(.95)}60%{opacity:1;transform:scale(1.05)}80%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1.2)}}
+/* ── Score overlay for TETRIS / BONUS display — split left/right of board ── */
+
+/* ── SUPER MASSIVE overlay — full playfield, 5 stacked words ─────────────── */
+
+#nhole-text{font-family:‘Orbitron’,monospace;font-weight:900;font-size:clamp(.75rem,2.5vw,1.3rem);letter-spacing:.1em;color:#fff;text-shadow:0 0 16px #00ffaa,0 0 28px #00ff88;word-break:break-word}
+#nhole-sub{font-family:‘Orbitron’,monospace;font-weight:700;font-size:clamp(.5rem,1.6vw,.75rem);letter-spacing:.12em;color:#00ffcc;opacity:.85;margin-top:4px;word-break:break-word}
+@keyframes nhshow{0%{opacity:0;transform:translateX(-12px)}12%{opacity:1;transform:translateX(0)}80%{opacity:1}100%{opacity:0;transform:translateX(-8px)}}
+#sw{transition:transform .05s}
+#sw.shake{animation:shk .5s cubic-bezier(.36,.07,.19,.97) both}
+@keyframes shk{10%,90%{transform:translate3d(-3px,0,0)}20%,80%{transform:translate3d(6px,2px,0)}30%,50%,70%{transform:translate3d(-8px,-2px,0)}40%,60%{transform:translate3d(8px,2px,0)}}
+#prow{display:flex;gap:5px;justify-content:center;flex-shrink:0;width:100%}
+.pb{flex:1;max-width:75px;aspect-ratio:1;background:rgba(80,0,180,.6);border:2px solid #aa00ff;border-radius:8px;color:#fff;font-family:‘Orbitron’,monospace;font-weight:700;font-size:clamp(.9rem,2.5vw,1.3rem);cursor:pointer;box-shadow:0 0 10px #aa00ff55;transition:all .15s;display:flex;flex-direction:column;align-items:center;justify-content:center;touch-action:manipulation;padding:2px}
+.pb:hover,.pb:active{background:rgba(180,0,255,.8);box-shadow:0 0 20px #ff00ff;transform:scale(1.05)}
+.pb canvas{width:100%;height:auto;pointer-events:none;flex:1}
+.pnum{font-size:.6em;color:#ffcc00;line-height:1}
+/* ── TETRIS NOW button ─────────────────────────────────────────────────── */
+#tetris-btn{display:none;width:100%;height:clamp(52px,11vw,68px);flex-shrink:0;
+background:linear-gradient(135deg,#0a001a 0%,#1a0040 50%,#0a001a 100%);
+border:2px solid #ff00ff;border-radius:10px;cursor:pointer;
+box-shadow:0 0 18px #ff00ff88,inset 0 0 14px #aa00ff22;
+overflow:hidden;position:relative;touch-action:manipulation;
+perspective:400px}
+#tetris-btn:active{transform:scale(.97)}
+#tetris-btn-inner{
+width:100%;height:100%;display:flex;align-items:center;justify-content:center;
+transform-style:preserve-3d;animation:tbspin 3s linear infinite}
+@keyframes tbspin{
+0%  {transform:rotateY(0deg)   rotateX(8deg)}
+25% {transform:rotateY(8deg)   rotateX(12deg)}
+50% {transform:rotateY(0deg)   rotateX(8deg)}
+75% {transform:rotateY(-8deg)  rotateX(4deg)}
+100%{transform:rotateY(0deg)   rotateX(8deg)}
+}
+#tetris-btn-text{
+font-family:‘Orbitron’,monospace;font-weight:900;
+font-size:clamp(1.4rem,5.5vw,2.2rem);letter-spacing:.18em;
+background:linear-gradient(180deg,#ffffff 0%,#ffff00 30%,#ff8800 60%,#ff00ff 85%,#00ffff 100%);
+-webkit-background-clip:text;-webkit-text-fill-color:transparent;
+filter:drop-shadow(0 0 8px #ff00ffcc) drop-shadow(0 0 16px #ffff0088);
+text-shadow:none;transform:translateZ(20px);
+animation:tglow 1.2s ease-in-out infinite alternate}
+@keyframes tglow{
+from{filter:drop-shadow(0 0 6px #ff00ffcc) drop-shadow(0 0 12px #ffff0066)}
+to  {filter:drop-shadow(0 0 18px #ff00ffff) drop-shadow(0 0 28px #ffff00cc) drop-shadow(0 0 4px #ffffff)}
+}
+#tetris-btn-sub{
+position:absolute;bottom:5px;width:100%;text-align:center;
+font-family:‘Orbitron’,monospace;font-size:.5rem;letter-spacing:.25em;
+color:#aa88ff;opacity:.7;text-transform:uppercase}
+#crow{display:flex;gap:6px;justify-content:center;flex-shrink:0}
+.cb{width:clamp(42px,11vw,60px);height:clamp(42px,11vw,60px);background:rgba(0,80,180,.5);border:2px solid #0088ff;border-radius:50%;color:#fff;font-size:clamp(.9rem,2.5vw,1.4rem);cursor:pointer;box-shadow:0 0 10px #0088ff55;transition:all .15s;display:flex;align-items:center;justify-content:center;touch-action:manipulation;font-family:‘Orbitron’,monospace;font-weight:700}
+.cb:hover,.cb:active{background:rgba(0,160,255,.8);box-shadow:0 0 20px #00ffff}
+#gov{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.75);display:none;flex-direction:column;align-items:center;justify-content:center;border-radius:4px;gap:10px;z-index:50}
+#gov h2{font-size:clamp(1rem,4vw,1.8rem);font-weight:900;color:#ff4444;text-shadow:0 0 20px #ff0000;text-align:center}
+#gov .fs{font-size:clamp(.8rem,3vw,1.2rem);color:#00ffff;text-shadow:0 0 10px #00ffff}
+.rbtn{padding:10px 24px;background:linear-gradient(135deg,#aa00ff,#ff00aa);border:none;border-radius:8px;color:#fff;font-family:‘Orbitron’,monospace;font-size:clamp(.75rem,2vw,.95rem);font-weight:700;cursor:pointer;box-shadow:0 0 20px #aa00ff88;transition:all .2s;touch-action:manipulation}
+.rbtn:hover{transform:scale(1.05);box-shadow:0 0 30px #ff00ffaa}
+#pov{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;font-size:clamp(1.2rem,5vw,2.5rem);font-weight:900;color:#ffff00;text-shadow:0 0 30px #ffff00;z-index:50;border-radius:4px}
+#nc{display:block;width:100%;height:auto;max-width:56px;margin:0 auto}
+/* ── Autoplay controls ────────────────────────────────────────────────────── */
+#aprow{display:flex;align-items:center;justify-content:center;gap:8px;padding:4px 8px;width:100%;max-width:400px;flex-shrink:0}
+#ap-toggle-label{display:flex;align-items:center;gap:5px;cursor:pointer;background:rgba(20,0,40,.85);border:2px solid #5500aa;border-radius:8px;padding:4px 10px;font-family:‘Orbitron’,monospace;font-size:.55rem;font-weight:700;color:#aa88ff;letter-spacing:.08em;white-space:nowrap;transition:border-color .2s,box-shadow .2s;user-select:none}
+#ap-toggle-label.on{border-color:#00ffaa;box-shadow:0 0 12px #00ffaa66;color:#00ffaa}
+#ap-dot{width:8px;height:8px;border-radius:50%;background:#440066;transition:background .2s,box-shadow .2s}
+#ap-toggle-label.on #ap-dot{background:#00ffaa;box-shadow:0 0 8px #00ffaa}
+#ap-speed{-webkit-appearance:none;appearance:none;flex:1;min-width:80px;max-width:160px;height:6px;border-radius:3px;background:linear-gradient(90deg,#5500aa,#ff00ff);outline:none;cursor:pointer}
+#ap-speed::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#ffff00;box-shadow:0 0 8px #ffff00aa;cursor:pointer}
+#ap-speed-val{font-family:‘Orbitron’,monospace;font-size:.65rem;font-weight:900;color:#ffff00;text-shadow:0 0 8px #ffff00;min-width:16px;text-align:center}
+#receipt-btn{font-family:‘Orbitron’,monospace;font-size:.55rem;font-weight:700;background:rgba(20,0,40,.85);border:2px solid #ff8800;border-radius:8px;padding:4px 8px;color:#ff8800;cursor:pointer;white-space:nowrap;letter-spacing:.05em}
+#receipt-btn:active{background:#ff8800;color:#000}
+
+/* ── Receipt overlay — full screen ───────────────────────────────────────── */
+#receipt-overlay{
+position:fixed;top:0;left:0;right:0;bottom:0;
+background:#111;
+z-index:500;
+display:none;
+flex-direction:column;
+align-items:center;
+}
+#receipt-overlay.show{display:flex}
+#receipt-close{
+width:100%;
+padding:12px 16px;
+font-family:‘Orbitron’,monospace;font-size:.75rem;font-weight:900;
+color:#ff8800;background:#000;border-bottom:2px solid #ff8800;
+cursor:pointer;text-align:right;letter-spacing:.12em;flex-shrink:0;
+box-sizing:border-box;
+}
+#receipt-scroll{
+width:100%;
+flex:1;
+overflow-y:scroll;
+overflow-x:hidden;
+-webkit-overflow-scrolling:touch;
+scroll-behavior:smooth;
+background:#888;  /* dark surround outside paper */
+padding:12px 0 40px 0;
+box-sizing:border-box;
+}
+/* The paper — warm thermal white, slightly narrower than screen */
+#receipt-paper{
+width:92%;
+max-width:420px;
+margin:0 auto;
+background:#f5f0e8;
+position:relative;
+/* Faint horizontal dot-grid lines — simulates thermal paper rows */
+background-image:
+repeating-linear-gradient(
+180deg,
+transparent 0px, transparent 8px,
+rgba(0,0,0,0.018) 8px, rgba(0,0,0,0.018) 9px
+);
+/* Tear edge top */
+border-top:2px dashed #c8bfa0;
+border-bottom:2px dashed #c8bfa0;
+box-shadow:2px 2px 12px rgba(0,0,0,0.5);
+}
+#receipt-content{
+width:100%;
+padding:8px 0;
+box-sizing:border-box;
+background:transparent;
+}
+/* Canvases fill the paper width */
+#receipt-content canvas{
+width:100% !important;
+image-rendering:pixelated;
+image-rendering:crisp-edges;
+display:block;
+}
+</style>
+
+</head>
+<body>
+<div id="app">
+  <div id="title">✦ CELLTOWER ✦</div>
+  <div id="main-area">
+    <div id="left-panel">
+      <div class="pbox"><h3>Score</h3><div class="pval" id="sv">0</div></div>
+      <div class="pbox" id="level-box"><h3>Level</h3><div class="pval" id="lv">1</div></div>
+      <div class="pbox"><h3>Lines</h3><div class="pval" id="lnv">0</div></div>
+      <div id="event-ticker"></div>
+    </div>
+    <div id="canvas-wrap">
+      <div id="sw"><canvas id="gc"></canvas></div>
+      <div id="gov">
+        <h2>GAME OVER</h2>
+        <div class="fs" id="fst">Score: 0</div>
+        <button class="rbtn" onclick="restart()">PLAY AGAIN</button>
+      </div>
+      <div id="pov">⏸ PAUSED</div>
+    </div>
+    <div id="right-panel">
+      <div class="pbox"><h3>Next</h3><canvas id="nc" width="60" height="60"></canvas></div>
+      <div class="pbox"><h3>High</h3><div class="pval" id="hv">0</div></div>
+      <div class="pbox" style="cursor:pointer" onclick="togglePause()"><h3>Pause</h3><div class="pval">⏸</div></div>
+      <div class="pbox" id="tbbox" style="position:relative;overflow:hidden">
+        <h3>T-Bonus</h3>
+        <div style="display:flex;flex-direction:column;gap:2px;align-items:flex-start;padding:0 4px">
+          <div style="font-family:'Orbitron',monospace;font-size:.6rem;font-weight:700;color:#0ff;text-shadow:0 0 6px #0ff">CLEAN: <span id="tbv-pieces" style="color:#ffff00;text-shadow:0 0 8px #ffff00">0</span></div>
+          <div style="font-family:'Orbitron',monospace;font-size:.6rem;font-weight:700;color:#0ff;text-shadow:0 0 6px #0ff">TETRIS: <span id="tbv-tetris" style="color:#ff8800;text-shadow:0 0 8px #ff8800">0</span></div>
+        </div>
+        <div id="tb-float" style="position:absolute;left:50%;transform:translateX(-50%);bottom:4px;font-family:'Orbitron',monospace;font-weight:900;font-size:.7rem;pointer-events:none;opacity:0"></div>
+      </div>
+      <div class="pbox" id="holebox">
+        <h3>Holes</h3>
+        <div class="pval" id="holev" style="color:#ff4444;text-shadow:0 0 8px #ff4444">0</div>
+      </div>
+    </div>
+  </div>
+  <div id="prow">
+    <button class="pb" id="pb0" onclick="choose(0)"><canvas width="40" height="40" id="pc0"></canvas><span class="pnum">1</span></button>
+    <button class="pb" id="pb1" onclick="choose(1)"><canvas width="40" height="40" id="pc1"></canvas><span class="pnum">2</span></button>
+    <button class="pb" id="pb2" onclick="choose(2)"><canvas width="40" height="40" id="pc2"></canvas><span class="pnum">3</span></button>
+    <button class="pb" id="pb3" onclick="choose(3)"><canvas width="40" height="40" id="pc3"></canvas><span class="pnum">4</span></button>
+  </div>
+  <button id="tetris-btn" onclick="chooseTetris()">
+    <div id="tetris-btn-inner">
+      <span id="tetris-btn-text">TETRIS</span>
+    </div>
+    <div id="tetris-btn-sub">tap to clear four lines</div>
+  </button>
+  <div id="crow">
+    <button class="cb" onclick="rot(-1)">↺</button>
+    <button class="cb" onclick="mhz(-1)">◀</button>
+    <button class="cb" onclick="sdrop()">▼</button>
+    <button class="cb" onclick="hdrop()">⬇</button>
+    <button class="cb" onclick="mhz(1)">▶</button>
+    <button class="cb" onclick="rot(1)">↻</button>
+  </div>
+  <div id="aprow">
+    <label id="ap-toggle-label" onclick="toggleAutoPlay()" title="Toggle autoplay">
+      <span id="ap-icon">🤖</span>
+      <span id="ap-label">AUTO</span>
+      <span id="ap-dot"></span>
+    </label>
+    <input type="range" id="ap-speed" min="1" max="11" value="5"
+      oninput="setAutoSpeed(this.value)"
+      title="Autoplay speed (1=slow · 11=ludicrous)">
+    <span id="ap-speed-val">5</span>
+    <button id="receipt-btn" onclick="showReceipt()" title="Transaction Receipt">🧾 RECEIPT</button>
+  </div>
+</div>
+
+<!-- ── RECEIPT OVERLAY ──────────────────────────────────────────────────── -->
+
+<div id="receipt-overlay">
+  <div id="receipt-close" onclick="hideReceipt()">✕ CLOSE</div>
+  <div id="receipt-scroll">
+    <div id="receipt-paper">
+      <div id="receipt-content"></div>
+    </div>
+  </div>
+</div>
+<div id="proof-debug" style="display:none;position:fixed;top:4px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.9);color:#0f0;font:bold 12px monospace;padding:4px 10px;border-radius:4px;z-index:999;pointer-events:none;white-space:pre-line;text-align:center;"></div>
+<script>
+const COLS=10,ROWS=25;
+const NES_SC=[0,40,100,300,1200];
+const NES_SP=[800,717,633,550,467,383,300,217,133,100,83,83,83,67,67,67,50,50,50,33,33,33,33,33,33,33,33,33,33,17];
+
+// ─── NES RIGHT-HANDED ROTATION SYSTEM ────────────────────────────────────────
+// All 4 rotation states pre-defined per piece exactly as NES Tetris uses them.
+// Rotation index 0 = spawn orientation.
+// J/L/T/S/Z rotate around the center cell of their 3×3 bounding box.
+// I rotates between horizontal (1 row) and vertical (4 rows, right-biased).
+// O has one state only.
+const NRS={
+I:[
+[[1,1,1,1]],                          // 0: horizontal
+[[1],[1],[1],[1]],                     // 1: vertical
+[[1,1,1,1]],                          // 2: same as 0
+[[1],[1],[1],[1]]                      // 3: same as 1
+],
+O:[
+[[1,1],[1,1]],
+[[1,1],[1,1]],
+[[1,1],[1,1]],
+[[1,1],[1,1]]
+],
+T:[
+[[0,1,0],[1,1,1]],                    // 0: flat, stem up
+[[1,0],[1,1],[1,0]],                  // 1: stem right
+[[1,1,1],[0,1,0]],                    // 2: stem down
+[[0,1],[1,1],[0,1]]                   // 3: stem left
+],
+S:[
+[[0,1,1],[1,1,0]],                    // 0: horizontal
+[[1,0],[1,1],[0,1]],                  // 1: vertical
+[[0,1,1],[1,1,0]],                    // 2: same as 0
+[[1,0],[1,1],[0,1]]                   // 3: same as 1
+],
+Z:[
+[[1,1,0],[0,1,1]],                    // 0: horizontal
+[[0,1],[1,1],[1,0]],                  // 1: vertical
+[[1,1,0],[0,1,1]],                    // 2: same as 0
+[[0,1],[1,1],[1,0]]                   // 3: same as 1
+],
+J:[
+[[1,0,0],[1,1,1]],                    // 0: flat, stem top-left
+[[1,1],[1,0],[1,0]],                  // 1: stem right
+[[1,1,1],[0,0,1]],                    // 2: stem bottom-right
+[[0,1],[0,1],[1,1]]                   // 3: stem left
+],
+L:[
+[[0,0,1],[1,1,1]],                    // 0: flat, stem top-right
+[[1,0],[1,0],[1,1]],                  // 1: stem right
+[[1,1,1],[1,0,0]],                    // 2: stem bottom-left
+[[1,1],[0,1],[0,1]]                   // 3: stem left
+]
+};
+
+// NES-accurate pivot x-correction applied after rotating from rot→nextRot.
+// Keeps visual center of rotation at block index 1 (second from left).
+// Only I-piece needs correction: horiz(w=4)→vert(w=1) and back.
+const PIVOT_DX={
+I:  [1, -1, 1, -1],   // rot0→1: +1,  rot1→2: -1,  rot2→3: +1,  rot3→0: -1
+O:  [0,  0, 0,  0],
+T:  [0,  0, 0,  0],
+S:  [0,  0, 0,  0],
+Z:  [0,  0, 0,  0],
+J:  [0,  0, 0,  0],
+L:  [0,  0, 0,  0],
+};
+
+// PTYPES used for color lookup and initial shape
+const PTYPES={
+I:{c:NRS.I[0],rgb:[0,230,230]},
+O:{c:NRS.O[0],rgb:[230,230,0]},
+T:{c:NRS.T[0],rgb:[180,0,180]},
+S:{c:NRS.S[0],rgb:[0,220,0]},
+Z:{c:NRS.Z[0],rgb:[220,0,0]},
+J:{c:NRS.J[0],rgb:[0,80,220]},
+L:{c:NRS.L[0],rgb:[230,120,0]}
+};
+const PK=Object.keys(PTYPES);
+
+// ─── AUDIO ENGINE — Clean 8-bit NES chip-tune ─────────────────────────────
+let AC=null;
+function getAC(){if(!AC)AC=new(window.AudioContext||window.webkitAudioContext)();return AC;}
+
+let _master=null;
+function getMaster(){
+if(!_master){
+const ac=getAC();
+_master=ac.createGain();_master.gain.value=0.36;
+_master.connect(ac.destination);
+}
+return _master;
+}
+
+// Core chip-tone — pure square/triangle, exponential decay (no dirty tail)
+// Uses Web Audio scheduled params so the envelope is sample-accurate
+function blip(freq,freq2,dur,vol=0.22,type=‘square’,delayT=0){
+try{
+const ac=getAC();if(ac.state===‘suspended’)ac.resume();
+const t=ac.currentTime+Math.max(0,delayT);
+const g=ac.createGain();
+g.gain.setValueAtTime(vol,t);
+// Exponential decay — mathematically clean, no click/pop at tail
+g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+const o=ac.createOscillator();o.type=type;
+o.frequency.setValueAtTime(freq,t);
+if(freq2)o.frequency.exponentialRampToValueAtTime(freq2,t+dur*0.8);
+o.connect(g);g.connect(getMaster());
+o.start(t);o.stop(t+dur+0.005);
+}catch(e){}
+}
+
+// ── SOUND EVENTS ───────────────────────────────────────────────────────────
+
+// Move L/R — short high blip (NES Mario coin feel)
+function sndMove(){blip(698,null,0.038,0.16,‘square’);}
+
+// Rotate — two-step ascending chip chirp
+function sndRotate(){
+blip(523,null,0.035,0.14,‘square’);
+blip(784,null,0.035,0.14,‘square’,0.038);
+}
+
+// Piece lock — descending square thump
+function sndLock(){
+blip(280,100,0.13,0.26,‘square’);
+blip(220,80,0.11,0.18,‘triangle’,0.01);
+}
+
+// Soft drop — tiny tick
+function sndSoftDrop(){blip(880,null,0.022,0.12,‘square’);}
+
+// Hard drop — fast downward sweep
+function sndHardDrop(){
+blip(440,50,0.14,0.28,‘square’);
+blip(660,55,0.12,0.2,‘square’,0.015);
+}
+
+// Spawn — ascending two-note shimmer
+function sndSpawn(){blip(1047,1319,0.055,0.10,‘triangle’);}
+
+// ── BLOCK POP (explosion sound per clearing block) ─────────────────────────
+// 4 pitches — one per row being cleared — minor chord voicing (very NES)
+// rowRank: 0=bottom row, 3=topmost. step: 0=center, 9=edge (pitch rises outward)
+const ROW_PITCHES=[262,330,415,523]; // C4 E4 Ab4 C5
+function sndBlockPop(rowRank,step){
+const base=ROW_PITCHES[rowRank%4];
+const f=base*(1+step*0.055); // gentle pitch rise toward edges
+blip(f,null,0.030,0.08,‘square’);
+}
+
+// ── LINE CLEAR JINGLES ─────────────────────────────────────────────────────
+// Play AFTER the explosion animation as a resolution flourish
+function sndLineClear(n){
+if(n<4){
+sndLineClearReversed(n);
+return;
+}
+// Tetris (4 lines) — original ascending fanfare unchanged
+const notes=[[262,0],[330,0.03],[415,0.06],[523,0.09],[659,0.12],
+[784,0.15],[988,0.18],[1319,0.21]];
+notes.forEach(([f,dt])=>blip(f,null,0.09,0.20,‘square’,dt));
+blip(262,null,0.40,0.22,‘square’,0.26);
+blip(392,null,0.40,0.20,‘square’,0.26);
+blip(523,null,0.40,0.18,‘square’,0.26);
+blip(1047,null,0.35,0.16,‘triangle’,0.28);
+}
+
+// Special Tetris-button blip: ascending 3-note chip chord → silence → punch
+// Unique — never heard in any other context. Signals “here it comes.”
+function sndTetrisBlip(){
+// Quick ascending triad
+blip(523,null,0.045,0.28,‘square’,0);
+blip(659,null,0.045,0.28,‘square’,0.04);
+blip(784,null,0.045,0.28,‘square’,0.08);
+// Brief silence then a punchy chord stab
+blip(1047,null,0.10,0.35,‘square’,0.16);
+blip(784,null,0.10,0.30,‘square’,0.16);
+blip(523,null,0.10,0.25,‘square’,0.16);
+// High shimmer tail
+blip(2093,1047,0.18,0.18,‘triangle’,0.20);
+}
+
+// Level up — classic NES ascending run
+function sndLevelUp(){
+[523,659,784,880,1047,1319].forEach((f,i)=>blip(f,null,0.075,0.18,‘square’,i*0.065));
+}
+
+// Game over — descending NES death pattern then long low drone
+function sndGameOver(){
+[440,415,370,330,294,247,220].forEach((f,i)=>blip(f,null,0.11,0.20,‘triangle’,i*0.14));
+blip(110,null,0.55,0.28,‘square’,1.1);
+}
+
+// Sad trombone / “wah-wah” — plays when no-hole bonus resets due to a hole
+function sndBonusReset(){
+blip(494,null,0.18,0.28,‘square’,0);
+blip(370,null,0.18,0.24,‘square’,0.10);
+blip(294,null,0.22,0.22,‘square’,0.20);
+blip(247,220,0.40,0.26,‘triangle’,0.32);
+blip(110,null,0.30,0.18,‘square’,0.55);
+}
+
+// Bubble pop — hole count decreased (good event, subtle)
+function sndBubblePop(){
+const ac=getAC(); if(ac.state===‘suspended’)ac.resume();
+const t=ac.currentTime;
+const o=ac.createOscillator();
+const g=ac.createGain();
+o.connect(g); g.connect(ac.destination);
+o.type=‘sine’;
+o.frequency.setValueAtTime(900,t);
+o.frequency.exponentialRampToValueAtTime(1400,t+0.04);
+o.frequency.exponentialRampToValueAtTime(300,t+0.10);
+g.gain.setValueAtTime(0.18,t);
+g.gain.exponentialRampToValueAtTime(0.001,t+0.12);
+o.start(t); o.stop(t+0.12);
+}
+
+// Scoring disabled — lingering mournful sound (too many holes, ≥7)
+function sndScoringDisabled(){
+const ac=getAC(); if(ac.state===‘suspended’)ac.resume();
+// Deep descending groan + dissonant overtone
+blip(220,110,0.55,0.90,‘sawtooth’,0);
+blip(233,116,0.40,0.85,‘sawtooth’,0.05); // slightly detuned = dissonance
+blip(165,82, 0.50,1.20,‘triangle’,0.15);
+blip(110,null,0.60,0.80,‘square’,0.50);
+blip(82, null,0.45,0.60,‘sawtooth’,0.90);
+}
+
+// Reversed line clear jingles for clears 1-3 — descending frequencies
+function sndLineClearReversed(n){
+const J={
+1:[[1047,0],[784,0.055],[659,0.11],[523,0.17]],
+2:[[988,0],[784,0.05],[659,0.10],[494,0.15],[392,0.20]],
+3:[[1047,0],[784,0.04],[659,0.08],[523,0.12],[415,0.16],[330,0.20]],
+};
+const notes=J[Math.min(n,3)]||J[1];
+notes.forEach(([f,dt])=>blip(f,null,0.09,0.20,‘square’,dt));
+}
+
+// ── NO-HOLE FANFARE sounds ─────────────────────────────────────────────────
+// Basic no-hole achievement — shimmery ascending choir-like arp
+function sndNoHole(){
+const ac=getAC();if(ac.state===‘suspended’)ac.resume();
+// Bright ascending pentatonic sparkle
+[523,659,784,1047,1319,1568].forEach((f,i)=>blip(f,null,0.14,0.22,‘triangle’,i*0.07));
+// Lush sustained chord
+blip(262,null,0.55,0.18,‘triangle’,0.5);
+blip(392,null,0.55,0.16,‘triangle’,0.5);
+blip(523,null,0.55,0.15,‘triangle’,0.5);
+blip(784,null,0.45,0.12,‘triangle’,0.52);
+}
+
+// Perfect-square board — eerie “waiting for Tetris” drone
+// Low mysterious pulse + rising sine sweep suggests tension/anticipation
+function sndWaitingTetris(){
+const ac=getAC();if(ac.state===‘suspended’)ac.resume();
+// Low pulsing drone — like holding breath
+blip(110,55,1.2,0.30,‘square’,0);
+blip(147,null,0.8,0.18,‘square’,0.1);
+// Mysterious rising sweep
+blip(220,880,1.0,0.22,‘triangle’,0.3);
+// Tense high overtone
+blip(1760,880,0.6,0.10,‘triangle’,0.6);
+// Final anticipation chord
+blip(330,null,0.4,0.20,‘square’,1.1);
+blip(494,null,0.4,0.18,‘square’,1.1);
+blip(660,null,0.4,0.15,‘square’,1.15);
+}
+
+// Tetris perfection — triumphant overlapping fanfare
+function sndTetrisPerfection(){
+const ac=getAC();if(ac.state===‘suspended’)ac.resume();
+// Massive ascending run
+[262,330,392,494,523,659,784,988,1047,1319,1568,2093]
+.forEach((f,i)=>blip(f,null,0.12,0.25,‘square’,i*0.05));
+// Big chord explosion at top
+[523,659,784,1047,1319].forEach((f,i)=>blip(f,null,0.65,0.28,‘square’,0.7));
+// Shimmering triangle tail
+blip(2093,null,1.0,0.18,‘triangle’,0.75);
+blip(2637,null,0.8,0.14,‘triangle’,0.80);
+// Final triumphant punch
+blip(1047,null,0.40,0.32,‘square’,1.4);
+blip(784,null,0.40,0.28,‘square’,1.4);
+blip(523,null,0.40,0.25,‘square’,1.42);
+}
+
+// ── HSL helper ─────────────────────────────────────────────────────────────
+function hslStr(h,s,l,a=1){return`hsla(${h%360},${s}%,${l}%,${a})`}
+
+// Compact score formatter for ticker: 100→+100  1000→+1k  32200→+32.2k
+// Returns plain string (no HTML — canvas fillText only)
+function fmtK(n){
+const abs=Math.abs(n);
+if(abs>=1000){
+const k=n/1000;
+// 1 decimal if it adds info, else integer
+const s=Number.isInteger(k)?k.toFixed(0):(Math.round(k*10)/10).toString();
+return(n>0?’+’:’’)+s+‘k’;
+}
+return(n>0?’+’:’’)+n.toString();
+}
+
+// ── TETRIS SCORE OVERLAY ────────────────────────────────────────────────────
+// Shows TETRIS + score, then BONUS + bonus score (if piecePot+tetrisPot>0)
+// Letters appear first, values pulse in 0.25s later with rotating hue per letter
+function showTetrisScoreOverlay(){} // removed — ticker handles it
+
+function updateHoleDisplay(n){
+const el=document.getElementById(‘holev’);
+if(!el)return;
+el.textContent=n;
+el.style.color=n===0?’#00ffaa’:n>=7?’#ff0000’:’#ff4444’;
+el.style.textShadow=n===0?‘0 0 8px #00ffaa’:n>=7?‘0 0 12px #ff0000’:‘0 0 8px #ff4444’;
+}
+
+// Award fractional piecePot on 1-3 line clears based on hole count + lines cleared
+function awardLineClearBonus(cleared, rowIndices){
+const holes=currentScoringHoles;
+if(cleared>=4)return;
+
+// Line fraction: 1=25%, 2=50%, 3=75%
+const LINE_FRAC=[0,0.25,0.50,0.75];
+const lineFrac=LINE_FRAC[Math.min(cleared,3)];
+const linePct=[0,25,50,75][Math.min(cleared,3)];
+
+// Hole fraction lookup — 10% reduction per hole, disabled at 10+
+const HOLE_FRAC=[1.0,0.90,0.80,0.70,0.60,0.50,0.40,0.30,0.20,0.10,0];
+const holeFrac=holes>=10?0:(HOLE_FRAC[holes]??0);
+const holePct=Math.round(holeFrac*100);
+
+if(holeFrac===0){
+if(!scoringDisabledSound){
+scoringDisabledSound=true;
+sndScoringDisabled();
+setTimeout(()=>{scoringDisabledSound=false;},3000);
+}
+showMathOverlay(cleared,holes,piecePot,linePct,holePct,0,rowIndices);
+return;
+}
+
+const raw=piecePot*lineFrac*holeFrac;
+let award=Math.floor(raw/100)*100;
+if(award===0&&raw>=50)award=100;
+
+if(award>0){
+score+=award;
+document.getElementById(‘sv’).textContent=score;
+if(score>hi){hi=score;document.getElementById(‘hv’).textContent=hi;}
+floatTetrisBonus(award);
+// Transaction log
+txScore(‘line-’+cleared, award, [
+{label:‘Piece pot’,       value: piecePot},
+{label:‘Lines x’+cleared+’ (’+linePct+’%)’, value: fmtAmt(Math.round(piecePot*lineFrac))},
+{label:‘Holes:’+holes+’ (’+holePct+’%)’, value: fmtAmt(award)},
+{label:‘Formula: ‘+piecePot+’ x ‘+linePct+’% x ‘+holePct+’%’, value:’= ‘+award},
+]);
+} else if(holeFrac===0){
+txScore(‘line-’+cleared+’-blocked’, 0, [
+{label:‘SCORING BLOCKED (’+holes+’ holes)’, value:‘0’},
+]);
+}
+
+showMathOverlay(cleared,holes,piecePot,linePct,holePct,award,rowIndices);
+}
+
+// ── EVENT TICKER ─────────────────────────────────────────────────────────────
+// MODEL:
+//   _txQueue : incoming lines waiting to appear [{text,hue}]
+//   _txBuf   : visible rows [{text,hue}], oldest=0, newest=last
+//
+// Every DRAIN_MS, one row moves from _txQueue → bottom of _txBuf.
+// If _txBuf is full, oldest row shifts off the top first.
+// This means multi-line pushes arrive one row at a time, staggered.
+// The scroll IS the shift: oldest vanishes from top, newest appears at bottom.
+// No pre-scroll, no landing zone, no disappearing from top without motion.
+//
+// DRAW: rows pinned to bottom of canvas. Oldest at top, newest at bottom.
+// Colors travel with rows (hue stored per-row).
+
+const TX_FONT_SIZE = 9;
+const TX_LINE_H    = 13;
+const TX_HUE_STEP  = 30;
+const TX_HUE_DRIFT = 14;
+const DRAIN_MS     = 110;  // ms between each row appearing
+
+let _txQueue   = [];   // pending lines not yet visible
+let _txBuf     = [];   // visible rows
+let _txHueNext = 0;
+let _txNow     = 0;
+let _txMaxRows = 8;    // computed from canvas height each draw
+let _txRAF     = null;
+let _txDrainTO = null;
+
+function _tickerInit(){
+_txQueue=[]; _txBuf=[]; _txHueNext=0; _txNow=0;
+clearTimeout(_txDrainTO); _txDrainTO=null;
+if(_txRAF){ cancelAnimationFrame(_txRAF); _txRAF=null; }
+const cv=document.getElementById(‘ticker-canvas’);
+if(cv) cv.getContext(‘2d’).clearRect(0,0,cv.width,cv.height);
+}
+
+// Push new lines into the queue — they drain in one at a time
+function tickerPush(lines){
+for(const text of lines){
+_txQueue.push({text, hue:_txHueNext});
+_txHueNext=(_txHueNext+TX_HUE_STEP)%360;
+}
+if(!_txDrainTO) _txDrainStep();
+if(!_txRAF) _txRAF=requestAnimationFrame(_txFrame);
+}
+
+// Move one row from queue into visible buffer, schedule next
+function _txDrainStep(){
+_txDrainTO=null;
+if(_txQueue.length===0) return;
+const row=_txQueue.shift();
+if(_txBuf.length>=_txMaxRows) _txBuf.shift(); // oldest scrolls off top
+_txBuf.push(row);                              // newest appears at bottom
+if(_txQueue.length>0){
+_txDrainTO=setTimeout(_txDrainStep, DRAIN_MS);
+}
+}
+
+// rAF loop — color drift animation only
+function _txFrame(ts){
+_txNow=ts/1000;
+_txDraw();
+if(_txBuf.length>0||_txQueue.length>0){
+_txRAF=requestAnimationFrame(_txFrame);
+} else {
+_txRAF=null;
+}
+}
+
+function _txDraw(){
+const wrap=document.getElementById(‘event-ticker’);
+if(!wrap) return;
+const W=wrap.offsetWidth||wrap.clientWidth||80;
+const H=wrap.offsetHeight||wrap.clientHeight||120;
+if(W<4||H<4) return;
+
+let cv=document.getElementById(‘ticker-canvas’);
+if(!cv){
+cv=document.createElement(‘canvas’);
+cv.id=‘ticker-canvas’;
+cv.style.cssText=‘position:absolute;top:0;left:0;width:100%;height:100%;display:block’;
+wrap.appendChild(cv);
+}
+if(cv.width!==W)  cv.width=W;
+if(cv.height!==H) cv.height=H;
+
+_txMaxRows=Math.max(2,Math.floor(H/TX_LINE_H));
+
+const ctx=cv.getContext(‘2d’);
+ctx.clearRect(0,0,W,H);
+ctx.font=`900 ${TX_FONT_SIZE}px 'Courier New',monospace`;
+ctx.textAlign=‘right’;
+ctx.textBaseline=‘top’;
+
+const n=_txBuf.length;
+// Newest row at bottom, older rows above.
+// y(i) = H - (n-i)*TX_LINE_H
+for(let i=0;i<n;i++){
+const y=H-(n-i)*TX_LINE_H;
+if(y<0||y>=H) continue;
+const hue =(_txBuf[i].hue+_txNow*TX_HUE_DRIFT)%360;
+const comp=(hue+180)%360;
+const lum =58+9*Math.sin(_txNow*0.5+i*0.42);
+const lumBright = Math.min(95, lum+28); // numbers/K get boosted lightness
+
+```
+ctx.globalAlpha=1;
+ctx.shadowColor=`hsl(${comp},100%,52%)`;
+ctx.shadowBlur=6;
+
+// Split text into segments: numeric-with-sign/K parts get bright,
+// letter-only labels get normal lum.
+// Strategy: measure full string right-aligned, then walk segments right-to-left.
+const text=_txBuf[i].text;
+// Segment: sequences of [+\-0-9\.k🔥🧊❄️🥶★] are "value" segments, rest are "label"
+const segs=[];
+const re=/([+\-]?[0-9][0-9.,]*k?)|([^+\-0-9][\S]*)/gu;
+let m;
+while((m=re.exec(text))!==null){
+  if(m[1]!==undefined) segs.push({t:m[1],bright:true});
+  else segs.push({t:m[2],bright:false});
+}
+if(segs.length===0){ segs.push({t:text,bright:false}); }
+
+// Draw right-to-left, accumulating x offset
+ctx.textAlign='right';
+ctx.textBaseline='top';
+let xRight=W-2;
+for(let s=segs.length-1;s>=0;s--){
+  const seg=segs[s];
+  ctx.fillStyle=`hsl(${hue},100%,${seg.bright?lumBright:lum}%)`;
+  ctx.fillText(seg.t, xRight, y);
+  xRight-=ctx.measureText(seg.t).width;
+}
+```
+
+}
+ctx.globalAlpha=1;
+ctx.shadowBlur=0;
+}
+
+function showMathOverlay(cleared, holes, pot, linePct, holePct, award, _rowIndices){
+const cs=Math.round(pot/100); // clean streak count
+const lbl=cleared>=4?`${cleared}T`:`${cleared}L`;
+if(award>0){
+tickerPush([
+fmtK(award),
+`${cs}CS ${lbl} ${holes}H`,
+]);
+} else {
+tickerPush([`BLOCKED`,`${cs}CS ${holes}H`]);
+}
+}
+
+// ── SCORING HOLE CHECK — called after every piece placement ──────────────────
+let _lastScoringHoleCheck=false;
+function checkNoHoleBonus(){
+const wasHoleFree=(currentScoringHoles===0);
+if(piecesPlaced<=9 && !wasHoleFree) return;
+
+const newScoringHoles=countScoringHoles(board);
+const prevScoringHoles=currentScoringHoles;
+
+if(newScoringHoles>prevScoringHoles){
+// Scoring holes increased — reset piecePot and hole-free run
+if(piecePot>0||wasHoleFree) sndBonusReset();
+piecePot=0;
+_lastScoringHoleCheck=false;
+scoringDisabledSound=false;
+// Close out the hole-free run
+if(hfRun>0){
+if(hfRun>hfBest) hfBest=hfRun;
+if(hfRun>hfAllTime){
+hfAllTime=hfRun;
+tickerPush([`🥶🧊❄️`,`${hfRun}CS★`]);
+} else {
+tickerPush([`🥶🧊❄️`,`${hfRun}CS`]);
+}
+hfRun=0;
+}
+} else if(newScoringHoles<prevScoringHoles){
+sndBubblePop();
+// If holes just hit zero, start a new run
+if(newScoringHoles===0) hfRun=0;
+} else if(newScoringHoles===0){
+// Still hole-free — increment run
+hfRun++;
+// Milestone: every 10 pieces, show fire emojis (1🔥 per 10, max 5)
+if(hfRun>0 && hfRun%10===0){
+const fires=Math.min(5,Math.floor(hfRun/10));
+tickerPush([`${'🔥'.repeat(fires)}`,`${hfRun}CS`]);
+}
+const isNewTrigger=!_lastScoringHoleCheck;
+if(isNewTrigger){
+tickerPush([`🔥 CS`]);
+const filled=board.reduce((s,r)=>s+r.filter(v=>v).length,0);
+const isPerfectSquare=(()=>{const sq=Math.round(Math.sqrt(filled));return sq*sq===filled&&filled>=36;})();
+const nextIsI=nxt&&nxt.k===‘I’;
+if(isPerfectSquare&&nextIsI){
+score+=20490;
+document.getElementById(‘sv’).textContent=score;
+sndTetrisPerfection();
+tickerPush([`🏆✨ PERFECT`, `+20,490`, `ATARI TRIBUTE`]);
+txScore(‘super-clear’,20490,[
+{label:‘Perfect square + I-piece next’,‘value’:’’},
+{label:‘Atari SF Rush 2049 tribute’,‘value’:’+20,490’},
+]);
+} else if(isPerfectSquare){
+sndWaitingTetris();
+} else {
+sndNoHole();
+}
+}
+}
+
+currentScoringHoles=newScoringHoles;
+updateHoleDisplay(newScoringHoles);
+_lastScoringHoleCheck=(newScoringHoles===0);
+
+const pieceBonus=Math.min(100*tetrisMultiplier,1600);
+piecePot+=pieceBonus;
+updateTBDisplay();
+checkTowers();
+}
+
+function showNHoleOverlay(){} // removed — ticker handles it
+
+function showSuperOverlay(){} // removed — ticker handles it
+
+// ── TOWER DETECTION ──────────────────────────────────────────────────────────
+let _towerSeverity = 0;  // 0-5, last reported severity
+
+function _colHeight(col){
+for(let r=0;r<ROWS;r++) if(board[r*COLS+col]) return ROWS-r;
+return 0;
+}
+
+// Smoke alarm chirp — real T3 alarm fundamental ~3150 Hz
+// count = 1-5 alarms, each slightly detuned, random gap 100-200ms between chirps
+function sndSmokeAlarm(count){
+const ac=getAC(); if(ac.state===‘suspended’)ac.resume();
+const BASE=3150;
+const detune=[0,+18,-23,+37,-41]; // each alarm slightly off — like dying batteries
+let t=ac.currentTime;
+for(let i=0;i<Math.min(count,5);i++){
+if(i>0) t+=(0.10+Math.random()*0.10); // 100-200ms random gap
+const freq=BASE+detune[i];
+const g=ac.createGain();
+g.gain.setValueAtTime(0,t);
+g.gain.linearRampToValueAtTime(0.28,t+0.004); // sharp attack
+g.gain.setValueAtTime(0.28,t+0.055);           // hold
+g.gain.exponentialRampToValueAtTime(0.0001,t+0.090); // fast decay
+const o=ac.createOscillator();
+o.type=‘square’;
+o.frequency.setValueAtTime(freq,t);
+// tiny mid-chirp wobble — cheap/battery-dying feel
+o.frequency.setValueAtTime(freq*(1+0.004*(Math.random()-0.5)),t+0.025);
+o.connect(g);g.connect(getMaster());
+o.start(t);o.stop(t+0.095);
+}
+}
+
+function checkTowers(){
+const h=[];
+for(let c=0;c<COLS;c++) h.push(_colHeight(c));
+
+const mean=h.reduce((a,b)=>a+b,0)/COLS;
+
+// Count locally-prominent columns that exceed mean by >=3 rows
+let rawCount=0;
+for(let c=0;c<COLS;c++){
+if(h[c]-mean>=3){
+const lh=c>0?h[c-1]:0;
+const rh=c<COLS-1?h[c+1]:0;
+if(h[c]>lh||h[c]>rh) rawCount++;
+}
+}
+
+// severity = floor(rawCount/3), capped 0-5
+// 3 prominent cols → sev 1, 6 → sev 2, 9 → sev 3, etc.
+const sev=Math.min(5,Math.floor(rawCount/3));
+
+if(sev===_towerSeverity) return;
+const prev=_towerSeverity;
+_towerSeverity=sev;
+
+if(sev===0){
+if(prev>=1) tickerPush([`⛰️➡️✅`,`TOWERS CLEARED`]);
+return;
+}
+if(sev<=prev) return; // de-escalating — silence
+
+sndSmokeAlarm(sev);
+
+const emoji=‘🗼’.repeat(sev);
+const msgs=[’’,‘GETTING TALL’,‘HIGHTOWER ALERT’,‘BUILDING TOWERS!’,‘DAD DISAPPROVES’,‘HIGHTOWER LIVES’];
+tickerPush([emoji,msgs[sev]]);
+}
+
+// ── SPEECH INTRO — Web Speech API, female voice, completely free ───────────
+function speakIntro(){
+if(!window.speechSynthesis)return;
+try{getAC().resume();}catch(e){}
+
+const text=
+“Welcome to Aaron Hightower’s Cell Tower game, from the Tower District! “+
+“This game was entirely created with my voice! “+
+“All you gotta do is touch the screen for the numbered piece — “+
+“tell me what you want, and I’ll give it to you. “+
+“All the other stuff? You can figure it out!”;
+
+const doSpeak=voices=>{
+// Priority list of known female voices across iOS, macOS, Chrome, Edge, Firefox
+const want=[‘Samantha’,‘Google UK English Female’,‘Microsoft Zira Desktop’,
+‘Microsoft Eva Mobile’,‘Karen’,‘Moira’,‘Victoria’,‘Fiona’,
+‘Serena’,‘Nicky’,‘Google US English’];
+const pick=
+want.reduce((f,name)=>f||voices.find(v=>v.name===name),null)||
+voices.find(v=>v.lang.startsWith(‘en’)&&/female|woman/i.test(v.name))||
+voices.find(v=>v.lang.startsWith(‘en-US’))||
+voices.find(v=>v.lang.startsWith(‘en’));
+const u=new SpeechSynthesisUtterance(text);
+if(pick)u.voice=pick;
+u.rate=0.88;u.pitch=1.12;u.volume=1;
+speechSynthesis.cancel();
+speechSynthesis.speak(u);
+};
+
+const v=speechSynthesis.getVoices();
+if(v.length>0)doSpeak(v);
+else speechSynthesis.addEventListener(‘voiceschanged’,
+()=>doSpeak(speechSynthesis.getVoices()),{once:true});
+}
+
+let board,score,level,lines,hi=0,dead,paused;
+// Hole-free run tracking
+// hfRun   : pieces placed since last scoring-hole creation (current game)
+// hfBest  : longest hfRun achieved in current game
+// hfAllTime: longest run ever across all games (persists like hi)
+let hfRun=0, hfBest=0, hfAllTime=0, _gamesPlayed=0;
+let cur,cx,cy,nxt;
+let placements,dropIv,selIv,timerMax,timerLeft;
+let allCands=[],shownFootprints=new Set();
+let playerHasMoved=false;
+let moveStartTime=0;
+let labelPositions=[];
+let AT=0;
+
+// ── No-hole bonus tracking ─────────────────────────────────────────────────
+let piecePot=0;            // clean placements: +100×multiplier each, max 1600/piece
+let tetrisPot=0;           // cumulative Tetris streak: carries over, never zeroed except non-Tetris clear
+let piecesPlaced=0;        // total pieces placed this game
+let tetrisStreak=0;        // consecutive Tetris clears
+let tetrisMultiplier=1;    // doubles each consecutive Tetris, cap at 16
+let currentScoringHoles=0; // live countScoringHoles on the board, updated each placement
+let scoringDisabledSound=false;
+// noHoleActive derived: currentScoringHoles===0
+// holeBaseline removed: was countScoringHoles-based, no longer meaningful
+
+// ── Particle / explosion system ────────────────────────────────────────────
+let particles=[];          // [{x,y,vx,vy,r,g,b,life,decay,sz}]
+let explodedCells=new Set();  // “row,col” cells currently mid-explosion
+let clearAnimating=false;  // true while line-clear explosion runs
+
+const gc=document.getElementById(‘gc’);
+const gx=gc.getContext(‘2d’);
+const nc=document.getElementById(‘nc’);
+const nx_=nc.getContext(‘2d’);
+let CELL;
+
+function layout(){
+const W=window.innerWidth;
+const H=window.innerHeight;
+const side=Math.min(110,W*.16)*2+20;
+const ctrlH=Math.min(60,W*.11)*2+50+16;
+const avW=Math.min(W-side-16,380);
+const avH=H-40-10-ctrlH-16;
+CELL=Math.floor(Math.min(avW/COLS,avH/ROWS));
+if(CELL<12)CELL=12;
+gc.width=CELL*COLS; gc.height=CELL*ROWS;
+// Ticker height = gap between bottom of Lines pbox and bottom of canvas-wrap
+requestAnimationFrame(()=>{
+const linesBox = document.querySelector(’#left-panel .pbox:nth-child(3)’);
+const canvasWrap = document.getElementById(‘canvas-wrap’);
+if(linesBox && canvasWrap){
+const linesBottom = linesBox.getBoundingClientRect().bottom;
+const canvasBottom = canvasWrap.getBoundingClientRect().bottom;
+const tickerH = Math.max(40, canvasBottom - linesBottom - 6);
+document.documentElement.style.setProperty(’–ticker-h’, tickerH+‘px’);
+}
+});
+}
+window.addEventListener(‘resize’,layout);
+
+// ─── TIE-DYE 3D CELL ─────────────────────────────────────────────────────────
+function cell3d(ctx,x,y,sz,rgb,t,al=1){
+const[r,g,b]=rgb;
+const w=Math.sin((y/sz*.8+x/sz*.5+t*2)*.9)*.25+.75;
+const hs=Math.sin(t+y/sz*.35)*25;
+const cr=Math.min(255,r*w+hs)|0,cg=Math.min(255,g*w-hs*.4)|0,cb2=Math.min(255,b*w+hs*.3)|0;
+const p=sz*.06;
+ctx.save();ctx.globalAlpha=al;
+const gr=ctx.createLinearGradient(x,y,x+sz,y+sz);
+gr.addColorStop(0,`rgb(${cr},${cg},${cb2})`);
+gr.addColorStop(.5,`rgb(${Math.min(255,cr*1.15)|0},${Math.min(255,cg*1.15)|0},${Math.min(255,cb2*1.15)|0})`);
+gr.addColorStop(1,`rgb(${r*.45|0},${g*.45|0},${b*.45|0})`);
+ctx.fillStyle=gr;
+ctx.fillRect(x+p,y+p,sz-p*2,sz-p*2);
+// bevel light
+ctx.fillStyle=‘rgba(255,255,255,.42)’;
+ctx.fillRect(x+p,y+p,sz-p*2,p*1.6);
+ctx.fillRect(x+p,y+p,p*1.6,sz-p*2);
+// bevel shadow
+ctx.fillStyle=‘rgba(0,0,0,.42)’;
+ctx.fillRect(x+p,y+sz-p*2.6,sz-p*2,p*1.6);
+ctx.fillRect(x+sz-p*2.6,y+p,p*1.6,sz-p*2);
+// inner glow
+const gl=ctx.createRadialGradient(x+sz*.38,y+sz*.32,0,x+sz*.5,y+sz*.5,sz*.65);
+gl.addColorStop(0,‘rgba(255,255,255,.18)’);gl.addColorStop(1,‘rgba(0,0,0,0)’);
+ctx.fillStyle=gl;ctx.fillRect(x+p,y+p,sz-p*2,sz-p*2);
+ctx.restore();
+}
+
+// Ghost outline brightness — alternating bright/dim per slot for adjacent contrast
+const GHOST_OUTLINE_L=[220, 130, 220, 130];
+
+function rgbStr(rgb,a=1){return`rgba(${rgb[0]},${rgb[1]},${rgb[2]},${a})`}
+function grayStr(v,a=1){return`rgba(${v},${v},${v},${a})`}
+
+// Draw ghost outline: gray outer edge + inset colored inner edge (piece color at 50% alpha)
+// The outer is inset 1px further than before; inner is 1px inside that.
+// skipInner=true for slide (yellow) ghosts — keep those pure yellow.
+function drawPieceOutline(cells,px,py,lv,alpha,lw,rgb,skipInner){
+const has=(r,c)=>r>=0&&r<cells.length&&c>=0&&c<(cells[r]||[]).length&&cells[r][c];
+const inset=1; // 1px extra inset from before
+
+// ── Outer gray stroke (inset by 1px) ──
+gx.save();
+gx.strokeStyle=grayStr(lv,alpha);
+gx.lineWidth=lw;
+gx.lineCap=‘square’;
+gx.shadowColor=grayStr(lv,alpha*0.7);
+gx.shadowBlur=lw*2;
+gx.beginPath();
+for(let r=0;r<cells.length;r++){
+for(let c=0;c<cells[r].length;c++){
+if(!cells[r][c])continue;
+const x=(px+c)*CELL+inset, y=(py+r)*CELL+inset;
+const x2=x+CELL-inset*2, y2=y+CELL-inset*2;
+if(!has(r-1,c)){gx.moveTo(x,y);   gx.lineTo(x2,y);}
+if(!has(r+1,c)){gx.moveTo(x,y2);  gx.lineTo(x2,y2);}
+if(!has(r,c-1)){gx.moveTo(x,y);   gx.lineTo(x,y2);}
+if(!has(r,c+1)){gx.moveTo(x2,y);  gx.lineTo(x2,y2);}
+}
+}
+gx.stroke();
+gx.restore();
+
+// ── Inner colored stroke (1px further inset, piece color at 50% alpha) ──
+if(!skipInner&&rgb){
+const ins=inset+lw*0.5+1;
+gx.save();
+gx.strokeStyle=`rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha*0.5})`;
+gx.lineWidth=Math.max(1,lw*0.7);
+gx.lineCap=‘square’;
+gx.shadowColor=`rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha*0.3})`;
+gx.shadowBlur=lw;
+gx.beginPath();
+for(let r=0;r<cells.length;r++){
+for(let c=0;c<cells[r].length;c++){
+if(!cells[r][c])continue;
+const x=(px+c)*CELL+ins, y=(py+r)*CELL+ins;
+const x2=x+CELL-ins*2+(inset), y2=y+CELL-ins*2+(inset);
+if(!has(r-1,c)){gx.moveTo(x,y);   gx.lineTo(x2,y);}
+if(!has(r+1,c)){gx.moveTo(x,y2);  gx.lineTo(x2,y2);}
+if(!has(r,c-1)){gx.moveTo(x,y);   gx.lineTo(x,y2);}
+if(!has(r,c+1)){gx.moveTo(x2,y);  gx.lineTo(x2,y2);}
+}
+}
+gx.stroke();
+gx.restore();
+}
+}
+
+function drawBoard(){
+const t=AT;
+const bg=gx.createLinearGradient(0,0,gc.width,gc.height);
+bg.addColorStop(0,’#080018’);bg.addColorStop(.5,’#10002a’);bg.addColorStop(1,’#050015’);
+gx.fillStyle=bg;gx.fillRect(0,0,gc.width,gc.height);
+gx.strokeStyle=‘rgba(80,0,160,.3)’;gx.lineWidth=.5;
+for(let r=0;r<=ROWS;r++){gx.beginPath();gx.moveTo(0,r*CELL);gx.lineTo(COLS*CELL,r*CELL);gx.stroke()}
+for(let c=0;c<=COLS;c++){gx.beginPath();gx.moveTo(c*CELL,0);gx.lineTo(c*CELL,ROWS*CELL);gx.stroke()}
+
+// ── Pulsing yellow border — sine wave 0.25→0.75 brightness, 4s cycle ────────
+const pulse=0.25+0.5*(0.5+0.5*Math.sin(t*Math.PI*2/4));
+const bw=Math.ceil(CELL*0.18); // border thickness scales with cell size
+gx.save();
+gx.strokeStyle=`rgba(255,220,0,${pulse})`;
+gx.lineWidth=bw;
+gx.shadowColor=`rgba(255,200,0,${pulse*0.6})`;
+gx.shadowBlur=bw*2.5;
+gx.strokeRect(bw/2,bw/2,gc.width-bw,gc.height-bw);
+gx.restore();
+
+// ── Locked board cells (skip cells mid-explosion) ──────────────────────────
+for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++)
+if(board[r][c]&&!explodedCells.has(`${r},${c}`))cell3d(gx,c*CELL,r*CELL,CELL,board[r][c],t);
+
+// ── Explosion particles ────────────────────────────────────────────────────
+for(let i=particles.length-1;i>=0;i–){
+const p=particles[i];
+p.x+=p.vx;p.y+=p.vy;
+p.vy+=0.07; // gentle gravity
+p.life-=p.decay;
+if(p.life<=0){particles.splice(i,1);continue;}
+gx.globalAlpha=p.life;
+gx.fillStyle=`rgb(${p.r},${p.g},${p.b})`;
+gx.fillRect(p.x,p.y,p.sz,p.sz);
+}
+gx.globalAlpha=1;
+
+if(cur&&!dead&&placements){
+// Clip all ghost/piece drawing to board bounds so nothing bleeds outside
+gx.save();
+gx.beginPath();
+gx.rect(0,0,gc.width,gc.height);
+gx.clip();
+
+```
+// ── Ghost opacity envelope ─────────────────────────────────────────────
+// Before any move: all ghosts full opacity.
+// 0–0.5s after first move: only straight-drop ghost visible (others hidden).
+// 0.5–1.0s: other ghosts fade in from 0→1.
+// After 1.0s: all full opacity.
+let otherGhostAlpha=1;
+let straightDropFp=null;
+if(playerHasMoved){
+  const elapsed=AT-moveStartTime;
+  otherGhostAlpha=elapsed<0.5?0:Math.min(1,(elapsed-0.5)/0.5);
+  // Identify the straight-drop placement footprint
+  let sy=cy;while(isOk(cur.c,cx,sy+1))sy++;
+  straightDropFp=Array.from(footprint(cur.c,cx,sy)).sort().join(';');
+}
+
+// ── Outlines — solid for normal, dashed gold pulse for slide-ins ──────────
+for(let i=placements.length-1;i>=0;i--){
+  const p=placements[i];if(!p)continue;
+  const isStraight=playerHasMoved&&p.fpKey===straightDropFp;
+  const alpha=isStraight?1:otherGhostAlpha;
+  if(alpha<=0)continue;
+  const lv=GHOST_OUTLINE_L[i];
+  if(p.slide){
+    const pulse=0.6+0.4*Math.sin(AT*6);
+    gx.save();
+    gx.globalAlpha=alpha;
+    gx.strokeStyle=`rgba(255,220,0,${0.55*pulse})`;
+    gx.lineWidth=CELL*0.22;
+    gx.lineCap='square';
+    gx.setLineDash([CELL*0.4,CELL*0.25]);
+    gx.lineDashOffset=-AT*CELL*1.5;
+    gx.shadowColor='rgba(255,200,0,0.8)';
+    gx.shadowBlur=CELL*0.4;
+    const has2=(r,c)=>r>=0&&r<p.c.length&&c>=0&&c<(p.c[r]||[]).length&&p.c[r][c];
+    gx.beginPath();
+    for(let r=0;r<p.c.length;r++)for(let c=0;c<p.c[r].length;c++){
+      if(!p.c[r][c])continue;
+      const x=(p.x+c)*CELL,y=(p.dropY+r)*CELL;
+      if(!has2(r-1,c)){gx.moveTo(x,y);gx.lineTo(x+CELL,y);}
+      if(!has2(r+1,c)){gx.moveTo(x,y+CELL);gx.lineTo(x+CELL,y+CELL);}
+      if(!has2(r,c-1)){gx.moveTo(x,y);gx.lineTo(x,y+CELL);}
+      if(!has2(r,c+1)){gx.moveTo(x+CELL,y);gx.lineTo(x+CELL,y+CELL);}
+    }
+    gx.stroke();
+    gx.setLineDash([]);
+    gx.strokeStyle=`rgba(255,220,0,${0.9*pulse})`;
+    gx.lineWidth=CELL*0.06;gx.shadowBlur=CELL*0.15;
+    gx.beginPath();
+    for(let r=0;r<p.c.length;r++)for(let c=0;c<p.c[r].length;c++){
+      if(!p.c[r][c])continue;
+      const x=(p.x+c)*CELL,y=(p.dropY+r)*CELL;
+      if(!has2(r-1,c)){gx.moveTo(x,y);gx.lineTo(x+CELL,y);}
+      if(!has2(r+1,c)){gx.moveTo(x,y+CELL);gx.lineTo(x+CELL,y+CELL);}
+      if(!has2(r,c-1)){gx.moveTo(x,y);gx.lineTo(x,y+CELL);}
+      if(!has2(r,c+1)){gx.moveTo(x+CELL,y);gx.lineTo(x+CELL,y+CELL);}
+    }
+    gx.stroke();
+    gx.restore();
+  } else {
+    gx.save();gx.globalAlpha=alpha;gx.restore();
+    drawPieceOutline(p.c,p.x,p.dropY,lv,0.65*alpha,CELL*0.16,cur?cur.rgb:null,false);
+    drawPieceOutline(p.c,p.x,p.dropY,lv,1.00*alpha,CELL*0.06,cur?cur.rgb:null,false);
+  }
+}
+
+// ── Number labels inside each ghost ─────────────────────────────────────
+labelPositions=[];
+for(let i=0;i<placements.length;i++){
+  const p=placements[i];if(!p)continue;
+  const isStraight=playerHasMoved&&p.fpKey===straightDropFp;
+  const alpha=isStraight?1:otherGhostAlpha;
+  const lv=(p.hint&&PROOF_MODE)?220:p.slide?220:GHOST_OUTLINE_L[i];
+  const cc=p.c,px=p.x,py=p.dropY;
+
+  let sumX=0,sumY=0,count=0;
+  for(let r=0;r<cc.length;r++)for(let c=0;c<cc[r].length;c++){
+    if(!cc[r][c])continue;
+    sumX+=(px+c)*CELL+CELL*0.5;
+    sumY+=(py+r)*CELL+CELL*0.5;
+    count++;
+  }
+  if(!count)continue;
+  const cx2=sumX/count, cy2=sumY/count;
+  labelPositions.push({x:cx2,y:cy2,idx:i});
+  const fs=Math.max(11,Math.min(CELL*.85,26));
+
+  if(p.hint && PROOF_MODE){
+    const pulse=0.7+0.3*Math.sin(AT*4);
+    gx.save();
+    gx.globalAlpha=alpha;
+    gx.font=`900 ${fs}px Orbitron,monospace`;
+    gx.textAlign='center';gx.textBaseline='middle';
+    gx.shadowColor='rgba(255,255,0,1)';gx.shadowBlur=fs*1.2;
+    gx.fillStyle=`rgba(255,255,0,${pulse})`;
+    gx.fillText(`${i+1}`,cx2,cy2-fs*0.5);
+    const starFs=Math.max(8,fs*0.85);
+    gx.font=`${starFs}px sans-serif`;
+    gx.shadowBlur=starFs*0.6;
+    gx.fillText('★',cx2,cy2+fs*0.45);
+    gx.shadowBlur=0;gx.globalAlpha=alpha*0.9;
+    gx.fillStyle='#fff';
+    gx.font=`900 ${fs}px Orbitron,monospace`;
+    gx.fillText(`${i+1}`,cx2,cy2-fs*0.5);
+    gx.restore();
+  } else if(p.slide){
+    const pulse=0.7+0.3*Math.sin(AT*6);
+    const label=`${i+1}`;
+    gx.save();
+    gx.globalAlpha=alpha;
+    gx.font=`900 ${fs}px Orbitron,monospace`;
+    gx.textAlign='center';gx.textBaseline='middle';
+    gx.shadowColor=`rgba(255,210,0,1)`;gx.shadowBlur=fs*0.8;
+    gx.fillStyle=`rgba(255,220,0,${pulse})`;
+    gx.fillText(label,cx2,cy2-fs*0.5);
+    const arrowFs=Math.max(8,fs*0.8);
+    gx.font=`900 ${arrowFs}px sans-serif`;
+    gx.shadowBlur=arrowFs*0.5;
+    gx.fillText('⟵⟶',cx2,cy2+fs*0.4);
+    gx.shadowBlur=0;gx.globalAlpha=alpha*0.8;
+    gx.fillStyle='#fff';
+    gx.font=`900 ${fs}px Orbitron,monospace`;
+    gx.fillText(label,cx2,cy2-fs*0.5);
+    gx.restore();
+  } else {
+    gx.save();
+    gx.globalAlpha=alpha;
+    gx.font=`900 ${fs}px Orbitron,monospace`;
+    gx.textAlign='center';gx.textBaseline='middle';
+    gx.shadowColor=grayStr(lv,1);gx.shadowBlur=fs*0.6;
+    gx.fillStyle=grayStr(lv,0.9);
+    gx.fillText(i+1,cx2,cy2);
+    gx.shadowBlur=0;gx.globalAlpha=alpha*0.85;
+    gx.fillStyle='#ffffff';
+    gx.fillText(i+1,cx2,cy2);
+    gx.restore();
+  }
+}
+
+// ── Bottom buttons: fade non-straight options during reveal window ───────
+for(let i=0;i<4;i++){
+  const btn=document.getElementById('pb'+i);if(!btn)continue;
+  const p=placements[i];
+  const isStraight=playerHasMoved&&p&&p.fpKey===straightDropFp;
+  const btnAlpha=(!playerHasMoved||isStraight)?1:otherGhostAlpha;
+  if(p&&p.hint&&PROOF_MODE){
+    btn.style.borderColor='rgba(255,255,0,1)';
+    btn.style.boxShadow=`0 0 18px rgba(255,255,0,0.8)`;
+    btn.style.opacity=String(btnAlpha);
+  } else if(p&&p.slide){
+    btn.style.borderColor='rgba(255,210,0,0.9)';
+    btn.style.boxShadow=`0 0 14px rgba(255,200,0,0.6)`;
+    btn.style.opacity=String(btnAlpha);
+  } else if(p){
+    const rgb=cur?cur.rgb:[200,200,200];
+    const lv=GHOST_OUTLINE_L[i]/255;
+    btn.style.borderColor=`rgba(${(rgb[0]*lv)|0},${(rgb[1]*lv)|0},${(rgb[2]*lv)|0},0.85)`;
+    btn.style.boxShadow=`0 0 8px rgba(${(rgb[0]*lv)|0},${(rgb[1]*lv)|0},${(rgb[2]*lv)|0},0.35)`;
+    btn.style.opacity=String(btnAlpha);
+  } else {
+    btn.style.borderColor='#330055';btn.style.boxShadow='none';btn.style.opacity='0.2';
+  }
+}
+
+// ── Live falling piece — always show in piece color ──────────────────────
+for(let r=0;r<cur.c.length;r++)
+  for(let c=0;c<cur.c[r].length;c++)
+    if(cur.c[r][c]){
+      const sx=(cx+c)*CELL,sy=(cy+r)*CELL;
+      cell3d(gx,sx,sy,CELL,cur.rgb,AT);
+    }
+gx.restore(); // end board clip
+```
+
+}
+}
+
+function drawNext(){
+nx_.fillStyle=’#0a0018’;nx_.fillRect(0,0,60,60);
+if(!nxt)return;
+const cc=nxt.c,s=Math.min(12,Math.floor(50/Math.max(cc.length,cc[0].length)));
+const ox=(60-cc[0].length*s)/2|0,oy=(60-cc.length*s)/2|0;
+for(let r=0;r<cc.length;r++)for(let c=0;c<cc[r].length;c++)
+if(cc[r][c])cell3d(nx_,ox+c*s,oy+r*s,s,nxt.rgb,AT);
+}
+
+function drawPrevBtn(idx,p){
+const mc=document.getElementById(‘pc’+idx);
+if(!mc)return;
+const mw=mc.width,mh=mc.height;
+const ctx2=mc.getContext(‘2d’);
+ctx2.fillStyle=’#0a0018’;ctx2.fillRect(0,0,mw,mh);
+if(!p||!cur)return;
+const cc=p.c;
+const lv=GHOST_OUTLINE_L[idx];
+const rgb=cur.rgb; // piece actual color
+const s=Math.max(3,Math.floor(Math.min(mw,mh)/Math.max(cc.length,cc[0].length,4)));
+const ox=(mw-cc[0].length*s)/2|0,oy=(mh-cc.length*s)/2|0;
+const has=(r,c)=>r>=0&&r<cc.length&&c>=0&&c<(cc[r]||[]).length&&cc[r][c];
+const lw=Math.max(1,s*0.12);
+const ins=1;
+
+// Outer gray stroke
+ctx2.strokeStyle=`rgba(${lv},${lv},${lv},0.95)`;
+ctx2.lineWidth=lw;
+ctx2.lineCap=‘square’;
+ctx2.beginPath();
+for(let r=0;r<cc.length;r++){
+for(let c=0;c<cc[r].length;c++){
+if(!cc[r][c])continue;
+const x=ox+c*s+ins,y=oy+r*s+ins;
+const x2=x+s-ins*2,y2=y+s-ins*2;
+if(!has(r-1,c)){ctx2.moveTo(x,y);   ctx2.lineTo(x2,y);}
+if(!has(r+1,c)){ctx2.moveTo(x,y2);  ctx2.lineTo(x2,y2);}
+if(!has(r,c-1)){ctx2.moveTo(x,y);   ctx2.lineTo(x,y2);}
+if(!has(r,c+1)){ctx2.moveTo(x2,y);  ctx2.lineTo(x2,y2);}
+}
+}
+ctx2.stroke();
+
+// Inner colored stroke — skip for slide (yellow) and hint in debug mode
+if(!p.slide && !(p.hint&&PROOF_MODE)){
+const ins2=ins+lw*0.5+1;
+ctx2.strokeStyle=`rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.5)`;
+ctx2.lineWidth=Math.max(1,lw*0.7);
+ctx2.lineCap=‘square’;
+ctx2.beginPath();
+for(let r=0;r<cc.length;r++){
+for(let c=0;c<cc[r].length;c++){
+if(!cc[r][c])continue;
+const x=ox+c*s+ins2,y=oy+r*s+ins2;
+const x2=x+s-ins2*2+ins,y2=y+s-ins2*2+ins;
+if(!has(r-1,c)){ctx2.moveTo(x,y);   ctx2.lineTo(x2,y);}
+if(!has(r+1,c)){ctx2.moveTo(x,y2);  ctx2.lineTo(x2,y2);}
+if(!has(r,c-1)){ctx2.moveTo(x,y);   ctx2.lineTo(x,y2);}
+if(!has(r,c+1)){ctx2.moveTo(x2,y);  ctx2.lineTo(x2,y2);}
+}
+}
+ctx2.stroke();
+}
+
+// centered number — use piece color
+let sx=0,sy=0,cnt=0;
+for(let r=0;r<cc.length;r++)for(let c=0;c<cc[r].length;c++){
+if(!cc[r][c])continue;sx+=ox+c*s+s/2;sy+=oy+r*s+s/2;cnt++;
+}
+if(cnt){
+const fs=Math.max(8,Math.min(s*1.1,16));
+ctx2.font=`900 ${fs}px Orbitron,monospace`;
+ctx2.textAlign=‘center’;ctx2.textBaseline=‘middle’;
+ctx2.shadowColor=`rgba(${rgb[0]},${rgb[1]},${rgb[2]},1)`;ctx2.shadowBlur=fs*.5;
+ctx2.fillStyle=`rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.9)`;
+ctx2.fillText(idx+1,sx/cnt,sy/cnt);
+ctx2.shadowBlur=0;ctx2.globalAlpha=0.8;
+ctx2.fillStyle=’#fff’;ctx2.fillText(idx+1,sx/cnt,sy/cnt);
+}
+}
+
+// ─── PIECE ───────────────────────────────────────────────────────────────────
+// ── OPENING PUZZLE — guaranteed 9-piece perfect clear for 100k bonus ─────────
+// 13 verified 4×9 tetromino tilings using all 7 piece types.
+// Piece sequence is generated by randomly pulling pieces off the top
+// (a piece is pullable when nothing from another piece is directly above it).
+// Each puzzle + mirror gives ~15,600 unique deal sequences across all 26 variants.
+
+const PUZZLE_GRIDS = [
+[‘ABCCCDDDD’,‘ABBCEEEFF’,‘AGBHHEIIF’,‘AGGGHHIIF’],
+[‘ABCCDDDEE’,‘ABBCCDFFE’,‘AGBHHHFFE’,‘AGGGHIIII’],
+[‘ABBCCCDDD’,‘AEBBCFFGD’,‘AEHHHFFGG’,‘AEEHIIIIG’],
+[‘ABCDDDEEE’,‘ABCCDFFFE’,‘ABBCGGFHH’,‘AIIIIGGHH’],
+[‘AABCCCDDD’,‘AABBCEEED’,‘FFFBGGEHH’,‘FIIIIGGHH’],
+[‘AAABBBCCC’,‘DAEEBFFGC’,‘DHHEEFFGG’,‘DDHHIIIIG’],
+[‘ABBBCCCCD’,‘AABEEEFFD’,‘GAHHEIIFD’,‘GGGHHIIFD’],
+[‘ABBBCCCDD’,‘AABEECFFD’,‘GAHHEEFFD’,‘GGGHHIIII’],
+[‘ABBCCCDDE’,‘AABBCFFDE’,‘GAHHHFFDE’,‘GGGHIIIIE’],
+[‘AABBBCCCD’,‘EAABFFGCD’,‘EHHHFFGGD’,‘EEHIIIIGD’],
+[‘ABCCCDDDD’,‘ABBCEEEFF’,‘AABGGEHFF’,‘IIIIGGHHH’],
+[‘ABCCCDDDE’,‘ABBCFFFDE’,‘AABGGFHHE’,‘IIIIGGHHE’],
+[‘ABCCDDDEE’,‘ABBCCDFEE’,‘AABGGGFFF’,‘HHHHGIIII’],
+];
+
+// NRS shape→type lookup for placing pieces correctly
+const PUZZLE_PIECE_TYPES = [
+{A:‘I’,B:‘S’,C:‘T’,D:‘I’,E:‘T’,F:‘L’,G:‘J’,H:‘Z’,I:‘O’},
+{A:‘I’,B:‘S’,C:‘Z’,D:‘T’,E:‘L’,F:‘O’,G:‘J’,H:‘T’,I:‘I’},
+{A:‘I’,B:‘Z’,C:‘T’,D:‘J’,E:‘L’,F:‘O’,G:‘S’,H:‘T’,I:‘I’},
+{A:‘I’,B:‘L’,C:‘S’,D:‘T’,E:‘J’,F:‘T’,G:‘Z’,H:‘O’,I:‘I’},
+{A:‘O’,B:‘S’,C:‘T’,D:‘J’,E:‘T’,F:‘L’,G:‘Z’,H:‘O’,I:‘I’},
+{A:‘T’,B:‘T’,C:‘J’,D:‘L’,E:‘Z’,F:‘O’,G:‘S’,H:‘Z’,I:‘I’},
+{A:‘S’,B:‘T’,C:‘I’,D:‘I’,E:‘T’,F:‘L’,G:‘J’,H:‘Z’,I:‘O’},
+{A:‘S’,B:‘T’,C:‘T’,D:‘L’,E:‘Z’,F:‘O’,G:‘J’,H:‘Z’,I:‘I’},
+{A:‘S’,B:‘Z’,C:‘T’,D:‘L’,E:‘I’,F:‘O’,G:‘J’,H:‘T’,I:‘I’},
+{A:‘Z’,B:‘T’,C:‘J’,D:‘I’,E:‘L’,F:‘O’,G:‘S’,H:‘T’,I:‘I’},
+{A:‘L’,B:‘S’,C:‘T’,D:‘I’,E:‘T’,F:‘O’,G:‘Z’,H:‘J’,I:‘I’},
+{A:‘L’,B:‘S’,C:‘T’,D:‘J’,E:‘I’,F:‘T’,G:‘Z’,H:‘O’,I:‘I’},
+{A:‘L’,B:‘S’,C:‘Z’,D:‘T’,E:‘O’,F:‘J’,G:‘T’,H:‘I’,I:‘I’},
+];
+
+let PROOF_MODE = false; // triple-tap LEVEL to toggle debug/hint mode
+let AUTO_PLAY  = true;  // autoplay on by default
+let AUTO_SPEED = 5;     // 1=slow, 11=ludicrous (1-frame skipping)
+let puzzleTargets = []; // [{k,rot,x,dropY}] correct placement for each puzzle piece
+
+let puzzleQueue = [];
+let puzzleActive = false;
+let puzzleWellCol = 9;
+
+function buildPuzzleQueue(){
+const si = Math.random()*PUZZLE_GRIDS.length|0;
+const mirror = Math.random()<0.5;
+const rawGrid = PUZZLE_GRIDS[si];
+// When mirroring, S↔Z and J↔L (chirality flips)
+const mirrorType = {I:‘I’,O:‘O’,T:‘T’,S:‘Z’,Z:‘S’,J:‘L’,L:‘J’};
+const baseTypeMap = PUZZLE_PIECE_TYPES[si];
+const typeMap = mirror
+? Object.fromEntries(Object.entries(baseTypeMap).map(([k,v])=>[k,mirrorType[v]]))
+: baseTypeMap;
+puzzleWellCol = mirror ? 0 : 9;
+const BOARD_PUZZLE_TOP = 21; // board has 25 rows, puzzle fills bottom 4 = rows 21-24
+
+const grid = rawGrid.map(row => mirror ? row.split(’’).reverse().join(’’) : row);
+const g = grid.map(row=>row.split(’’));
+const PROWS=4, PCOLS=9;
+// If well is on left, puzzle occupies cols 1-9; if right, cols 0-8
+const colOffset = mirror ? 1 : 0;
+
+function getPieceCells(gg){
+const pc={};
+for(let r=0;r<PROWS;r++) for(let c=0;c<PCOLS;c++){
+const ch=gg[r][c];
+if(ch!==’.’){if(!pc[ch])pc[ch]=[];pc[ch].push([r,c]);}
+}
+return pc;
+}
+
+function pullable(gg){
+const pc=getPieceCells(gg);
+// Pull from BOTTOM: piece is free if nothing below it belongs to another piece
+// This gives bottom-up deal order so gravity stacks correctly
+return Object.keys(pc).filter(lbl=>{
+for(const[r,c] of pc[lbl])
+if(r<PROWS-1 && gg[r+1][c]!==’.’ && gg[r+1][c]!==lbl) return false;
+return true;
+});
+}
+
+// Find which NRS rotation matches a set of cells
+function findRotX(k, cells){
+const minr=Math.min(…cells.map(([r])=>r));
+const minc=Math.min(…cells.map(([,c])=>c));
+const norm=cells.map(([r,c])=>`${r-minr},${c-minc}`).sort().join(’|’);
+for(let ri=0;ri<NRS[k].length;ri++){
+const rot=NRS[k][ri];
+const rn=[];
+for(let r=0;r<rot.length;r++) for(let c=0;c<rot[r].length;c++)
+if(rot[r][c]) rn.push(`${r},${c}`);
+if(rn.sort().join(’|’)===norm) return{rot:ri, x:minc+colOffset};
+}
+return{rot:0, x:minc+colOffset};
+}
+
+const seq=[], targets=[];
+while(true){
+const avail=pullable(g);
+if(!avail.length) break;
+const chosen=avail[Math.random()*avail.length|0];
+const cells=getPieceCells(g)[chosen];
+const k=typeMap[chosen];
+const{rot,x}=findRotX(k,cells);
+const minr=Math.min(…cells.map(([r])=>r));
+const dropY=minr+BOARD_PUZZLE_TOP;
+seq.push({k, rgb:[…PTYPES[k].rgb]});
+targets.push({k, rot, x, dropY});
+for(let r=0;r<PROWS;r++) for(let c=0;c<PCOLS;c++)
+if(g[r][c]===chosen) g[r][c]=’.’;
+}
+
+if(seq.length!==9){ puzzleActive=false; return; }
+
+// 10th piece: I-piece only if the well column will be completely empty after
+// the 9 puzzle pieces are placed. The puzzle fills exactly 9 cols so the well
+// col (0 or 9) is always untouched — but verify col is in bounds just in case.
+// Also: if by some freak the player placed a previous piece in the well col
+// (only possible if they ignored the hint), fall back to random.
+const tetrisPossible = (puzzleWellCol >= 0 && puzzleWellCol < COLS);
+
+if(tetrisPossible){
+seq.push({k:‘I’, rgb:[…PTYPES.I.rgb]});
+// Target will be resolved at deal time against live board (see mkPiece)
+targets.push({k:‘I’, rot:1, x:puzzleWellCol, dropY:BOARD_PUZZLE_TOP});
+} else {
+const rk=PK.filter(k=>k!==‘I’)[Math.random()*6|0];
+seq.push({k:rk, rgb:[…PTYPES[rk].rgb]});
+targets.push(null); // no hint — normal AI takes over
+}
+
+puzzleQueue = seq;
+puzzleTargets = targets;
+puzzleActive = true;
+}
+
+function mkPiece(){
+if(puzzleActive && puzzleQueue.length>0){
+const p=puzzleQueue.shift();
+if(puzzleQueue.length===0) puzzleActive=false;
+return{k:p.k,rot:0,c:NRS[p.k][0].map(r=>[…r]),rgb:p.rgb};
+}
+const k=PK[Math.random()*PK.length|0];
+return{k,rot:0,c:NRS[k][0].map(r=>[…r]),rgb:[…PTYPES[k].rgb]};
+}
+
+// Called in spawn() after cur is set — if cur is the puzzle I-piece,
+// verify the board (with all 9 pieces now placed) still allows a Tetris.
+// If not, silently swap cur to a random non-I piece.
+function verifyTetrisPiece(){
+// Called right after nxt is fetched — if nxt is the puzzle I-piece,
+// check NOW (8 pieces on board) whether a Tetris will be possible.
+// We check one piece early so the preview box never shows the wrong piece.
+if(!nxt || nxt.k!==‘I’) return;
+if(!puzzleTargets.length) return;
+// Only apply to the last target (the Tetris well piece, targets.length===1)
+if(puzzleTargets.length!==1) return;
+const PUZZLE_TOP = ROWS - 4;
+// Check rows above puzzle zone are clear
+const nothingAbove = board.slice(0, PUZZLE_TOP).every(row => row.every(v => !v));
+// Check at least one full-column well exists in puzzle rows
+const hasWell = Array.from({length:COLS},(_,c)=>c)
+.some(c => board.slice(PUZZLE_TOP).every(row => !row[c]));
+if(!nothingAbove || !hasWell){
+const dbg=document.getElementById(‘proof-debug’);
+if(dbg&&PROOF_MODE) dbg.textContent+=`\n⚠ Tetris blocked — swapping I to random`;
+const rk = PK.filter(k=>k!==‘I’)[Math.random()*6|0];
+nxt = {k:rk, rot:0, c:NRS[rk][0].map(r=>[…r]), rgb:[…PTYPES[rk].rgb]};
+if(puzzleTargets.length>0) puzzleTargets[0]=null;
+}
+}
+
+// NRS rotation: look up the next state from the pre-defined table.
+// Direction: 1=CW, -1=CCW
+function rotNRS(piece,d=1){
+const states=NRS[piece.k];
+const next=((piece.rot+(d===1?1:3))%4);
+return{…piece,rot:next,c:states[next].map(r=>[…r])};
+}
+
+// Legacy rotMat kept for BFS/evalP internals that build rotation arrays
+function rotMat(m,d=1){
+const R=m.length,C=m[0].length;
+if(d===1){const o=Array.from({length:C},()=>Array(R).fill(0));for(let r=0;r<R;r++)for(let c=0;c<C;c++)o[c][R-1-r]=m[r][c];return o}
+else{const o=Array.from({length:C},()=>Array(R).fill(0));for(let r=0;r<R;r++)for(let c=0;c<C;c++)o[C-1-c][r]=m[r][c];return o}
+}
+
+function isOk(c,bx,by,b=board){
+for(let r=0;r<c.length;r++)for(let cc=0;cc<c[r].length;cc++){
+if(!c[r][cc])continue;
+const nx=bx+cc,ny=by+r;
+if(nx<0||nx>=COLS||ny>=ROWS)return false;
+if(ny>=0&&b[ny][nx])return false;
+}return true;
+}
+
+function ghostY(){let g=cy;while(isOk(cur.c,cx,g+1))g++;return g}
+
+function spawn(){
+cur=nxt||mkPiece();nxt=mkPiece();
+
+// Spawn-time scoring-hole check: did the previous clear create scoring holes
+// via collapse? If so alert the player now rather than waiting for next placement.
+const spawnScoringHoles=countScoringHoles(board);
+if(spawnScoringHoles>currentScoringHoles){
+sndBonusReset();
+piecePot=0;
+_lastScoringHoleCheck=false;
+} else if(spawnScoringHoles<currentScoringHoles){
+sndBubblePop();
+}
+currentScoringHoles=spawnScoringHoles;
+updateHoleDisplay(spawnScoringHoles);
+
+// Check if the upcoming I-piece (now in nxt preview) is still valid.
+// Run while 8 pieces are on the board so the preview never shows wrong piece.
+verifyTetrisPiece();
+
+const pw=cur.c[0].length;
+cx = pw===4 ? 3 : pw===2 ? 4 : 3;
+cy=0;
+
+if(!isOk(cur.c,cx,cy)){triggerDead();return;}
+
+sndSpawn();
+stopDrop();
+calcPlacements(true);startSelTimer();drawNext();
+}
+
+// Scan all rotations × all x positions at rows 0-1.
+// Score each valid position by how wide the clear run is above it
+// (prefers the center of the widest open corridor at the top).
+// Returns {cells, x} of the best fit, or null if truly no space.
+function _findOpenSpawn(piece){
+const k=piece.k||Object.keys(PTYPES).find(k=>
+PTYPES[k].rgb[0]===piece.rgb[0]&&PTYPES[k].rgb[1]===piece.rgb[1]&&PTYPES[k].rgb[2]===piece.rgb[2]
+)||‘I’;
+
+const topClear=Array(COLS).fill(0);
+for(let c=0;c<COLS;c++){
+if(!board[0][c]&&!board[1][c])topClear[c]=1;
+}
+
+let best=null,bestScore=-Infinity;
+
+for(let i=0;i<4;i++){
+const cells=NRS[k][i];
+const pw=cells[0].length;
+for(let x=0;x<=COLS-pw;x++){
+if(!isOk(cells,x,0))continue;
+let clearCount=0;
+for(let c=x;c<x+pw;c++)clearCount+=topClear[c]||0;
+const centerDist=Math.abs((x+pw/2)-(COLS/2));
+const score=clearCount*10 - centerDist;
+if(score>bestScore){
+bestScore=score;
+best={cells:cells.map(r=>[…r]),x,rot:i};
+}
+}
+}
+return best;
+}
+
+function placeOn(b,c,x,y,rgb){
+for(let r=0;r<c.length;r++)for(let cc=0;cc<c[r].length;cc++)
+if(c[r][cc]&&y+r>=0&&y+r<ROWS&&x+cc>=0&&x+cc<COLS)b[y+r][x+cc]=rgb;
+}
+
+// Score a board state purely on its static properties (no piece placement)
+function scoreBoard(b){
+let totalH=0,holes=0,bump=0;
+const colH=[];
+for(let c=0;c<COLS;c++){
+let h=0,block=false,colHoles=0;
+for(let r=0;r<ROWS;r++){
+if(b[r][c]){h=Math.max(h,ROWS-r);block=true;}
+else if(block)colHoles++;
+}
+colH.push(h);totalH+=h;holes+=colHoles;
+}
+for(let c=0;c<COLS-1;c++)bump+=Math.abs(colH[c]-colH[c+1]);
+
+const maxH=Math.max(…colH);
+const minH=Math.min(…colH);
+
+// Danger ramp: 0 at maxH≤12, quadratic to 1.0 at maxH=22
+const DANGER_START=12, DANGER_FULL=22;
+const danger=Math.max(0,Math.min(1,(maxH-DANGER_START)/(DANGER_FULL-DANGER_START)));
+const dangerSq=danger*danger;
+
+const heightPenalty=totalH*5*(1+dangerSq*5);
+const maxHPenalty=maxH*maxH*dangerSq*2;
+
+// ── Canyon penalty ────────────────────────────────────────────────────────
+// Any column that is 3+ rows shallower than both its neighbors is a canyon.
+// Canyons are unreachable traps — penalise hard regardless of hole count.
+// Depth beyond threshold compounds quadratically.
+let canyonPenalty=0;
+for(let c=1;c<COLS-1;c++){
+const leftDiff =colH[c-1]-colH[c];
+const rightDiff=colH[c+1]-colH[c];
+// Both neighbours are taller — it’s a valley/canyon
+if(leftDiff>0&&rightDiff>0){
+const depth=Math.min(leftDiff,rightDiff); // how deep relative to shorter neighbour
+if(depth>=2) canyonPenalty+=depth*depth*30;
+}
+}
+
+// ── Height variance penalty ───────────────────────────────────────────────
+// High variance means uneven skyline — hard to fill cleanly.
+// Penalise (max-min) spread, scaled by how tall the board is.
+const spread=maxH-minH;
+const spreadPenalty=spread>6 ? (spread-6)*(spread-6)*8*(1+dangerSq*3) : 0;
+
+// ── Isolated tall column penalty ──────────────────────────────────────────
+// A column that is 4+ taller than the average of its two neighbours
+// is a spike — it will force bad placements on future pieces.
+let spikePenalty=0;
+for(let c=0;c<COLS;c++){
+const leftH =c>0     ?colH[c-1]:colH[c];
+const rightH=c<COLS-1?colH[c+1]:colH[c];
+const neighbourAvg=(leftH+rightH)/2;
+const spike=colH[c]-neighbourAvg;
+if(spike>=4) spikePenalty+=spike*spike*12;
+}
+
+return -heightPenalty - holes*40 - bump*8 - maxHPenalty
+- canyonPenalty - spreadPenalty - spikePenalty;
+}
+
+// Clear lines on a test board, return [clearedCount, newBoard]
+function simClear(b){
+let nb=b.filter(r=>!r.every(v=>v));
+const cl=ROWS-nb.length;
+while(nb.length<ROWS)nb.unshift(Array(COLS).fill(null));
+return[cl,nb];
+}
+
+// Best score achievable for `piece` on board `b`, starting from row 0
+function bestNextScore(piece,b){
+let best=-Infinity;
+const k=piece.k||Object.keys(PTYPES).find(k=>
+PTYPES[k].rgb[0]===piece.rgb[0]&&PTYPES[k].rgb[1]===piece.rgb[1]&&PTYPES[k].rgb[2]===piece.rgb[2]
+)||‘I’;
+const rots=NRS[k].map(r=>r.map(row=>[…row]));
+
+// Activate hole-aware lookahead only when buried cells exist.
+// Clean board = Tetris-prep strategy dominates, no interference.
+const buriedOnB=countBuriedCells(b);
+const holeMode=buriedOnB>0;
+
+const evalPos=(cc,x,gy)=>{
+const tb2=b.map(r=>[…r]);
+placeOn(tb2,cc,x,gy,piece.rgb);
+const[cl2,nb2]=simClear(tb2);
+let sc=cl2*800+scoreBoard(nb2);
+if(holeMode){
+const bBefore=buriedOnB;
+const bAfter=countBuriedCells(nb2);
+const bDelta=bAfter-bBefore;
+sc+=bDelta<0
+?(-bDelta)*HOLE_REDUCE_BONUS
+:bDelta>0?(-bDelta)*HOLE_CREATE_PENALTY:0;
+sc-=bAfter*HOLE_EXIST_PENALTY;
+}
+return sc;
+};
+
+// Always evaluate straight drops
+for(let rot=0;rot<4;rot++){
+const cc=rots[rot];
+for(let x=0;x<=COLS-cc[0].length;x++){
+if(!isOk(cc,x,0,b))continue;
+let gy=0;while(isOk(cc,x,gy+1,b))gy++;
+const sc=evalPos(cc,x,gy);
+if(sc>best)best=sc;
+}
+}
+
+// BFS slide lookahead — only when holes exist and need filling
+if(holeMode){
+try{
+const slides=bfsAllReachable(k,rots,b);
+for(const{x,rot,dropY}of slides){
+if(!rots[rot]||!rots[rot][0])continue;
+const sc=evalPos(rots[rot],x,dropY)+slideBonus(1);
+if(sc>best)best=sc;
+}
+}catch(e){/* lookahead is best-effort */}
+}
+
+return best===-Infinity?scoreBoard(b):best;
+}
+
+function evalP(cells,x,y){
+if(!cur)return -Infinity;
+const tb=board.map(r=>[…r]);
+placeOn(tb,cells,x,y,cur.rgb);
+const[cl,nb]=simClear(tb);
+
+const curScore=cl*800+scoreBoard(nb);
+const nextScore=nxt?bestNextScore(nxt,nb):0;
+
+// AI evaluation uses countBuriedCells — the landscape messiness metric.
+// This correctly penalises reachable overhangs too, since they still
+// constrain future placement options even if a piece can slide in.
+const buriedBefore=countBuriedCells(board);
+const buriedAfter =countBuriedCells(nb);
+const buriedDelta =buriedAfter-buriedBefore;
+
+const buriedScore = buriedDelta<0
+? (-buriedDelta)*HOLE_REDUCE_BONUS    // uncovering cells: reward
+: buriedDelta>0
+? (-buriedDelta)*HOLE_CREATE_PENALTY  // burying new cells: penalty
+: 0;
+
+// Continuous pressure per buried cell — always incentivises cleanup
+const buriedExistScore=-buriedAfter*HOLE_EXIST_PENALTY;
+
+// Permanent holes: cells no piece can ever cover — catastrophic penalty
+// Only compute when buried cells exist (expensive BFS, skip when clean)
+let permanentScore=0;
+if(buriedAfter>0){
+const permBefore=countPermanentHoles(board);
+const permAfter =countPermanentHoles(nb);
+const permDelta =permAfter-permBefore;
+if(permDelta>0) permanentScore=-permDelta*PERMANENT_HOLE_PENALTY;
+else if(permDelta<0) permanentScore=(-permDelta)*HOLE_REDUCE_BONUS*1.5;
+}
+
+// Gap-fill bonus (slide-accessible cavity match)
+const gapBonus=gapFillBonus(cells,x,y);
+
+// Tetris-prep bonus/penalty (fades with danger)
+const prepScore=tetrisPrepScore(cells,x);
+
+return curScore + nextScore*0.4 + buriedScore + buriedExistScore
++ permanentScore + gapBonus + prepScore;
+}
+
+// ─── TETRIS-PREP STRATEGY ────────────────────────────────────────────────────
+const TETRIS_PREP_BONUS  = 12000;
+const TETRIS_PREP_PENALTY= 25000;
+const HOLE_REDUCE_BONUS  = 40000;  // per buried cell eliminated
+const HOLE_CREATE_PENALTY= 60000;  // per new buried cell created
+const HOLE_EXIST_PENALTY =  8000;  // per buried cell still on board
+const PERMANENT_HOLE_PENALTY=120000; // per cell no piece can ever reach — near-fatal
+const SLIDE_BONUS        =  8000;
+const SLIDE_HOLE_PENALTY = 60000;
+
+// Slide bonus scales with lateral distance: deeper slides earn more
+function slideBonus(dist){
+if(dist<=1)return SLIDE_BONUS;
+if(dist===2)return SLIDE_BONUS*1.6;
+return SLIDE_BONUS*2;
+}
+
+let tetrisPrepCol   = -1;
+let tetrisPrepActive= false;
+
+// Count buried empty cells on board b.
+// A hole is any empty cell (row r, col c) where some filled cell exists at row < r in col c.
+// ── THREE DISTINCT HOLE CONCEPTS ─────────────────────────────────────────────
+//
+// countBuriedCells(b)   — column scan: any empty cell with a filled cell above
+//                         it in the same column. Fast. Used by AI evaluation
+//                         (scoreBoard, evalP) as a landscape messiness metric.
+//                         Does NOT distinguish reachable from permanently trapped.
+//
+// countScoringHoles(b)  — flood-fill from top: empty cells with no connected
+//                         path to open sky. Drives piecePot reset, fractional
+//                         awards, and the Holes display. An overhang you CAN
+//                         slide into is NOT a scoring hole.
+//
+// countPermanentHoles(b)— BFS piece reachability: buried cells that CANNOT be
+//                         covered by any piece in any rotation via any legal
+//                         move sequence. Truly unrecoverable. Used as a heavy
+//                         penalty in evalP.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function countBuriedCells(b){
+let h=0;
+for(let c=0;c<COLS;c++){
+let blocked=false;
+for(let r=0;r<ROWS;r++){
+if(b[r][c])blocked=true;
+else if(blocked)h++;
+}
+}
+return h;
+}
+
+// countScoringHoles: flood-fill from open sky. Drives display + award economics.
+// A cell reachable via any lateral path is NOT a scoring hole.
+function countScoringHoles(b){
+const visited=new Uint8Array(ROWS*COLS);
+const idx=(r,c)=>r*COLS+c;
+const queue=[];
+
+// Seed from every empty cell in row 0
+for(let c=0;c<COLS;c++){
+if(!b[0][c]){visited[idx(0,c)]=1;queue.push([0,c]);}
+}
+
+// Flood fill through all connected empty cells
+let qi=0;
+while(qi<queue.length){
+const[r,c]=queue[qi++];
+const nb=[[r-1,c],[r+1,c],[r,c-1],[r,c+1]];
+for(const[nr,nc] of nb){
+if(nr<0||nr>=ROWS||nc<0||nc>=COLS)continue;
+if(b[nr][nc])continue; // filled cell — wall
+const k=idx(nr,nc);
+if(!visited[k]){visited[k]=1;queue.push([nr,nc]);}
+}
+}
+
+// Any empty cell that wasn’t reached is a true hole
+let h=0;
+for(let r=0;r<ROWS;r++)
+for(let c=0;c<COLS;c++)
+if(!b[r][c]&&!visited[idx(r,c)])h++;
+return h;
+}
+
+// True only when the LIVE board has zero holes (original simple definition).
+// countPermanentHoles: BFS piece reachability check.
+// For each buried empty cell, tests whether ANY piece type in ANY rotation
+// can physically reach a landing position that covers that cell.
+// Cells that fail this test are permanently unrecoverable — no future piece
+// can ever fill them. Used as a heavy penalty in evalP only (expensive).
+function countPermanentHoles(b){
+// First collect all buried empty cells (column-scan style)
+const buried=[];
+for(let c=0;c<COLS;c++){
+let blocked=false;
+for(let r=0;r<ROWS;r++){
+if(b[r][c])blocked=true;
+else if(blocked)buried.push([r,c]);
+}
+}
+if(!buried.length)return 0;
+
+// For each piece type + rotation, precompute all cells it covers at each
+// possible landing position, and mark those cells as coverable.
+const coverable=new Set();
+for(const k of PK){
+for(let rot=0;rot<4;rot++){
+const cc=NRS[k][rot];
+if(!cc||!cc[0])continue;
+const ph=cc.length, pw=cc[0].length;
+for(let x=0;x<=COLS-pw;x++){
+// Find all reachable landing positions for this piece on board b
+// Use straight drops plus BFS slides
+const landings=[];
+if(isOk(cc,x,0,b)){
+let gy=0; while(isOk(cc,x,gy+1,b))gy++;
+landings.push(gy);
+}
+// Also check one row above all filled positions for slides
+// (lightweight approximation — full BFS per buried cell is too slow)
+for(const gy of landings){
+for(let r=0;r<ph;r++)
+for(let c2=0;c2<pw;c2++)
+if(cc[r][c2])coverable.add(`${gy+r},${x+c2}`);
+}
+}
+}
+}
+
+// A buried cell is permanent if nothing can ever cover it
+let permanent=0;
+for(const[r,c] of buried){
+if(!coverable.has(`${r},${c}`))permanent++;
+}
+return permanent;
+}
+
+// boardIsHoleFree: uses countBuriedCells — the AI strategy metric.
+// This is intentionally NOT countScoringHoles — we want Tetris-prep
+// to activate only when the board has no covered cells at all.
+function boardIsHoleFree(){return countBuriedCells(board)===0;}
+
+function updateTetrisPrepStrategy(){
+// Must be completely hole-free
+if(!boardIsHoleFree()){tetrisPrepActive=false;tetrisPrepCol=-1;return;}
+
+// Pick emptier edge column as the Tetris well
+const leftH =_colTopRow(0);
+const rightH=_colTopRow(9);
+const reserveCol=leftH>=rightH?0:9;
+
+// Every piece type must be placeable entirely within the 9 non-reserved columns
+const testCols=Array.from({length:9},(_,i)=>reserveCol===0?i+1:i);
+for(const k of PK){
+if(!_pieceCanLandIn(k,testCols)){
+tetrisPrepActive=false;tetrisPrepCol=-1;
+return;
+}
+}
+
+tetrisPrepActive=true;
+tetrisPrepCol=reserveCol;
+}
+
+function _colTopRow(c){
+for(let r=0;r<ROWS;r++)if(board[r][c])return r;
+return ROWS;
+}
+
+function _pieceCanLandIn(k,allowedCols){
+const allowSet=new Set(allowedCols);
+for(let rot=0;rot<4;rot++){
+const cc=NRS[k][rot];
+for(let x=0;x<COLS;x++){
+if(!isOk(cc,x,0))continue;
+let ok=true;
+for(let r=0;r<cc.length&&ok;r++)
+for(let c=0;c<cc[r].length&&ok;c++)
+if(cc[r][c]&&!allowSet.has(x+c))ok=false;
+if(ok)return true;
+}
+}
+return false;
+}
+
+function tetrisPrepScore(cells,px){
+if(!tetrisPrepActive)return 0;
+
+// Measure current board danger — same scale as scoreBoard
+const DANGER_START=10, DANGER_FULL=20;
+let maxH=0;
+for(let c=0;c<COLS;c++){
+for(let r=0;r<ROWS;r++){
+if(board[r][c]){maxH=Math.max(maxH,ROWS-r);break;}
+}
+}
+const danger=Math.max(0,Math.min(1,(maxH-DANGER_START)/(DANGER_FULL-DANGER_START)));
+// Tetris-prep fades linearly: full bonus below danger 0.3, zero above danger 0.7
+const prepWeight=Math.max(0,Math.min(1,(0.7-danger)/0.4));
+if(prepWeight<=0)return 0;
+
+let invades=false;
+outer:for(let r=0;r<cells.length;r++)for(let c=0;c<cells[r].length;c++){
+if(cells[r][c]&&px+c===tetrisPrepCol){invades=true;break outer;}
+}
+const raw=invades?-TETRIS_PREP_PENALTY:TETRIS_PREP_BONUS;
+return raw*prepWeight;
+}
+
+// A “gap” is a cavity that can only be filled by sliding a piece in laterally —
+// not by dropping straight down from the top. Each gap has a specific piece
+// type and rotation that fits it. We keep a live wishlist rebuilt after each
+// lock, and give a large bonus when the current piece can reach a gap.
+
+// All piece shapes in all rotations, keyed by type.
+// Use NRS tables directly — no rotMat needed here.
+const GAP_PIECES=(()=>{
+const shapes={};
+for(const k of PK){
+const seen=new Set();
+shapes[k]=[];
+for(let i=0;i<4;i++){
+const key=NRS[k][i].map(r=>r.join(’’)).join(’|’);
+if(!seen.has(key)){seen.add(key);shapes[k].push({rot:i,c:NRS[k][i].map(r=>[…r])});}
+}
+}
+return shapes;
+})();
+
+// BFS reachability: can `cells` (a piece shape) reach position (targetX, targetY)
+// on board `b`, starting from row 0 at every column?
+// State: (x, y, rotation_index). We treat all 4 rotations as reachable via
+// rotate-in-place moves (only where the board allows it).
+// Returns true if the piece can reach the target state via valid moves.
+function canReach(pieceKey,targetRot,targetX,targetY,b){
+const rots=NRS[pieceKey].map(r=>r.map(row=>[…row]));
+
+const VSIZE=COLS*ROWS*4;
+const encode=(x,y,rot)=>(x*ROWS+y)*4+rot;
+const visited=new Uint8Array(VSIZE);
+
+const queue=[];
+for(let rot=0;rot<4;rot++){
+const cells=rots[rot];
+if(!cells||!cells[0]||!cells[0].length)continue;
+const pw=cells[0].length;
+for(let x=0;x<=COLS-pw;x++){
+if(isOk(cells,x,0,b)){
+const key=encode(x,0,rot);
+if(key>=0&&key<VSIZE&&!visited[key]){visited[key]=1;queue.push([x,0,rot]);}
+}
+}
+}
+
+let qi=0;
+while(qi<queue.length){
+const[x,y,rot]=queue[qi++];
+if(rot===targetRot&&x===targetX&&y===targetY)return true;
+
+```
+const cells=rots[rot];
+if(!cells||!cells[0]||!cells[0].length)continue;
+const pw=cells[0].length;
+
+// Move down
+if(y+1<ROWS&&isOk(cells,x,y+1,b)){
+  const key=encode(x,y+1,rot);
+  if(key>=0&&key<VSIZE&&!visited[key]){visited[key]=1;queue.push([x,y+1,rot]);}
+}
+// Move left
+if(x>0&&isOk(cells,x-1,y,b)){
+  const key=encode(x-1,y,rot);
+  if(key>=0&&key<VSIZE&&!visited[key]){visited[key]=1;queue.push([x-1,y,rot]);}
+}
+// Move right
+if(x+pw<COLS&&isOk(cells,x+1,y,b)){
+  const key=encode(x+1,y,rot);
+  if(key>=0&&key<VSIZE&&!visited[key]){visited[key]=1;queue.push([x+1,y,rot]);}
+}
+// Rotate CW
+const rotCW=(rot+1)%4;
+const cCW=rots[rotCW];
+if(cCW&&cCW[0]&&cCW[0].length&&x+cCW[0].length<=COLS&&isOk(cCW,x,y,b)){
+  const key=encode(x,y,rotCW);
+  if(key>=0&&key<VSIZE&&!visited[key]){visited[key]=1;queue.push([x,y,rotCW]);}
+}
+// Rotate CCW
+const rotCCW=(rot+3)%4;
+const cCCW=rots[rotCCW];
+if(cCCW&&cCCW[0]&&cCCW[0].length&&x+cCCW[0].length<=COLS&&isOk(cCCW,x,y,b)){
+  const key=encode(x,y,rotCCW);
+  if(key>=0&&key<VSIZE&&!visited[key]){visited[key]=1;queue.push([x,y,rotCCW]);}
+}
+```
+
+}
+return false;
+}
+
+// Scan the board for all slide-only-fillable gaps and which piece fits each.
+// A placement (pieceKey, rot, x, dropY) is a gap if:
+//   1. The piece fits at (x, dropY) — it’s a legal resting position
+//   2. The piece CANNOT reach (x, dropY) by dropping straight from row 0
+//      (i.e., the direct-drop landing y is LESS than dropY — something blocks above)
+//   3. A BFS from all entry points CAN still reach (x, dropY) via lateral moves
+// This exactly captures “must slide in horizontally to reach the cavity.”
+let gapList=[];
+
+function rebuildGapList(){
+gapList=[];
+if(!board)return;
+
+for(const k of PK){
+for(const{rot,c}of GAP_PIECES[k]){
+const ph=c.length, pw=c[0].length;
+for(let x=0;x<=COLS-pw;x++){
+// Where does a straight drop land?
+if(!isOk(c,x,0))continue; // blocked at very top — can’t enter
+let directY=0;
+while(isOk(c,x,directY+1))directY++;
+
+```
+    // Now check every position BELOW the direct landing
+    // (directY+1 onward) — these can only be reached by lateral navigation
+    for(let ty=directY+1;ty<=ROWS-ph;ty++){
+      if(!isOk(c,x,ty))break; // piece doesn't fit here, deeper won't either
+
+      // Piece fits here but can't be reached by straight drop.
+      // Check full BFS reachability.
+      if(canReach(k,rot,x,ty,board)){
+        // Avoid duplicates
+        if(!gapList.some(g=>g.pieceKey===k&&g.rot===rot&&g.x===x&&g.dropY===ty))
+          gapList.push({pieceKey:k,rot,x,dropY:ty,reachable:true});
+      }
+    }
+  }
+}
+```
+
+}
+}
+
+// How much bonus a gap-fill placement earns.
+// Large enough to override normal heuristic when the piece is THE one we want.
+const GAP_FILL_BONUS=18000;
+
+// Check if a placement (cells, x, dropY) for the current piece fills any
+// known reachable gap. Returns the total bonus earned.
+function gapFillBonus(cells,x,dropY){
+if(!cur||!gapList.length)return 0;
+const k=cur.k||Object.keys(PTYPES).find(k=>
+PTYPES[k].rgb[0]===cur.rgb[0]&&PTYPES[k].rgb[1]===cur.rgb[1]&&PTYPES[k].rgb[2]===cur.rgb[2]
+);
+if(!k)return 0;
+
+let bonus=0;
+for(const gap of gapList){
+if(!gap.reachable)continue;
+if(gap.pieceKey!==k)continue;
+// Same piece type — check if this placement footprint overlaps the gap
+// (i.e., the piece lands in or near the gap position)
+if(gap.x===x&&gap.dropY===dropY){
+bonus+=GAP_FILL_BONUS;
+}
+}
+return bonus;
+}
+
+// Returns a Set of “row,col” strings occupied by a placement
+function footprint(cells,x,y){
+const fp=new Set();
+for(let r=0;r<cells.length;r++)
+for(let c=0;c<cells[r].length;c++)
+if(cells[r][c])fp.add(`${y+r},${x+c}`);
+return fp;
+}
+
+function setsOverlap(a,b){for(const k of a)if(b.has(k))return true;return false}
+
+// ─── BFS SLIDE DISCOVERY ─────────────────────────────────────────────────────
+// For the current piece, find ALL reachable landing positions — not just
+// straight drops and single-step slides. Uses the same BFS as canReach but
+// returns every (x, rot, dropY) that is:
+//   (a) a legal resting state (piece can’t move down further)
+//   (b) reachable from the top
+//   (c) NOT reachable by a straight vertical drop from x at row 0
+//       (i.e., it truly requires lateral navigation to reach)
+// Also returns the minimum number of lateral moves required (slide distance)
+// so deeper slides earn more bonus.
+function bfsAllReachable(pieceKey,rots,b=board){
+const isOkB=(c,x,y)=>isOk(c,x,y,b);
+// Visited array sized for max possible encode value: (COLS*(ROWS+4)+ROWS)*4
+// Extra headroom prevents out-of-bounds if a rotation has unexpected dimensions
+const VSIZE=(COLS*ROWS+ROWS)*4+16;
+const encode=(x,y,rot)=>(x*ROWS+y)*4+rot;
+const visited=new Uint8Array(VSIZE);
+const dist=new Uint16Array(VSIZE).fill(9999);
+
+const queue=[];
+for(let rot=0;rot<4;rot++){
+const cells=rots[rot];
+if(!cells||!cells[0]||!cells[0].length)continue;
+const pw=cells[0].length;
+for(let x=0;x<=COLS-pw;x++){
+if(isOkB(cells,x,0)){
+const key=encode(x,0,rot);
+if(key>=0&&key<VSIZE&&!visited[key]){visited[key]=1;dist[key]=0;queue.push([x,0,rot,0]);}
+}
+}
+}
+
+// Map of “resting positions only reachable via slide”: key → {x,rot,dropY,slideDist}
+const slideOnly=new Map();
+// Map of ALL resting positions (to compare against)
+const allRest=new Map();
+
+let qi=0;
+while(qi<queue.length){
+const[x,y,rot,lateral]=queue[qi++];
+const cells=rots[rot];
+if(!cells||!cells[0]||!cells[0].length)continue;
+const ph=cells.length,pw=cells[0].length;
+
+```
+const resting=!isOkB(cells,x,y+1);
+if(resting){
+  const rk=`${x},${rot},${y}`;
+  if(!allRest.has(rk)||allRest.get(rk).slideDist>lateral)
+    allRest.set(rk,{x,rot,dropY:y,slideDist:lateral});
+}
+
+if(y+1<ROWS&&isOkB(cells,x,y+1)){
+  const key=encode(x,y+1,rot);
+  if(key>=0&&key<VSIZE&&(!visited[key]||dist[key]>lateral)){visited[key]=1;dist[key]=lateral;queue.push([x,y+1,rot,lateral]);}
+}
+if(x>0&&isOkB(cells,x-1,y)){
+  const key=encode(x-1,y,rot);
+  const nd=lateral+1;
+  if(key>=0&&key<VSIZE&&(!visited[key]||dist[key]>nd)){visited[key]=1;dist[key]=nd;queue.push([x-1,y,rot,nd]);}
+}
+if(x+pw<COLS&&isOkB(cells,x+1,y)){
+  const key=encode(x+1,y,rot);
+  const nd=lateral+1;
+  if(key>=0&&key<VSIZE&&(!visited[key]||dist[key]>nd)){visited[key]=1;dist[key]=nd;queue.push([x+1,y,rot,nd]);}
+}
+const rotCW=(rot+1)%4;
+const cellsCW=rots[rotCW];
+if(cellsCW&&cellsCW[0]&&cellsCW[0].length&&x+cellsCW[0].length<=COLS&&isOkB(cellsCW,x,y)){
+  const key=encode(x,y,rotCW);
+  if(key>=0&&key<VSIZE&&(!visited[key]||dist[key]>lateral)){visited[key]=1;dist[key]=lateral;queue.push([x,y,rotCW,lateral]);}
+}
+const rotCCW=(rot+3)%4;
+const cellsCCW=rots[rotCCW];
+if(cellsCCW&&cellsCCW[0]&&cellsCCW[0].length&&x+cellsCCW[0].length<=COLS&&isOkB(cellsCCW,x,y)){
+  const key=encode(x,y,rotCCW);
+  if(key>=0&&key<VSIZE&&(!visited[key]||dist[key]>lateral)){visited[key]=1;dist[key]=lateral;queue.push([x,y,rotCCW,lateral]);}
+}
+```
+
+}
+
+// Now find which resting positions require lateral movement (slide-only)
+const straightDrops=new Set();
+for(let rot=0;rot<4;rot++){
+const cells=rots[rot];
+if(!cells||!cells[0]||!cells[0].length)continue;
+const pw=cells[0].length;
+for(let x=0;x<=COLS-pw;x++){
+if(!isOkB(cells,x,0))continue;
+let gy=0;while(isOkB(cells,x,gy+1))gy++;
+straightDrops.add(`${x},${rot},${gy}`);
+}
+}
+
+const result=[];
+for(const[rk,info]of allRest){
+if(!straightDrops.has(rk)&&info.slideDist>0){
+result.push(info); // genuine slide-only landing
+}
+}
+return result;
+}
+
+function slideAdjustedBonus(cells,x,gy,dist){
+if(dist<=0||!cur)return 0;
+const tb=board.map(r=>[…r]);
+placeOn(tb,cells,x,gy,cur?cur.rgb:[255,255,255]);
+const[,nb]=simClear(tb);
+const holesBefore=countScoringHoles(board);
+const holesAfter=countScoringHoles(nb);
+const holeDelta=holesAfter-holesBefore;
+
+if(holeDelta>0){
+return -holeDelta*SLIDE_HOLE_PENALTY;
+}
+// Hole-neutral or hole-reducing — full slide bonus plus reduction reward
+return slideBonus(dist) + (-holeDelta)*HOLE_REDUCE_BONUS;
+}
+
+// Build all candidates for the current piece and store in allCands.
+// fresh=true resets the “already shown” set (called on new piece spawn).
+function calcPlacements(fresh=false){
+if(!cur)return;
+if(fresh){shownFootprints=new Set();playerHasMoved=false;moveStartTime=0;}
+
+// PROOF MODE: show normal AI options but mark the correct one yellow
+// Always compute the correct puzzle target so debug mode can be toggled
+// mid-game and instantly show the hint. Visual rendering is gated on PROOF_MODE.
+if(puzzleActive && puzzleTargets.length>0 && puzzleTargets[0]!==null){
+const t=puzzleTargets[0];
+let tx=t.x, trot=t.rot;
+// Only override rotation/x for the 10th piece (the Tetris well I-piece)
+if(t.k===‘I’ && puzzleTargets.length===1){
+const PUZZLE_TOP=ROWS-4;
+const openCol=Array.from({length:COLS},(_,c)=>c)
+.find(c=>board.slice(PUZZLE_TOP).every(row=>!row[c]));
+if(openCol!==undefined){ tx=openCol; trot=1; }
+}
+const correctCells=NRS[t.k][trot].map(r=>[…r]);
+let gy=0; while(isOk(correctCells,tx,gy+1)) gy++;
+const correctFp=Array.from(footprint(correctCells,tx,gy)).sort().join(’;’);
+window._proofCorrectFp=correctFp;
+window._proofCorrectCand={c:correctCells,x:tx,rotation:trot,dropY:gy,sc:999999,slide:false,fpKey:correctFp};
+const dbg=document.getElementById(‘proof-debug’);
+if(dbg&&PROOF_MODE) dbg.textContent=`k=${t.k} rot=${trot} x=${tx} y=${gy} | targets=${puzzleTargets.length}`;
+} else {
+window._proofCorrectFp=null;
+window._proofCorrectCand=null;
+}
+
+// Build all 4 rotation states from NRS table (deduped by shape)
+const curKey=cur.k||Object.keys(PTYPES).find(k=>
+PTYPES[k].rgb[0]===cur.rgb[0]&&PTYPES[k].rgb[1]===cur.rgb[1]&&PTYPES[k].rgb[2]===cur.rgb[2]
+)||‘I’;
+const rots=NRS[curKey].map(r=>r.map(row=>[…row]));
+
+const cands=[];
+const fpSeen=new Set();
+
+const addCand=(cells,x,gy,ri,isSlide,sDist=0)=>{
+const fp=Array.from(footprint(cells,x,gy)).sort().join(’;’);
+if(fpSeen.has(fp))return; fpSeen.add(fp);
+const sc=evalP(cells,x,gy)+(isSlide?slideAdjustedBonus(cells,x,gy,sDist):0);
+cands.push({c:cells.map(r=>[…r]),x,rotation:ri,dropY:gy,sc,slide:isSlide,fpKey:fp});
+};
+
+// Straight drops
+for(let ri=0;ri<4;ri++){
+const cells=rots[ri];
+for(let x=0;x<=COLS-cells[0].length;x++){
+if(!isOk(cells,x,0))continue;
+let gy=0; while(isOk(cells,x,gy+1))gy++;
+addCand(cells,x,gy,ri,false);
+}
+}
+
+// BFS slide-only landings — finds 1-step, 2-step, mid-fall slides, all of it
+let slides=[];
+try{
+slides=bfsAllReachable(curKey,rots);
+}catch(e){console.error(‘bfsAllReachable crash:’,e);slides=[];}
+
+// Evict any straight-drop candidate whose board footprint overlaps with
+// a slide candidate — BUT only if that slide is hole-neutral or better.
+const slideCells=new Set();
+for(const{x,rot,dropY}of slides){
+try{
+if(!rots[rot]||!rots[rot][0])continue;
+const tb=board.map(r=>[…r]);
+placeOn(tb,rots[rot],x,dropY,cur?cur.rgb:[255,255,255]);
+const[,nb]=simClear(tb);
+if(countBuriedCells(nb)<=countBuriedCells(board)){
+footprint(rots[rot],x,dropY).forEach(k=>slideCells.add(k));
+}
+}catch(e){console.error(‘slide eviction crash at rot=’+rot+’ x=’+x+’ dropY=’+dropY,e);}
+}
+for(let i=cands.length-1;i>=0;i–){
+const ca=cands[i];
+if(ca.slide)continue;
+const fp=footprint(ca.c,ca.x,ca.dropY);
+let overlaps=false;
+for(const k of fp){if(slideCells.has(k)){overlaps=true;break;}}
+if(overlaps){
+fpSeen.delete(ca.fpKey);
+cands.splice(i,1);
+}
+}
+
+for(const{x,rot,dropY,slideDist}of slides){
+try{
+if(!rots[rot]||!rots[rot][0])continue;
+addCand(rots[rot],x,dropY,rot,true,slideDist);
+}catch(e){console.error(‘addCand slide crash at rot=’+rot+’ x=’+x+’ dropY=’+dropY,e);}
+}
+
+cands.sort((a,b)=>b.sc-a.sc);
+
+// Always ensure the correct puzzle candidate is one of the 4 options,
+// whether or not debug mode is on. This guarantees the lottery is always
+// fair — 1-in-4 chance of picking right on any given piece by random guessing.
+// hint:true is only set when PROOF_MODE so the star only shows then.
+if(window._proofCorrectCand){
+const cc=window._proofCorrectCand;
+const idx=cands.findIndex(c=>c.fpKey===cc.fpKey);
+if(idx>=0) cands.splice(idx,1);
+cc.hint=PROOF_MODE; // star visible only in debug mode
+cands.unshift(cc);
+fpSeen.add(cc.fpKey);
+}
+
+allCands=cands;
+applyNextOptions();
+}
+
+// Pick up to 4 non-overlapping options from allCands, skipping shownFootprints.
+// If sdCand is provided it is reserved as the first slot (straight-drop guarantee).
+function pickOptions(sdCand, sdFp){
+const chosen=[];
+const usedCells=new Set();
+
+if(sdCand){
+chosen.push(sdCand);
+footprint(sdCand.c,sdCand.x,sdCand.dropY).forEach(k=>usedCells.add(k));
+}
+
+for(const ca of allCands){
+if(chosen.length>=4)break;
+if(ca.fpKey===sdFp)continue;          // already have this one
+if(shownFootprints.has(ca.fpKey))continue;
+const fp=footprint(ca.c,ca.x,ca.dropY);
+if(!setsOverlap(fp,usedCells)){
+chosen.push(ca);
+fp.forEach(k=>usedCells.add(k));
+}
+}
+return chosen;
+}
+
+function applyNextOptions(){
+// ── TETRIS LOCK: if any candidate clears exactly 4 lines right now,
+//    show ONLY that placement — no other options, no cycling. ────────────────
+const tetrisCand=_findTetrisCand();
+if(tetrisCand){
+placements=[tetrisCand,null,null,null];
+shownFootprints.clear();
+shownFootprints.add(tetrisCand.fpKey);
+for(let i=0;i<4;i++)drawPrevBtn(i,placements[i]);
+showTetrisButton();
+return;
+}
+hideTetrisButton();
+
+// ── Compute straight-drop candidate (only after player has moved) ──────────
+let sdCand=null, sdFp=null;
+if(playerHasMoved){
+let sy=cy; while(isOk(cur.c,cx,sy+1))sy++;
+sdFp=Array.from(footprint(cur.c,cx,sy)).sort().join(’;’);
+sdCand=allCands.find(c=>c.fpKey===sdFp);
+if(!sdCand){
+sdCand={c:cur.c.map(r=>[…r]),x:cx,rotation:0,dropY:sy,
+sc:evalP(cur.c,cx,sy),slide:false,fpKey:sdFp};
+}
+}
+
+// ── Fill up to 4 slots, wrapping the shown-set if needed ──────────────────
+let chosen=pickOptions(sdCand,sdFp);
+
+if(chosen.length<(sdCand?2:1)){
+shownFootprints=new Set();
+chosen=pickOptions(sdCand,sdFp);
+}
+
+for(const ca of chosen)shownFootprints.add(ca.fpKey);
+
+chosen.sort((a,b)=>a.x-b.x);
+while(chosen.length<4)chosen.push(null);
+placements=chosen;
+for(let i=0;i<4;i++)drawPrevBtn(i,placements[i]);
+}
+
+// ── Tetris button show/hide ───────────────────────────────────────────────────
+function showTetrisButton(){
+document.getElementById(‘prow’).style.display=‘none’;
+document.getElementById(‘tetris-btn’).style.display=‘block’;
+}
+function hideTetrisButton(){
+document.getElementById(‘prow’).style.display=‘flex’;
+document.getElementById(‘tetris-btn’).style.display=‘none’;
+}
+
+// Called when the player taps the big TETRIS button
+function chooseTetris(){
+if(dead||paused||clearAnimating||!cur)return;
+const tc=_findTetrisCand();
+if(!tc)return;
+stopSelTimer();stopDrop();
+cur.c=tc.c;cx=tc.x;cy=tc.dropY;
+sndTetrisBlip();
+lock();
+}
+
+// Return the first candidate that clears exactly 4 lines, or null.
+function _findTetrisCand(){
+for(const ca of allCands){
+const tb=board.map(r=>[…r]);
+placeOn(tb,ca.c,ca.x,ca.dropY,cur?cur.rgb:[255,255,255]);
+const cl=tb.filter(r=>r.every(v=>v)).length;
+if(cl===4)return ca;
+}
+return null;
+}
+
+// Called when player taps the board outside a label — cycle to fresh set of options.
+// Blocked when a Tetris is available — no escape from that.
+function cycleOptions(){
+if(dead||paused||!allCands.length)return;
+if(_findTetrisCand())return; // Tetris is on the table — no cycling allowed
+applyNextOptions();
+}
+
+function choose(i){
+if(dead||paused||clearAnimating||!cur)return;
+const p=placements[i];if(!p)return;
+stopSelTimer();stopDrop();
+cur.c=p.c;cx=p.x;cy=p.dropY;
+lock();
+}
+
+function lock(){
+if(!cur)return; // guard against double-lock races
+stopSelTimer();stopDrop();
+sndLock();
+// Consume proof mode target for this piece
+if(puzzleTargets.length>0) puzzleTargets.shift();
+placeOn(board,cur.c,cx,cy,cur.rgb);
+cur=null; // ← hide the piece immediately so it never renders during explosion
+placements=[null,null,null,null]; // ← invalidate stale candidates immediately
+for(let i=0;i<4;i++)drawPrevBtn(i,null); // ← clear button displays now
+
+// Scan for complete rows NOW, while board is settled
+const completeRows=[];
+for(let r=ROWS-1;r>=0;r–)if(board[r].every(v=>v))completeRows.push(r);
+
+if(completeRows.length===0){
+piecesPlaced++;
+addScore(0);
+rebuildGapList();
+updateTetrisPrepStrategy();
+checkNoHoleBonus();
+spawn();scheduleDrop();
+} else {
+animateClearLines(completeRows,()=>{
+const toRemove=[];
+for(let r=ROWS-1;r>=0;r–)if(board[r].every(v=>v))toRemove.push(r);
+toRemove.sort((a,b)=>b-a);
+for(const r of toRemove)board.splice(r,1);
+for(let i=0;i<toRemove.length;i++)board.unshift(Array(COLS).fill(null));
+const cleared=toRemove.length||completeRows.length;
+piecesPlaced++;
+addScore(cleared);
+rebuildGapList();
+updateTetrisPrepStrategy();
+
+```
+  const tetrisPoints=NES_SC[Math.min(cleared,4)]*level;
+  if(cleared===4){
+    // Perfect board on move 10: board is empty after Tetris
+    const boardEmpty=board.every(row=>row.every(v=>!v));
+    if(boardEmpty&&piecesPlaced<=10){
+      score+=20490;
+      document.getElementById('sv').textContent=score;
+      sndTetrisPerfection();
+      tickerPush([`👾 ATARI OG`, `+20,490`, `≤10 PCS CLEAR`]);
+      txScore('atari-og',20490,[
+        {label:'Atari OG Bonus','value':''},
+        {label:'Perfect Tetris in <=10 pieces','value':''},
+        {label:'SF Rush 2049 tribute','value':'+20,490'},
+      ]);
+    }
+    fanfare(tetrisPoints);
+  } else {
+    // Non-Tetris clear: award hole-fractional piecePot bonus
+    awardLineClearBonus(cleared, completeRows);
+    // Break streak, reset multiplier, zero tetrisPot
+    tetrisStreak=0;
+    tetrisMultiplier=1;
+    
+    tetrisPot=0;
+    updateTBDisplay();
+  }
+  // After any line clear, reset scoring-hole check so next call
+  // treats the new board state as a fresh evaluation.
+  _lastScoringHoleCheck=false;
+
+  // Always run checkNoHoleBonus after any clear — both Tetris and non-Tetris
+  checkNoHoleBonus();
+  spawn();scheduleDrop();
+});
+```
+
+}
+}
+
+// ── EXPLOSION ANIMATION ───────────────────────────────────────────────────
+function explodeBlock(col,row,rgb){
+const[r,g,b]=rgb;
+const bx=col*CELL,by=row*CELL;
+for(let i=0;i<120;i++){
+const ang=Math.random()*Math.PI*2;
+const spd=(Math.random()*3.2+0.4)*(CELL/24);
+particles.push({
+x:bx+Math.random()*CELL,y:by+Math.random()*CELL,
+vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd,
+r,g,b,
+life:1,decay:0.022+Math.random()*0.028,
+sz:Math.random()*3+1
+});
+}
+}
+
+const COL_ORDER=[4,5,3,6,2,7,1,8,0,9];
+
+function _clearAnimMs(){
+// Two-scale speed control:
+// Speed 1-5: interpolate from 3x slower to normal (1x)
+// Speed 5-11: interpolate from normal (1x) to 10x faster
+// Base step = 50/n ms, base pause = n===4?320:130 ms
+const s=AUTO_SPEED;
+let mult;
+if(s<=5){
+// 1→5: mult goes 3.0→1.0
+mult=3.0-(s-1)*0.5;
+} else {
+// 5→11: mult goes 1.0→0.1 (10x faster = 90% reduction)
+mult=1.0-(s-5)*(0.9/6);
+}
+return mult;
+}
+
+function animateClearLines(rowIndices,onComplete){
+clearAnimating=true;
+explodedCells.clear();
+const n=rowIndices.length;
+const mult=_clearAnimMs();
+const stepMs=Math.max(2, Math.round((50/n)*mult));
+const pauseMs=Math.max(8, Math.round((n===4?320:130)*mult));
+const rowsSorted=[…rowIndices].sort((a,b)=>b-a);
+
+let step=0;
+const doStep=()=>{
+if(step>=COL_ORDER.length){
+sndLineClear(n);
+explodedCells.clear();
+setTimeout(()=>{
+clearAnimating=false;
+onComplete();
+},pauseMs);
+return;
+}
+const col=COL_ORDER[step];
+rowsSorted.forEach((row,ri)=>{
+if(board[row][col]){
+explodedCells.add(`${row},${col}`);
+explodeBlock(col,row,board[row][col]);
+sndBlockPop(ri,step);
+}
+});
+step++;
+setTimeout(doStep,stepMs);
+};
+doStep();
+}
+
+function addScore(cl){
+const prevLevel=level;
+// NES base line-clear points removed — scoring handled by T-bonus pot fractions
+lines+=cl;
+const nl=Math.floor(lines/10)+1;if(nl>level)level=nl;
+document.getElementById(‘sv’).textContent=score;
+document.getElementById(‘lv’).textContent=level;
+document.getElementById(‘lnv’).textContent=lines;
+if(score>hi){hi=score;document.getElementById(‘hv’).textContent=hi}
+if(level>prevLevel)setTimeout(sndLevelUp,cl>0?520:0);
+}
+
+// ─── CONTROLS ────────────────────────────────────────────────────────────────
+function rot(d){
+if(dead||paused||clearAnimating||!cur)return;
+const next=rotNRS(cur,d);
+const r=next.c;
+// Try center position, then kick ±1, then ±2 (allows rotating into slots)
+if(isOk(r,cx,cy)){
+cur.c=r;cur.rot=next.rot;
+} else if(isOk(r,cx-1,cy)){
+cur.c=r;cur.rot=next.rot;cx–;
+} else if(isOk(r,cx+1,cy)){
+cur.c=r;cur.rot=next.rot;cx++;
+} else if(isOk(r,cx-2,cy)){
+cur.c=r;cur.rot=next.rot;cx-=2;
+} else if(isOk(r,cx+2,cy)){
+cur.c=r;cur.rot=next.rot;cx+=2;
+} else return; // rotation genuinely blocked
+playerHasMoved=true;moveStartTime=AT;
+sndRotate();calcPlacements();scheduleDrop();
+}
+function mhz(d){
+if(dead||paused||clearAnimating||!cur)return;
+if(!isOk(cur.c,cx+d,cy))return;
+cx+=d;playerHasMoved=true;moveStartTime=AT;sndMove();calcPlacements();scheduleDrop();
+}
+function sdrop(){
+if(dead||paused||clearAnimating||!cur)return;
+if(isOk(cur.c,cx,cy+1)){cy++;score++;sndSoftDrop();document.getElementById(‘sv’).textContent=score;scheduleDrop();}
+}
+function hdrop(){
+if(dead||paused||clearAnimating||!cur)return;
+stopSelTimer();stopDrop();
+sndHardDrop();
+let dr=0;while(isOk(cur.c,cx,cy+1)){cy++;dr++}
+lock();
+}
+
+// ─── TIMERS ──────────────────────────────────────────────────────────────────
+function scheduleDrop(){
+clearInterval(dropIv);if(dead)return;
+const sp=NES_SP[Math.min(level-1,NES_SP.length-1)];
+dropIv=setInterval(()=>{
+if(paused||dead||clearAnimating||!cur)return;
+if(isOk(cur.c,cx,cy+1))cy++;
+else{stopDrop();lock();}
+},sp);
+}
+function stopDrop(){clearInterval(dropIv);}
+
+// ── Auto-play animation ───────────────────────────────────────────────────────
+// Starts immediately on spawn. Executes: rotate → strafe → drop.
+// Player can interrupt at any time by tapping a button (stopSelTimer cancels).
+let _autoIv=null;
+let _autoPhase=null; // {targetIdx, targetX, targetRot, isSlide, steps:[]}
+
+function startSelTimer(){
+clearInterval(selIv);clearInterval(_autoIv);_autoPhase=null;
+timerMax=Math.max(3000,15000-(level-1)*800);
+timerLeft=timerMax;
+
+// Countdown (for any external timer bar display)
+selIv=setInterval(()=>{
+if(paused||dead||clearAnimating)return;
+timerLeft-=100;
+if(timerLeft<=0){ stopSelTimer(); if(!dead&&!clearAnimating) autoChooseBest(); }
+},100);
+
+// Initial delay scales with speed: 600ms at speed 1, 0ms at speed 11
+const startDelay = Math.round(600 * (1 - (AUTO_SPEED-1)/10));
+setTimeout(()=>{
+if(!dead&&!paused&&!clearAnimating&&cur&&AUTO_PLAY) _startAutoPlay();
+}, startDelay);
+}
+
+function stopSelTimer(){
+clearInterval(selIv);
+clearInterval(_autoIv);
+_autoIv=null;
+_autoPhase=null;
+}
+
+// ── BFS pathfinder ────────────────────────────────────────────────────────────
+// Finds shortest move sequence [‘L’,‘R’,‘D’,‘CW’] from (startX,startRot,startY)
+// to a state where piece has rotation=targetRot, x=targetX, and can’t drop further.
+// Uses live board — respects all current terrain.
+function _bfsPath(startX, startRot, startY, targetX, targetRot, pieceKey){
+const encode=(x,r,y)=>(y*40+x)*8+r; // compact int key
+const start=encode(startX,startRot,startY);
+const visited=new Map([[start,null]]); // key -> {parentKey, move}
+const queue=[{x:startX,r:startRot,y:startY,key:start}];
+const getCells=(r)=>NRS[pieceKey][r%4];
+const kicks=[0,-1,1,-2,2];
+let found=null;
+let iters=0;
+
+while(queue.length && iters++<12000){
+const {x,r,y,key}=queue.shift();
+const cells=getCells(r);
+
+```
+// Goal: correct rotation and x, resting on surface
+if(r===targetRot && x===targetX && !isOk(cells,x,y+1)){
+  found=key; break;
+}
+
+const enqueue=(nx,nr,ny,move)=>{
+  const nk=encode(nx,nr,ny);
+  if(visited.has(nk))return;
+  visited.set(nk,{parentKey:key,move});
+  queue.push({x:nx,r:nr,y:ny,key:nk});
+};
+
+// Drop — always valid if space
+if(isOk(cells,x,y+1)) enqueue(x,r,y+1,'D');
+// Strafe
+if(isOk(cells,x-1,y)) enqueue(x-1,r,y,'L');
+if(isOk(cells,x+1,y)) enqueue(x+1,r,y,'R');
+// Rotate CW with wall kicks + pivot correction
+const nr=(r+1)%4;
+const nc=getCells(nr);
+const pdx=(PIVOT_DX[pieceKey]||[0,0,0,0])[r];
+for(const k of kicks){
+  const px=x+pdx+k;
+  if(isOk(nc,px,y)){ enqueue(px,nr,y,'CW'); break; }
+}
+```
+
+}
+
+if(!found) return null;
+
+// Reconstruct path by walking back through visited map
+const path=[];
+let k=found;
+while(true){
+const entry=visited.get(k);
+if(!entry || entry.move===undefined) break;
+path.unshift(entry.move);
+k=entry.parentKey;
+}
+return path;
+}
+
+// ── Auto-play: BFS → token stream → smooth replay ────────────────────────────
+function _startAutoPlay(){
+if(!cur||dead||paused||clearAnimating)return;
+
+// Pick highest-scoring slot
+let bestIdx=0, bestSc=-Infinity;
+for(let i=0;i<4;i++){
+const p=placements[i];
+if(p&&p.sc>bestSc){ bestSc=p.sc; bestIdx=i; }
+}
+const best=placements[bestIdx];
+if(!best)return;
+
+const pieceKey=cur.k||‘I’;
+
+// BFS from current live position
+const path=_bfsPath(cx, cur.rot||0, cy, best.x, best.rotation, pieceKey);
+
+if(!path || path.length===0){
+// Unreachable or already there — commit immediately
+choose(bestIdx); return;
+}
+
+// Stop gravity during animation — we control all movement
+stopDrop();
+
+// Speed mapping: 1=180ms/step, 11=~15ms with frame-skipping
+// At speed 11 we draw only 1 in 4 frames by batching 4 moves per setTimeout
+const speedFactor = AUTO_SPEED; // 1..11
+const baseMoveMs  = Math.round(180 - (speedFactor-1) * 15); // 180→15ms
+const frameSkip   = speedFactor >= 11 ? 4 : speedFactor >= 9 ? 2 : 1;
+const MS={CW:0, L:baseMoveMs, R:baseMoveMs, D: best.slide ? Math.round(baseMoveMs*0.4) : Math.round(baseMoveMs*0.55)};
+
+let idx=0;
+
+const execMove=(move)=>{
+const rot=cur.rot||0;
+const pivDx=(PIVOT_DX[pieceKey]||[0,0,0,0]);
+const kicks=[0,-1,1,-2,2];
+if(move===‘CW’){
+const nr=(rot+1)%4;
+const nc=NRS[pieceKey][nr];
+const pdx=pivDx[rot];
+for(const k of kicks){
+const px=cx+pdx+k;
+if(isOk(nc,px,cy)){
+cur.c=nc.map(r=>[…r]); cur.rot=nr; cx=px; break;
+}
+}
+} else if(move===‘L’){
+if(isOk(cur.c,cx-1,cy)) cx–;
+} else if(move===‘R’){
+if(isOk(cur.c,cx+1,cy)) cx++;
+} else if(move===‘D’){
+if(isOk(cur.c,cx,cy+1)) cy++;
+}
+};
+
+const step=()=>{
+if(dead||paused||clearAnimating||!cur){ clearTimeout(_autoIv); return; }
+
+```
+if(idx>=path.length){
+  const btn=document.getElementById('pb'+bestIdx);
+  if(btn){
+    btn.style.boxShadow='0 0 32px #fff,0 0 56px #ffff00';
+    setTimeout(()=>{ if(btn)btn.style.boxShadow=''; },300);
+  }
+  const commitDelay = Math.round(150 * (1 - (AUTO_SPEED-1)/10));
+  setTimeout(()=>{ if(!dead&&!paused&&cur) choose(bestIdx); },commitDelay);
+  return;
+}
+
+// Execute frameSkip moves per tick (batched at high speed)
+// Rotations (CW=0ms) are always consumed immediately regardless of frameSkip
+let drawn=0;
+while(idx<path.length && (drawn<frameSkip || path[idx]==='CW')){
+  const move=path[idx++];
+  execMove(move);
+  if(move!=='CW') drawn++;
+}
+
+_autoIv=setTimeout(step, idx<path.length ? MS[path[idx]]||baseMoveMs : 150);
+```
+
+};
+
+// Kick off — first step after a brief “thinking” pause
+_autoIv=setTimeout(step, MS[path[0]]);
+}
+
+// Fallback: if timer fully expires without auto-play finishing, force commit
+function autoChooseBest(){
+if(dead||paused||clearAnimating||!cur)return;
+clearTimeout(_autoIv); _autoIv=null;
+if(!AUTO_PLAY){
+// NES mode: straight drop from current position, no lateral movement
+while(isOk(cur.c,cx,cy+1)) cy++;
+lock(); return;
+}
+let bestIdx=0, bestSc=-Infinity;
+for(let i=0;i<4;i++){
+const p=placements[i];
+if(p&&p.sc>bestSc){ bestSc=p.sc; bestIdx=i; }
+}
+choose(bestIdx);
+}
+
+function toggleAutoPlay(){
+AUTO_PLAY=!AUTO_PLAY;
+const lbl=document.getElementById(‘ap-toggle-label’);
+if(lbl) lbl.classList.toggle(‘on’,AUTO_PLAY);
+if(!AUTO_PLAY){ clearTimeout(_autoIv); _autoIv=null; }
+}
+
+function setAutoSpeed(v){
+AUTO_SPEED=parseInt(v);
+const el=document.getElementById(‘ap-speed-val’);
+if(el) el.textContent=AUTO_SPEED===11?‘11🔊’:String(AUTO_SPEED);
+}
+
+function _syncAutoUI(){
+const lbl=document.getElementById(‘ap-toggle-label’);
+if(lbl) lbl.classList.toggle(‘on’,AUTO_PLAY);
+const sv=document.getElementById(‘ap-speed-val’);
+if(sv) sv.textContent=AUTO_SPEED===11?‘11🔊’:String(AUTO_SPEED);
+}
+
+// ─── FANFARE ─────────────────────────────────────────────────────────────────
+function floatTetrisBonus(amount){
+const cs=Math.round(piecePot/100);
+tickerPush([fmtK(amount), `${cs}CS 4T`]);
+// Also briefly flash the tb-float for visibility
+const el=document.getElementById(‘tb-float’);
+if(!el)return;
+el.textContent=’+’+amount.toLocaleString();
+el.style.opacity=‘1’;
+el.style.transition=‘none’;
+el.style.bottom=‘4px’;
+let startT=Date.now();
+const tick=()=>{
+const e=(Date.now()-startT)/1000;
+el.style.opacity=String(Math.max(0,1-e/1.2));
+el.style.bottom=(4+e*20)+‘px’;
+if(e<1.2)requestAnimationFrame(tick);
+else el.style.opacity=‘0’;
+};
+requestAnimationFrame(tick);
+}
+
+function updateTBDisplay(){
+const ep=document.getElementById(‘tbv-pieces’);
+const et=document.getElementById(‘tbv-tetris’);
+// CLEAN: number of clean pieces placed (piecePot ÷ 100, since each piece adds 100)
+if(ep) ep.textContent=Math.round(piecePot/100).toLocaleString();
+// TETRIS: compact K format (drop trailing zeros, add K)
+if(et){
+const v=tetrisPot;
+et.textContent=v>=1000?(v/1000)+‘k’:v.toString();
+}
+}
+
+function fanfare(tetrisPoints){
+// board shake only
+const sw=document.getElementById(‘sw’);
+sw.classList.remove(‘shake’);void sw.offsetWidth;sw.classList.add(‘shake’);
+setTimeout(()=>sw.classList.remove(‘shake’),600);
+
+tetrisStreak++;
+
+// Collect both pots into score NOW (before adding next virtual credit)
+const collected = piecePot + tetrisPot;
+if(collected > 0){
+score += collected;
+document.getElementById(‘sv’).textContent=score;
+// Ticker fanfare — streak indicator via gem emojis (1 per streak, max 5)
+const gems=[‘💎’,‘💎💎’,‘💎💎💎’,‘💎💎💎💎’,‘💎💎💎💎💎’];
+const gemStr=gems[Math.min(tetrisStreak-1,4)];
+const cs=Math.round(piecePot/100);
+tickerPush([`🎯 TETRIS ${gemStr}`, fmtK(collected), `${cs}CS 4T`]);
+txScore(‘tetris’, collected, [
+{label:‘Piece pot’,        value: fmtAmt(piecePot)},
+{label:‘Tetris streak pot’,value: fmtAmt(tetrisPot)},
+{label:‘Streak x’+tetrisStreak+’ (mult ‘+tetrisMultiplier+‘x)’, value:’’},
+{label:‘Total collected’,  value: fmtAmt(collected)},
+]);
+} else {
+tickerPush([`🎯 TETRIS`, `4T 0 bonus`]);
+}
+
+// piecePot carries over through Tetrises — only holes reset it
+
+// Add virtual credit for next Tetris at CURRENT multiplier (before doubling)
+// Tetris #1 (mult=1): +2,000 → display 2,000
+// Tetris #2 (mult=2): +4,000 → display 6,000
+// Tetris #3 (mult=4): +8,000 → display 14,000
+const virtualCredit = Math.min(20 * 100 * tetrisMultiplier, 32000);
+tetrisPot += virtualCredit;
+
+// Now double multiplier (cap at 16) — next pieces earn at new rate
+tetrisMultiplier = Math.min(tetrisMultiplier * 2, 16);
+
+updateTBDisplay();
+
+// After Tetris, re-evaluate scoring holes on current board
+currentScoringHoles=countScoringHoles(board);
+updateHoleDisplay(currentScoringHoles);
+_lastScoringHoleCheck=(currentScoringHoles===0);
+
+}
+
+// ─── GAME OVER ────────────────────────────────────────────────────────────────
+function triggerDead(){
+dead=true;stopDrop();stopSelTimer();
+sndGameOver();
+document.getElementById(‘fst’).textContent=’Score: ’+score;
+document.getElementById(‘gov’).style.display=‘flex’;
+}
+
+function togglePause(){
+if(dead)return;paused=!paused;
+document.getElementById(‘pov’).style.display=paused?‘flex’:‘none’;
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+let _introSpoken=false;
+function init(){
+board=Array.from({length:ROWS},()=>Array(COLS).fill(null));
+score=0;level=1;lines=0;dead=false;paused=false;
+particles=[];explodedCells.clear();clearAnimating=false;
+gapList=[];tetrisPrepActive=false;tetrisPrepCol=-1;
+piecePot=0;tetrisPot=0;piecesPlaced=0;_lastScoringHoleCheck=false;
+tetrisStreak=0;tetrisMultiplier=1;
+currentScoringHoles=0;scoringDisabledSound=false;
+hfRun=0;hfBest=0;
+_towerSeverity=0;
+_gamesPlayed++;
+_tickerInit();
+// Seed ticker so it’s visible from game start
+setTimeout(()=>tickerPush([`READY`,`LVL ${level}`]), 100);
+updateHoleDisplay(0);updateTBDisplay();
+txReset();
+puzzleQueue=[];puzzleTargets=[];puzzleActive=false;buildPuzzleQueue();
+hideTetrisButton();
+document.getElementById(‘sv’).textContent=‘0’;
+document.getElementById(‘lv’).textContent=‘1’;
+document.getElementById(‘lnv’).textContent=‘0’;
+document.getElementById(‘hv’).textContent=hi;
+document.getElementById(‘gov’).style.display=‘none’;
+document.getElementById(‘pov’).style.display=‘none’;
+if(!_introSpoken){_introSpoken=true;setTimeout(speakIntro,400);}
+nxt=mkPiece();spawn();scheduleDrop();
+}
+function restart(){stopDrop();stopSelTimer();init()}
+
+// ─── KEYBOARD ────────────────────────────────────────────────────────────────
+document.addEventListener(‘keydown’,e=>{
+if(dead)return;
+if(e.key===‘ArrowLeft’)mhz(-1);
+else if(e.key===‘ArrowRight’)mhz(1);
+else if(e.key===‘ArrowDown’)sdrop();
+else if(e.key===‘ArrowUp’||e.key===‘x’||e.key===‘X’)rot(1);
+else if(e.key===‘z’||e.key===‘Z’)rot(-1);
+else if(e.key===’ ’){hdrop();e.preventDefault()}
+else if(e.key===‘p’||e.key===‘P’)togglePause();
+else if(e.key===‘1’)choose(0);
+else if(e.key===‘2’)choose(1);
+else if(e.key===‘3’)choose(2);
+else if(e.key===‘4’)choose(3);
+});
+
+// ─── CANVAS TAP / CLICK ──────────────────────────────────────────────────────
+function handleCanvasTap(clientX,clientY){
+if(dead||paused||!placements)return;
+const rect=gc.getBoundingClientRect();
+const scaleX=gc.width/rect.width, scaleY=gc.height/rect.height;
+const mx=(clientX-rect.left)*scaleX;
+const my=(clientY-rect.top)*scaleY;
+// Hit radius: 1.8 × cell so numbers are easy to tap on small screens
+const hitR=CELL*1.8;
+for(const lp of labelPositions){
+const dx=mx-lp.x, dy=my-lp.y;
+if(dx*dx+dy*dy<hitR*hitR){ choose(lp.idx); return; }
+}
+// Tapped outside any label — cycle to fresh set of options
+cycleOptions();
+}
+gc.addEventListener(‘click’,e=>handleCanvasTap(e.clientX,e.clientY));
+gc.addEventListener(‘touchstart’,e=>{
+e.preventDefault();
+const t=e.changedTouches[0];
+handleCanvasTap(t.clientX,t.clientY);
+},{passive:false});
+function loop(ts){AT=ts*.001;drawBoard();drawNext();requestAnimationFrame(loop)}
+
+// ── Triple-tap LEVEL box to toggle debug/hint mode ────────────────────────
+(()=>{
+let tapTimes=[];
+const el=document.getElementById(‘level-box’);
+if(!el)return;
+el.addEventListener(‘pointerdown’, e=>{
+const now=Date.now();
+tapTimes.push(now);
+// Keep only taps within last 2 seconds
+tapTimes=tapTimes.filter(t=>now-t<2000);
+if(tapTimes.length>=3){
+tapTimes=[];
+PROOF_MODE=!PROOF_MODE;
+const dbg=document.getElementById(‘proof-debug’);
+if(dbg){
+dbg.style.display=PROOF_MODE?‘block’:‘none’;
+if(PROOF_MODE) dbg.textContent=‘DEBUG ON’;
+}
+// Recompute placements immediately so hint star appears/disappears now
+calcPlacements(false);
+// Flash level box to confirm
+el.style.transition=‘box-shadow 0.2s’;
+el.style.boxShadow=PROOF_MODE?‘0 0 20px #0f0’:‘0 0 20px #f00’;
+setTimeout(()=>el.style.boxShadow=’’,600);
+}
+});
+})();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TRANSACTION RECEIPT SYSTEM
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Transaction log ────────────────────────────────────────────────────────
+let txLog = [];
+let txRunningTotal = 0;
+
+function txReset(){
+txLog = [];
+txRunningTotal = 0;
+txLog.push({ type:‘session-start’, ts: Date.now() });
+}
+
+// eventType: string key  |  amount: number  |  breakdown: [{label,value}]
+function txScore(eventType, amount, breakdown){
+txRunningTotal += amount;
+txLog.push({
+type: ‘score’,
+eventType,
+amount,
+breakdown: breakdown || [],
+running: txRunningTotal
+});
+}
+
+function txMilestone(label){
+txLog.push({ type:‘milestone’, label, running: txRunningTotal });
+}
+
+// ── Dot-matrix canvas font ─────────────────────────────────────────────────
+// 5×7 bitmap font.  Each char = 5 column bytes, bit0=row0(top).
+const DM_FONT = (()=>{
+const F = {};
+const d = (c,…v) => { F[c] = v; };
+d(’ ‘,0x00,0x00,0x00,0x00,0x00);
+d(’!’,0x00,0x00,0x5F,0x00,0x00);
+d(’”’,0x00,0x07,0x00,0x07,0x00);
+d(’#’,0x14,0x7F,0x14,0x7F,0x14);
+d(’$’,0x24,0x2A,0x7F,0x2A,0x12);
+d(’%’,0x23,0x13,0x08,0x64,0x62);
+d(’&’,0x36,0x49,0x55,0x22,0x50);
+d(”’”,0x00,0x05,0x03,0x00,0x00);
+d(’(’,0x00,0x1C,0x22,0x41,0x00);
+d(’)’,0x00,0x41,0x22,0x1C,0x00);
+d(’*’,0x08,0x2A,0x1C,0x2A,0x08);
+d(’+’,0x08,0x08,0x3E,0x08,0x08);
+d(’,’,0x00,0x50,0x30,0x00,0x00);
+d(’-’,0x08,0x08,0x08,0x08,0x08);
+d(’.’,0x00,0x60,0x60,0x00,0x00);
+d(’/’,0x20,0x10,0x08,0x04,0x02);
+d(‘0’,0x3E,0x51,0x49,0x45,0x3E);
+d(‘1’,0x00,0x42,0x7F,0x40,0x00);
+d(‘2’,0x42,0x61,0x51,0x49,0x46);
+d(‘3’,0x21,0x41,0x45,0x4B,0x31);
+d(‘4’,0x18,0x14,0x12,0x7F,0x10);
+d(‘5’,0x27,0x45,0x45,0x45,0x39);
+d(‘6’,0x3C,0x4A,0x49,0x49,0x30);
+d(‘7’,0x01,0x71,0x09,0x05,0x03);
+d(‘8’,0x36,0x49,0x49,0x49,0x36);
+d(‘9’,0x06,0x49,0x49,0x29,0x1E);
+d(’:’,0x00,0x36,0x36,0x00,0x00);
+d(’;’,0x00,0x56,0x36,0x00,0x00);
+d(’<’,0x08,0x14,0x22,0x41,0x00);
+d(’=’,0x14,0x14,0x14,0x14,0x14);
+d(’>’,0x00,0x41,0x22,0x14,0x08);
+d(’?’,0x02,0x01,0x51,0x09,0x06);
+d(’@’,0x32,0x49,0x79,0x41,0x3E);
+d(‘A’,0x7E,0x11,0x11,0x11,0x7E);
+d(‘B’,0x7F,0x49,0x49,0x49,0x36);
+d(‘C’,0x3E,0x41,0x41,0x41,0x22);
+d(‘D’,0x7F,0x41,0x41,0x22,0x1C);
+d(‘E’,0x7F,0x49,0x49,0x49,0x41);
+d(‘F’,0x7F,0x09,0x09,0x09,0x01);
+d(‘G’,0x3E,0x41,0x49,0x49,0x7A);
+d(‘H’,0x7F,0x08,0x08,0x08,0x7F);
+d(‘I’,0x00,0x41,0x7F,0x41,0x00);
+d(‘J’,0x20,0x40,0x41,0x3F,0x01);
+d(‘K’,0x7F,0x08,0x14,0x22,0x41);
+d(‘L’,0x7F,0x40,0x40,0x40,0x40);
+d(‘M’,0x7F,0x02,0x04,0x02,0x7F);
+d(‘N’,0x7F,0x04,0x08,0x10,0x7F);
+d(‘O’,0x3E,0x41,0x41,0x41,0x3E);
+d(‘P’,0x7F,0x09,0x09,0x09,0x06);
+d(‘Q’,0x3E,0x41,0x51,0x21,0x5E);
+d(‘R’,0x7F,0x09,0x19,0x29,0x46);
+d(‘S’,0x46,0x49,0x49,0x49,0x31);
+d(‘T’,0x01,0x01,0x7F,0x01,0x01);
+d(‘U’,0x3F,0x40,0x40,0x40,0x3F);
+d(‘V’,0x1F,0x20,0x40,0x20,0x1F);
+d(‘W’,0x3F,0x40,0x38,0x40,0x3F);
+d(‘X’,0x63,0x14,0x08,0x14,0x63);
+d(‘Y’,0x07,0x08,0x70,0x08,0x07);
+d(‘Z’,0x61,0x51,0x49,0x45,0x43);
+d(’[’,0x00,0x7F,0x41,0x41,0x00);
+d(’\’,0x02,0x04,0x08,0x10,0x20);
+d(’]’,0x00,0x41,0x41,0x7F,0x00);
+d(’_’,0x40,0x40,0x40,0x40,0x40);
+d(’.’,0x00,0x60,0x60,0x00,0x00);
+d(’,’,0x00,0x50,0x30,0x00,0x00);
+// lowercase maps to uppercase for thermal caps style
+‘abcdefghijklmnopqrstuvwxyz’.split(’’).forEach((c,i)=>{
+F[c] = F[String.fromCharCode(65+i)] || F[’ ’];
+});
+return F;
+})();
+
+// Pixel sizes
+const DM_DOT = 2;   // filled square per dot
+const DM_GAP = 1;   // white gap between dots
+const DM_STEP = DM_DOT + DM_GAP;   // 3px total per cell
+const DM_CHAR_W = 5 * DM_STEP + DM_GAP; // width of one char incl. right gap
+const DM_CHAR_H = 7 * DM_STEP;          // height of char
+const DM_LINE_H = DM_CHAR_H + DM_STEP;  // line height with descender gap
+const DM_COLS = 38;  // max chars per receipt line
+
+// Render one line of text to a canvas element
+function dmRender(text, opts){
+const inv   = (opts&&opts.inv)   || false;
+const bold  = (opts&&opts.bold)  || false;
+const scale = (opts&&opts.scale) || 1;
+const padX  = 6;
+const padY  = 4;
+
+const str = String(text).toUpperCase().substring(0, DM_COLS);
+const W = padX * 2 + str.length * DM_CHAR_W;
+const H = padY * 2 + DM_LINE_H;
+
+const cv = document.createElement(‘canvas’);
+cv.width  = Math.ceil(W * scale);
+cv.height = Math.ceil(H * scale);
+cv.style.width  = ‘100%’;
+cv.style.height = Math.ceil(H * scale) + ‘px’;
+cv.style.display = ‘block’;
+cv.style.imageRendering = ‘pixelated’;
+
+const ctx = cv.getContext(‘2d’);
+ctx.scale(scale, scale);
+
+// Paper background
+ctx.fillStyle = inv ? ‘#1a1008’ : ‘#f5f0e8’;
+ctx.fillRect(0, 0, W, H);
+
+const ink = inv ? ‘#f0e8d0’ : ‘#1a1008’;
+ctx.fillStyle = ink;
+
+for (let ci = 0; ci < str.length; ci++) {
+const ch = str[ci];
+const glyph = DM_FONT[ch] || DM_FONT[’ ’];
+const ox = padX + ci * DM_CHAR_W;
+const oy = padY;
+for (let col = 0; col < 5; col++) {
+const colBits = glyph[col] || 0;
+for (let row = 0; row < 7; row++) {
+if (colBits & (1 << row)) {
+const px = ox + col * DM_STEP;
+const py = oy + row * DM_STEP;
+ctx.fillRect(px, py, DM_DOT, DM_DOT);
+if (bold) {
+// Bold = extra dot to the right
+ctx.fillRect(px + 1, py, DM_DOT, DM_DOT);
+}
+}
+}
+}
+}
+return cv;
+}
+
+// Convenience: wrap canvas in a div
+function dmLine(text, opts) {
+const wrap = document.createElement(‘div’);
+wrap.style.cssText = ‘width:100%;overflow:hidden;margin:0;padding:0;line-height:0’;
+wrap.appendChild(dmRender(text, opts));
+return wrap;
+}
+
+function dmSpacer(px) {
+const d = document.createElement(‘div’);
+d.style.cssText = `height:${px||5}px;width:100%;background:#f5f0e8`;
+return d;
+}
+
+// Left+right justified row: left text, right text, total DM_COLS wide
+function dmRow(left, right) {
+const r = String(right || ‘’);
+const l = String(left  || ‘’).substring(0, DM_COLS - r.length - 1);
+const gap = DM_COLS - l.length - r.length;
+return l + ’ ’.repeat(Math.max(1, gap)) + r;
+}
+
+// Format a score amount with sign
+function fmtAmt(n) {
+if (n == null || n === ‘’) return ‘’;
+const abs = Math.abs(Math.round(n));
+const sign = n >= 0 ? ‘+’ : ‘-’;
+return sign + abs.toLocaleString();
+}
+
+// Section name for grouping
+function _txSection(evType) {
+if (!evType) return ‘OTHER’;
+if (evType === ‘atari-og’)           return ‘EASTER EGG BONUS’;
+if (evType === ‘super-clear’)        return ‘SUPER BONUS’;
+if (evType.startsWith(‘line-’))      return ‘LINE CLEAR AWARDS’;
+if (evType === ‘tetris’)             return ‘TETRIS BONUS’;
+return ‘MISC’;
+}
+
+// ── Build receipt DOM ──────────────────────────────────────────────────────
+function buildReceiptDOM() {
+const root = document.getElementById(‘receipt-content’);
+root.innerHTML = ‘’;
+const A = el => root.appendChild(el);
+
+const L  = (t,o)  => A(dmLine(t, o));
+const SP = (px)   => A(dmSpacer(px));
+const HR = (c,n)  => L((c||’=’).repeat(n||DM_COLS));
+
+// ── HEADER ──────────────────────────────────────────────────────────────
+SP(10);
+L(center(‘HIGHTOWER DISTRICT’), {inv:true, bold:true});
+SP(2);
+L(center(‘777 OLIVE AVE’));
+L(center(‘FRESNO  CA  93728’));
+L(center(’(559) 485-9050’));
+SP(4);
+HR(’=’);
+L(center(‘CELLTOWER  GAME  RECEIPT’));
+L(center(new Date().toLocaleDateString(‘en-US’,
+{weekday:‘short’,month:‘short’,day:‘2-digit’,year:‘numeric’})));
+L(center(new Date().toLocaleTimeString()));
+HR(’=’);
+SP(4);
+L(’  CASHIER: HIGHTOWER AI’);
+L(’  REGISTER: CLAUDE SONNET’);
+HR(’-’);
+SP(2);
+
+// ── TRANSACTIONS ─────────────────────────────────────────────────────────
+let sectionRunningBase = 0;
+let currentSection = ‘’;
+let sectionTotal = 0;
+let grandRunning = 0;
+
+const openSection = (name) => {
+if (currentSection) closeSection();
+currentSection = name;
+sectionRunningBase = grandRunning;
+sectionTotal = 0;
+SP(3);
+HR(’-’);
+L(’  ** ’ + name + ’ **’, {bold:true});
+HR(’-’);
+};
+
+const closeSection = () => {
+if (!currentSection) return;
+HR(’.’);
+L(dmRow(’  SUBTOTAL  ’ + currentSection, fmtAmt(sectionTotal)));
+grandRunning += sectionTotal;
+L(dmRow(’  RUNNING TOTAL’, ‘=’+grandRunning.toLocaleString()));
+sectionTotal = 0;
+currentSection = ‘’;
+};
+
+// Session start line
+const startEntry = txLog.find(t => t.type === ‘session-start’);
+if (startEntry) {
+L(’  SESSION OPENED’);
+L(’  ’ + new Date(startEntry.ts).toLocaleTimeString());
+SP(2);
+}
+
+// Score events
+const scored = txLog.filter(t => t.type === ‘score’);
+
+if (scored.length === 0) {
+SP(6);
+L(center(’– NO SCORES YET –’));
+L(center(‘PLAY A GAME FIRST!’));
+SP(6);
+} else {
+scored.forEach((tx, idx) => {
+const section = _txSection(tx.eventType);
+if (section !== currentSection) openSection(section);
+
+```
+  // Main line
+  const desc = _txDesc(tx);
+  L(dmRow('  ' + desc, fmtAmt(tx.amount)));
+  sectionTotal += tx.amount;
+
+  // Sub-lines (like CRV breakdown)
+  if (tx.breakdown && tx.breakdown.length) {
+    tx.breakdown.forEach(b => {
+      const val = b.value != null ? String(b.value) : '';
+      L(dmRow('    ' + b.label, val));
+    });
+  }
+});
+closeSection();
+```
+
+}
+
+SP(4);
+HR(’=’);
+// ── TOTALS SUMMARY ──────────────────────────────────────────────────────
+L(dmRow(’  LINES CLEARED’,   String(lines)));
+L(dmRow(’  LEVEL REACHED’,   String(level)));
+L(dmRow(’  PIECES PLACED’,   String(piecesPlaced)));
+L(dmRow(’  HOLE FREE NOW’,   currentScoringHoles===0 ? ‘YES’ : ‘NO’));
+L(dmRow(’  BEST HF STREAK’,  hfBest+’ PCS’));
+if(_gamesPlayed>1){
+L(dmRow(’  ALL-TIME HF REC’, hfAllTime+’ PCS’));
+if(hfBest>0 && hfBest>=hfAllTime){
+SP(2);
+L(center(’!! NEW HF RECORD !!’), {bold:true, inv:true});
+SP(2);
+}
+}
+HR(’-’);
+L(dmRow(’  SUBTOTAL’,        score.toLocaleString()));
+L(dmRow(’  TAX / FEES’,      ‘N/A’));
+HR(’=’);
+SP(2);
+L(dmRow(’  *** TOTAL ***’, score.toLocaleString()), {inv:true, bold:true});
+SP(2);
+L(dmRow(’  HIGH SCORE’,      hi.toLocaleString()));
+HR(’=’);
+SP(6);
+
+// ── FOOTER ──────────────────────────────────────────────────────────────
+L(center(’“Get high at the Tower”’));
+SP(2);
+L(center(’– THC Magazine *’));
+SP(6);
+HR(’-’);
+L(’  * THC MAGAZINE IS A WHOLLY’);
+L(’    FICTITIOUS PUBLICATION.’);
+L(’    ANY RESEMBLANCE TO ACTUAL’);
+L(’    PERIODICALS IS COINCIDENTAL’);
+L(’    AND PROBABLY DOPE.’);
+HR(’-’);
+SP(4);
+L(center(‘PRODUCED BY’));
+L(center(‘ANTHROPIC CLAUDE AI’));
+L(center(‘CLAUDE.AI’));
+SP(4);
+HR(’~’);
+L(center(‘THANK YOU FOR PLAYING!’));
+L(center(‘COME BACK SOON’));
+HR(’~’);
+SP(4);
+
+// Barcode decoration
+const bc = ‘||| | || ||| | | || ||| | || | ||| | |’;
+L(bc.substring(0,DM_COLS));
+SP(2);
+L(center(Date.now().toString(36).toUpperCase()));
+SP(12);
+}
+
+function center(txt) {
+const t = String(txt).substring(0, DM_COLS);
+const pad = Math.max(0, Math.floor((DM_COLS - t.length) / 2));
+return ’ ’.repeat(pad) + t;
+}
+
+function _txDesc(tx) {
+const e = tx.eventType || ‘’;
+if (e === ‘atari-og’)     return ‘ATARI OG BONUS: 20,490’;
+if (e === ‘line-1’)       return ‘1-LINE CLEAR AWARD’;
+if (e === ‘line-2’)       return ‘2-LINE CLEAR AWARD’;
+if (e === ‘line-3’)       return ‘3-LINE CLEAR AWARD’;
+if (e === ‘line-1-blocked’) return ‘1-LINE BLOCKED (10+ HOLES)’;
+if (e === ‘line-2-blocked’) return ‘2-LINE BLOCKED’;
+if (e === ‘line-3-blocked’) return ‘3-LINE BLOCKED’;
+if (e === ‘tetris’)       return ‘TETRIS! 4-LINE BONUS’;
+if (e === ‘super-clear’)  return ‘PERFECT CLEAR: 20,490’;
+return tx.desc || e.toUpperCase();
+}
+
+function showReceipt() {
+buildReceiptDOM();
+const ov = document.getElementById(‘receipt-overlay’);
+ov.classList.add(‘show’);
+// Start at bottom (most recent) then let user scroll up
+const sc = document.getElementById(‘receipt-scroll’);
+requestAnimationFrame(() => {
+requestAnimationFrame(() => { sc.scrollTop = sc.scrollHeight; });
+});
+}
+
+function hideReceipt() {
+document.getElementById(‘receipt-overlay’).classList.remove(‘show’);
+}
+
+layout();init();_syncAutoUI();requestAnimationFrame(loop);
+</script>
+
+</body>
+</html>
