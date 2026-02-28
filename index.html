@@ -4,16 +4,18 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<meta http-equiv="Pragma" content="no-cache">
-<meta http-equiv="Expires" content="0">
 <title>CELLTOWER — Aaron Hightower</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
 *{margin:0;padding:0;box-sizing:border-box;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
 html,body{width:100%;height:100%;background:#0a0010;overflow:hidden;font-family:'Orbitron',monospace;color:#fff}
-body{background:radial-gradient(ellipse at 20% 50%,#1a0030 0%,#0a0010 60%)}
-#app{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;height:100vh;padding:6px;gap:4px}
+body{background:radial-gradient(ellipse at 20% 50%,#1a0030 0%,#0a0010 60%);display:flex;flex-direction:column;margin:0;padding:0}
+/* CodePen iframe fix: use 100dvh so it fills the preview pane on mobile.
+   Fall back to 100vh. Never use percentage — it breaks in iframes. */
+#app{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
+     height:100dvh;height:100vh;/* fallback first, dvh overrides if supported */
+     max-height:100dvh;max-height:100vh;
+     padding:6px;gap:4px;overflow:hidden;width:100%;box-sizing:border-box}
 #title{font-size:clamp(1rem,3.5vw,2rem);font-weight:900;letter-spacing:.12em;background:linear-gradient(90deg,#ff00ff,#00ffff,#ffff00,#ff00aa,#00ffff);background-size:300% auto;-webkit-background-clip:text;-webkit-text-fill-color:transparent;animation:tshift 3s linear infinite;filter:drop-shadow(0 0 8px #ff00ff88);flex-shrink:0}
 @keyframes tshift{0%{background-position:0%}100%{background-position:300%}}
 #main-area{display:flex;gap:6px;align-items:flex-start;flex:1;min-height:0;width:100%;justify-content:center}
@@ -248,15 +250,6 @@ display:block;
 </div>
 <div id="proof-debug" style="display:none;position:fixed;top:4px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.9);color:#0f0;font:bold 12px monospace;padding:4px 10px;border-radius:4px;z-index:999;pointer-events:none;white-space:pre-line;text-align:center;"></div>
 <script>
-// On-screen error display — shows any JS crash as red text on screen
-window.onerror=function(msg,src,line,col,err){
-  var d=document.createElement('div');
-  d.style.cssText='position:fixed;top:0;left:0;right:0;background:red;color:#fff;font:bold 14px monospace;padding:8px;z-index:9999;white-space:pre-wrap;';
-  d.textContent='JS ERROR line '+line+':\n'+msg;
-  document.body.appendChild(d);
-  return false;
-};
-document.addEventListener('DOMContentLoaded',function(){
 const COLS=10,ROWS=25;
 const NES_SC=[0,40,100,300,1200];
 const NES_SP=[800,717,633,550,467,383,300,217,133,100,83,83,83,67,67,67,50,50,50,33,33,33,33,33,33,33,33,33,33,17];
@@ -995,8 +988,11 @@ const nx_=nc.getContext(‘2d’);
 let CELL;
 
 function layout(){
-const W=window.innerWidth;
-const H=window.innerHeight;
+// Read #app’s actual rendered size — works in any iframe including CodePen.
+// Never trust window.inner* or documentElement.client* inside iframes.
+const app=document.getElementById(‘app’);
+const W=app.clientWidth  || document.documentElement.clientWidth  || 375;
+const H=app.clientHeight || document.documentElement.clientHeight || 667;
 const side=Math.min(110,W*.16)*2+20;
 const ctrlH=Math.min(60,W*.11)*2+50+16;
 const avW=Math.min(W-side-16,380);
@@ -1017,6 +1013,10 @@ document.documentElement.style.setProperty(’–ticker-h’, tickerH+‘px’);
 });
 }
 window.addEventListener(‘resize’,layout);
+// ResizeObserver catches CodePen pane drags that don’t fire window resize
+if(typeof ResizeObserver!==‘undefined’){
+new ResizeObserver(()=>layout()).observe(document.getElementById(‘app’));
+}
 
 // ─── TIE-DYE 3D CELL ─────────────────────────────────────────────────────────
 function cell3d(ctx,x,y,sz,rgb,t,al=1){
@@ -3608,8 +3608,17 @@ function hideReceipt() {
 document.getElementById(‘receipt-overlay’).classList.remove(‘show’);
 }
 
+// Wait until #app has real dimensions before starting.
+// In CodePen/iframes a single rAF is not enough — the iframe may still be
+// sizing itself. Poll every 50ms until we get non-zero width AND height.
+(function waitForLayout(){
+const app=document.getElementById(‘app’);
+if(app && app.clientWidth>50 && app.clientHeight>100){
 layout();init();_syncAutoUI();requestAnimationFrame(loop);
-}); // end DOMContentLoaded
+} else {
+setTimeout(waitForLayout,50);
+}
+})();
 </script>
 
 </body>
