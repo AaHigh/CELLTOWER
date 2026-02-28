@@ -4,6 +4,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>CELLTOWER — Aaron Hightower</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap');
@@ -245,6 +248,14 @@ display:block;
 </div>
 <div id="proof-debug" style="display:none;position:fixed;top:4px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.9);color:#0f0;font:bold 12px monospace;padding:4px 10px;border-radius:4px;z-index:999;pointer-events:none;white-space:pre-line;text-align:center;"></div>
 <script>
+// On-screen error display — shows any JS crash as red text on screen
+window.onerror=function(msg,src,line,col,err){
+  var d=document.createElement('div');
+  d.style.cssText='position:fixed;top:0;left:0;right:0;background:red;color:#fff;font:bold 14px monospace;padding:8px;z-index:9999;white-space:pre-wrap;';
+  d.textContent='JS ERROR line '+line+':\n'+msg;
+  document.body.appendChild(d);
+  return false;
+};
 document.addEventListener('DOMContentLoaded',function(){
 const COLS=10,ROWS=25;
 const NES_SC=[0,40,100,300,1200];
