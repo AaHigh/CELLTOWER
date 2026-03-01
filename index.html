@@ -250,6 +250,16 @@ display:block;
 </div>
 <div id="proof-debug" style="display:none;position:fixed;top:4px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.9);color:#0f0;font:bold 12px monospace;padding:4px 10px;border-radius:4px;z-index:999;pointer-events:none;white-space:pre-line;text-align:center;"></div>
 <script>
+
+
+alert("This should pop up INSTANTLY if ANY JS runs at all");
+
+console.log("Script top-level code executed");
+
+document.addEventListener('DOMContentLoaded', () => {
+  alert("DOMContentLoaded fired — DOM ready");
+});
+
 const COLS=10,ROWS=25;
 const NES_SC=[0,40,100,300,1200];
 const NES_SP=[800,717,633,550,467,383,300,217,133,100,83,83,83,67,67,67,50,50,50,33,33,33,33,33,33,33,33,33,33,17];
