@@ -181,6 +181,9 @@ function resize(){
   SH = window.innerHeight || screen.height || 844;
   cv.width  = SW;
   cv.height = SH;
+  // Explicitly set CSS size to match — prevents any browser scaling
+  cv.style.width  = SW + 'px';
+  cv.style.height = SH + 'px';
   computeLayout();
 }
 
@@ -1193,6 +1196,8 @@ cv.addEventListener('touchstart', function(e){
   e.preventDefault();
   for(let t of e.changedTouches){
     const tx=t.clientX, ty=t.clientY;
+    // If game not started, any tap starts it
+    if(!ui.gameStarted){ startGame(); return; }
     const id=hitTest(tx,ty);
     if(id==='ctrl_left'||id==='ctrl_right'){
       ctrlPressed[id.replace('ctrl_','')]=true;
@@ -1227,6 +1232,7 @@ cv.addEventListener('touchcancel', function(e){
 
 // Mouse fallback (desktop)
 cv.addEventListener('mousedown', function(e){
+  if(!ui.gameStarted){ startGame(); return; }
   const id=hitTest(e.clientX,e.clientY);
   if(id==='speed_slider'){ _sliderDragging=true; handleSlider(e.clientX); return; }
   if(id==='ctrl_left'||id==='ctrl_right'){ startHold(id); return; }
