@@ -83,6 +83,10 @@ color:#aa88ff;opacity:.7;text-transform:uppercase}
 .cb{width:clamp(42px,11vw,60px);height:clamp(42px,11vw,60px);background:rgba(0,80,180,.5);border:2px solid #0088ff;border-radius:50%;color:#fff;font-size:clamp(.9rem,2.5vw,1.4rem);cursor:pointer;box-shadow:0 0 10px #0088ff55;transition:all .15s;display:flex;align-items:center;justify-content:center;touch-action:manipulation;font-family:‘Orbitron’,monospace;font-weight:700}
 .cb:hover,.cb:active{background:rgba(0,160,255,.8);box-shadow:0 0 20px #00ffff}
 #gov{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.75);display:none;flex-direction:column;align-items:center;justify-content:center;border-radius:4px;gap:10px;z-index:50}
+#startov{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(5,0,20,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:4px;gap:12px;z-index:55}
+#startov-title{font-size:clamp(1.2rem,5vw,2rem);font-weight:900;letter-spacing:.12em;background:linear-gradient(90deg,#ff00ff,#00ffff,#ffff00);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-align:center}
+#startov-sub{font-size:clamp(.6rem,2vw,.8rem);color:#aa88ff;letter-spacing:.1em}
+#startov-hint{font-size:clamp(.45rem,1.5vw,.6rem);color:#664488;text-align:center;line-height:1.6;padding:0 12px}
 #gov h2{font-size:clamp(1rem,4vw,1.8rem);font-weight:900;color:#ff4444;text-shadow:0 0 20px #ff0000;text-align:center}
 #gov .fs{font-size:clamp(.8rem,3vw,1.2rem);color:#00ffff;text-shadow:0 0 10px #00ffff}
 .rbtn{padding:10px 24px;background:linear-gradient(135deg,#aa00ff,#ff00aa);border:none;border-radius:8px;color:#fff;font-family:‘Orbitron’,monospace;font-size:clamp(.75rem,2vw,.95rem);font-weight:700;cursor:pointer;box-shadow:0 0 20px #aa00ff88;transition:all .2s;touch-action:manipulation}
@@ -180,14 +184,20 @@ display:block;
       <div id="gov">
         <h2>GAME OVER</h2>
         <div class="fs" id="fst">Score: 0</div>
-        <button class="rbtn" onclick="restart()">PLAY AGAIN</button>
+        <button class="rbtn" id="play-again-btn">PLAY AGAIN</button>
       </div>
       <div id="pov">⏸ PAUSED</div>
+      <div id="startov">
+        <div id="startov-title">✦ CELLTOWER ✦</div>
+        <div id="startov-sub">by Aaron Hightower</div>
+        <button class="rbtn" id="startov-btn">TAP TO PLAY</button>
+        <div id="startov-hint">AUTO mode available after game starts<br>AUTO scores do not qualify for high score</div>
+      </div>
     </div>
     <div id="right-panel">
       <div class="pbox"><h3>Next</h3><canvas id="nc" width="60" height="60"></canvas></div>
       <div class="pbox"><h3>High</h3><div class="pval" id="hv">0</div></div>
-      <div class="pbox" style="cursor:pointer" onclick="togglePause()"><h3>Pause</h3><div class="pval">⏸</div></div>
+      <div class="pbox" id="pause-btn" style="cursor:pointer"><h3>Pause</h3><div class="pval">⏸</div></div>
       <div class="pbox" id="tbbox" style="position:relative;overflow:hidden">
         <h3>T-Bonus</h3>
         <div style="display:flex;flex-direction:column;gap:2px;align-items:flex-start;padding:0 4px">
@@ -203,43 +213,42 @@ display:block;
     </div>
   </div>
   <div id="prow">
-    <button class="pb" id="pb0" onclick="choose(0)"><canvas width="40" height="40" id="pc0"></canvas><span class="pnum">1</span></button>
-    <button class="pb" id="pb1" onclick="choose(1)"><canvas width="40" height="40" id="pc1"></canvas><span class="pnum">2</span></button>
-    <button class="pb" id="pb2" onclick="choose(2)"><canvas width="40" height="40" id="pc2"></canvas><span class="pnum">3</span></button>
-    <button class="pb" id="pb3" onclick="choose(3)"><canvas width="40" height="40" id="pc3"></canvas><span class="pnum">4</span></button>
+    <button class="pb" id="pb0"><canvas width="40" height="40" id="pc0"></canvas><span class="pnum">1</span></button>
+    <button class="pb" id="pb1"><canvas width="40" height="40" id="pc1"></canvas><span class="pnum">2</span></button>
+    <button class="pb" id="pb2"><canvas width="40" height="40" id="pc2"></canvas><span class="pnum">3</span></button>
+    <button class="pb" id="pb3"><canvas width="40" height="40" id="pc3"></canvas><span class="pnum">4</span></button>
   </div>
-  <button id="tetris-btn" onclick="chooseTetris()">
+  <button id="tetris-btn">
     <div id="tetris-btn-inner">
       <span id="tetris-btn-text">TETRIS</span>
     </div>
     <div id="tetris-btn-sub">tap to clear four lines</div>
   </button>
   <div id="crow">
-    <button class="cb" onclick="rot(-1)">↺</button>
-    <button class="cb" onclick="mhz(-1)">◀</button>
-    <button class="cb" onclick="sdrop()">▼</button>
-    <button class="cb" onclick="hdrop()">⬇</button>
-    <button class="cb" onclick="mhz(1)">▶</button>
-    <button class="cb" onclick="rot(1)">↻</button>
+    <button class="cb" id="cb-rotl">↺</button>
+    <button class="cb" id="cb-left">◀</button>
+    <button class="cb" id="cb-soft">▼</button>
+    <button class="cb" id="cb-hard">⬇</button>
+    <button class="cb" id="cb-right">▶</button>
+    <button class="cb" id="cb-rotr">↻</button>
   </div>
   <div id="aprow">
-    <label id="ap-toggle-label" onclick="toggleAutoPlay()" title="Toggle autoplay">
+    <label id="ap-toggle-label" title="Toggle autoplay">
       <span id="ap-icon">🤖</span>
       <span id="ap-label">AUTO</span>
       <span id="ap-dot"></span>
     </label>
     <input type="range" id="ap-speed" min="1" max="11" value="5"
-      oninput="setAutoSpeed(this.value)"
       title="Autoplay speed (1=slow · 11=ludicrous)">
     <span id="ap-speed-val">5</span>
-    <button id="receipt-btn" onclick="showReceipt()" title="Transaction Receipt">🧾 RECEIPT</button>
+    <button id="receipt-btn" title="Transaction Receipt">🧾 RECEIPT</button>
   </div>
 </div>
 
 <!-- ── RECEIPT OVERLAY ──────────────────────────────────────────────────── -->
 
 <div id="receipt-overlay">
-  <div id="receipt-close" onclick="hideReceipt()">✕ CLOSE</div>
+  <div id="receipt-close">✕ CLOSE</div>
   <div id="receipt-scroll">
     <div id="receipt-paper">
       <div id="receipt-content"></div>
@@ -248,14 +257,24 @@ display:block;
 </div>
 <div id="proof-debug" style="display:none;position:fixed;top:4px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.9);color:#0f0;font:bold 12px monospace;padding:4px 10px;border-radius:4px;z-index:999;pointer-events:none;white-space:pre-line;text-align:center;"></div>
 <script>
-// On-screen error display — shows any JS crash as red text on screen
+// Suppress cross-origin "Script error." noise from browser-internal callbacks
+// (iOS speech, Web Audio scheduler, etc.) — these do not affect gameplay.
+// Only show errors that have real line numbers from our own code.
 window.onerror=function(msg,src,line,col,err){
-  var d=document.createElement('div');
-  d.style.cssText='position:fixed;top:0;left:0;right:0;background:red;color:#fff;font:bold 14px monospace;padding:8px;z-index:9999;white-space:pre-wrap;';
+  if(!line||line===0||msg==='Script error.'||msg==='Script error')return true;
+  var d=document.getElementById('_errbar')||document.createElement('div');
+  d.id='_errbar';
+  d.style.cssText='position:fixed;top:0;left:0;right:0;background:red;color:#fff;font:bold 13px monospace;padding:8px;z-index:9999;white-space:pre-wrap;';
   d.textContent='JS ERROR line '+line+':\n'+msg;
-  document.body.appendChild(d);
-  return false;
+  if(!d.parentNode)document.body.appendChild(d);
+  return true;
 };
+// Suppress unhandled promise rejections from Web Audio / browser internals
+window.addEventListener('unhandledrejection',function(e){
+  if(e&&e.reason&&String(e.reason).indexOf('Script error')>=0)e.preventDefault();
+  // Swallow audio context / cross-origin promise rejections silently
+  if(e&&e.reason&&(e.reason.name==='NotAllowedError'||e.reason.name==='AbortError'))e.preventDefault();
+});
 document.addEventListener('DOMContentLoaded',function(){
 const COLS=10,ROWS=25;
 const NES_SC=[0,40,100,300,1200];
@@ -606,7 +625,7 @@ if(award===0&&raw>=50)award=100;
 if(award>0){
 score+=award;
 document.getElementById(‘sv’).textContent=score;
-if(score>hi){hi=score;document.getElementById(‘hv’).textContent=hi;}
+if(!autoUsed && score>hi){hi=score;document.getElementById(‘hv’).textContent=hi;}
 floatTetrisBonus(award);
 // Transaction log
 txScore(‘line-’+cleared, award, [
@@ -921,41 +940,6 @@ sndSmokeAlarm(sev);
 const emoji=‘🗼’.repeat(sev);
 const msgs=[’’,‘GETTING TALL’,‘HIGHTOWER ALERT’,‘BUILDING TOWERS!’,‘DAD DISAPPROVES’,‘HIGHTOWER LIVES’];
 tickerPush([emoji,msgs[sev]]);
-}
-
-// ── SPEECH INTRO — Web Speech API, female voice, completely free ───────────
-function speakIntro(){
-if(!window.speechSynthesis)return;
-try{getAC().resume();}catch(e){}
-
-const text=
-“Welcome to Aaron Hightower’s Cell Tower game, from the Tower District! “+
-“This game was entirely created with my voice! “+
-“All you gotta do is touch the screen for the numbered piece — “+
-“tell me what you want, and I’ll give it to you. “+
-“All the other stuff? You can figure it out!”;
-
-const doSpeak=voices=>{
-// Priority list of known female voices across iOS, macOS, Chrome, Edge, Firefox
-const want=[‘Samantha’,‘Google UK English Female’,‘Microsoft Zira Desktop’,
-‘Microsoft Eva Mobile’,‘Karen’,‘Moira’,‘Victoria’,‘Fiona’,
-‘Serena’,‘Nicky’,‘Google US English’];
-const pick=
-want.reduce((f,name)=>f||voices.find(v=>v.name===name),null)||
-voices.find(v=>v.lang.startsWith(‘en’)&&/female|woman/i.test(v.name))||
-voices.find(v=>v.lang.startsWith(‘en-US’))||
-voices.find(v=>v.lang.startsWith(‘en’));
-const u=new SpeechSynthesisUtterance(text);
-if(pick)u.voice=pick;
-u.rate=0.88;u.pitch=1.12;u.volume=1;
-speechSynthesis.cancel();
-speechSynthesis.speak(u);
-};
-
-const v=speechSynthesis.getVoices();
-if(v.length>0)doSpeak(v);
-else speechSynthesis.addEventListener(‘voiceschanged’,
-()=>doSpeak(speechSynthesis.getVoices()),{once:true});
 }
 
 let board,score,level,lines,hi=0,dead,paused;
@@ -1451,8 +1435,9 @@ const PUZZLE_PIECE_TYPES = [
 ];
 
 let PROOF_MODE = false; // triple-tap LEVEL to toggle debug/hint mode
-let AUTO_PLAY  = true;  // autoplay on by default
-let AUTO_SPEED = 5;     // 1=slow, 11=ludicrous (1-frame skipping)
+let AUTO_PLAY  = false; // off by default — player must enable explicitly
+let AUTO_SPEED = 5;     // 1=slow, 11=ludicrous
+let autoUsed   = false; // true if auto was used this game — disqualifies high score
 let puzzleTargets = []; // [{k,rot,x,dropY}] correct placement for each puzzle piece
 
 let puzzleQueue = [];
@@ -2739,7 +2724,7 @@ const nl=Math.floor(lines/10)+1;if(nl>level)level=nl;
 document.getElementById(‘sv’).textContent=score;
 document.getElementById(‘lv’).textContent=level;
 document.getElementById(‘lnv’).textContent=lines;
-if(score>hi){hi=score;document.getElementById(‘hv’).textContent=hi}
+if(!autoUsed && score>hi){hi=score;document.getElementById(‘hv’).textContent=hi}
 if(level>prevLevel)setTimeout(sndLevelUp,cl>0?520:0);
 }
 
@@ -2996,6 +2981,7 @@ choose(bestIdx);
 
 function toggleAutoPlay(){
 AUTO_PLAY=!AUTO_PLAY;
+if(AUTO_PLAY) autoUsed=true; // turning on auto disqualifies this game’s score
 const lbl=document.getElementById(‘ap-toggle-label’);
 if(lbl) lbl.classList.toggle(‘on’,AUTO_PLAY);
 if(!AUTO_PLAY){ clearTimeout(_autoIv); _autoIv=null; }
@@ -3101,7 +3087,13 @@ _lastScoringHoleCheck=(currentScoringHoles===0);
 function triggerDead(){
 dead=true;stopDrop();stopSelTimer();
 sndGameOver();
-document.getElementById(‘fst’).textContent=’Score: ’+score;
+// Only update high score on human games (no auto used)
+if(!autoUsed && score>hi){
+hi=score;
+document.getElementById(‘hv’).textContent=hi;
+}
+const qualifier = autoUsed ? ’ · AUTO (no hi score)’ : (score>=hi&&score>0?’ · NEW HIGH!’:’’);
+document.getElementById(‘fst’).textContent=’Score: ’+score+qualifier;
 document.getElementById(‘gov’).style.display=‘flex’;
 }
 
@@ -3111,7 +3103,6 @@ document.getElementById(‘pov’).style.display=paused?‘flex’:‘none’;
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
-let _introSpoken=false;
 function init(){
 board=Array.from({length:ROWS},()=>Array(COLS).fill(null));
 score=0;level=1;lines=0;dead=false;paused=false;
@@ -3122,10 +3113,10 @@ tetrisStreak=0;tetrisMultiplier=1;
 currentScoringHoles=0;scoringDisabledSound=false;
 hfRun=0;hfBest=0;
 _towerSeverity=0;
+autoUsed=false;
 _gamesPlayed++;
 _tickerInit();
-// Seed ticker so it’s visible from game start
-setTimeout(()=>tickerPush([`READY`,`LVL ${level}`]), 100);
+setTimeout(()=>{ try{tickerPush([`READY`,`LVL ${level}`]);}catch(e){} }, 100);
 updateHoleDisplay(0);updateTBDisplay();
 txReset();
 puzzleQueue=[];puzzleTargets=[];puzzleActive=false;buildPuzzleQueue();
@@ -3136,10 +3127,35 @@ document.getElementById(‘lnv’).textContent=‘0’;
 document.getElementById(‘hv’).textContent=hi;
 document.getElementById(‘gov’).style.display=‘none’;
 document.getElementById(‘pov’).style.display=‘none’;
-if(!_introSpoken){_introSpoken=true;setTimeout(speakIntro,400);}
-nxt=mkPiece();spawn();scheduleDrop();
+const startOv=document.getElementById(‘startov’);
+const waitingToStart=startOv&&startOv.style.display!==‘none’;
+if(!waitingToStart){ nxt=mkPiece();spawn();scheduleDrop(); }
 }
-function restart(){stopDrop();stopSelTimer();init()}
+function startGame(){
+const ov=document.getElementById(‘startov’);
+if(ov) ov.style.display=‘none’;
+try{
+const ac=getAC();
+if(ac.state===‘suspended’){
+ac.resume().then(()=>{ try{restart();}catch(e){_showErr(e);} }).catch(()=>{ try{restart();}catch(e){_showErr(e);} });
+} else {
+restart();
+}
+}catch(e){ _showErr(e); }
+}
+
+function _showErr(e){
+var d=document.getElementById(’_errbar’)||document.createElement(‘div’);
+d.id=’_errbar’;
+d.style.cssText=‘position:fixed;top:0;left:0;right:0;background:#900;color:#fff;font:bold 11px monospace;padding:6px;z-index:9999;white-space:pre-wrap;overflow:auto;max-height:40vh;’;
+d.textContent=(e&&e.stack)||String(e);
+if(!d.parentNode)document.body.appendChild(d);
+}
+
+function restart(){
+try{ stopDrop();stopSelTimer();init(); }
+catch(e){ _showErr(e); }
+}
 
 // ─── KEYBOARD ────────────────────────────────────────────────────────────────
 document.addEventListener(‘keydown’,e=>{
@@ -3179,7 +3195,82 @@ e.preventDefault();
 const t=e.changedTouches[0];
 handleCanvasTap(t.clientX,t.clientY);
 },{passive:false});
-function loop(ts){AT=ts*.001;drawBoard();drawNext();requestAnimationFrame(loop)}
+
+// ── Wire all buttons via addEventListener (no inline onclick — causes Safari Script error) ──
+function _wire(id, fn){
+const el=document.getElementById(id);
+if(!el) return;
+// Use touchend for iOS — pointerdown with preventDefault blocks button activation
+el.addEventListener(‘touchend’, function(e){ e.preventDefault(); fn(); },{passive:false});
+// Also handle click for non-touch environments
+el.addEventListener(‘click’, function(e){ fn(); });
+}
+function _wireHold(id, fn){
+const el=document.getElementById(id);
+if(!el) return;
+let hiv=null;
+const start=()=>{ fn(); hiv=setInterval(fn, 80); };
+const stop=()=>{ clearInterval(hiv); hiv=null; };
+el.addEventListener(‘touchstart’, function(e){ e.preventDefault(); start(); },{passive:false});
+el.addEventListener(‘touchend’,   function(e){ e.preventDefault(); stop(); },{passive:false});
+el.addEventListener(‘touchcancel’,function(e){ stop(); },{passive:false});
+// Mouse fallback for desktop
+el.addEventListener(‘mousedown’,  function(e){ start(); });
+el.addEventListener(‘mouseup’,    function(e){ stop(); });
+el.addEventListener(‘mouseleave’, function(e){ stop(); });
+}
+
+// Start / restart
+_wire(‘startov-btn’,  startGame);
+_wire(‘play-again-btn’, restart);
+
+// Placement choosers
+_wire(‘pb0’, ()=>choose(0));
+_wire(‘pb1’, ()=>choose(1));
+_wire(‘pb2’, ()=>choose(2));
+_wire(‘pb3’, ()=>choose(3));
+
+// Tetris button
+_wire(‘tetris-btn’, chooseTetris);
+
+// Control pad — left/right use hold-repeat, others single fire
+_wire(‘cb-rotl’,  ()=>rot(-1));
+_wire(‘cb-rotr’,  ()=>rot(1));
+_wire(‘cb-soft’,  ()=>sdrop());
+_wire(‘cb-hard’,  ()=>hdrop());
+_wireHold(‘cb-left’,  ()=>mhz(-1));
+_wireHold(‘cb-right’, ()=>mhz(1));
+
+// Pause box
+_wire(‘pause-btn’, togglePause);
+
+// AUTO toggle
+_wire(‘ap-toggle-label’, toggleAutoPlay);
+
+// Receipt
+_wire(‘receipt-btn’,  showReceipt);
+_wire(‘receipt-close’, hideReceipt);
+
+// Speed slider — use ‘input’ event, not pointerdown
+const _speedSlider=document.getElementById(‘ap-speed’);
+if(_speedSlider) _speedSlider.addEventListener(‘input’, function(){ setAutoSpeed(this.value); });
+
+function loop(ts){
+try{
+AT=ts*.001;drawBoard();drawNext();
+}catch(e){
+// Show real error from inside rAF — window.onerror can’t see these
+var d=document.getElementById(’_loopErr’);
+if(!d){
+d=document.createElement(‘div’);d.id=’_loopErr’;
+d.style.cssText=‘position:fixed;top:40px;left:0;right:0;background:#a00;color:#fff;font:bold 12px monospace;padding:6px;z-index:9999;white-space:pre-wrap;’;
+document.body.appendChild(d);
+}
+d.textContent=‘LOOP ERROR: ‘+e.message+’\n’+e.stack;
+return; // stop loop on crash so error stays visible
+}
+requestAnimationFrame(loop);
+}
 
 // ── Triple-tap LEVEL box to toggle debug/hint mode ────────────────────────
 (()=>{
