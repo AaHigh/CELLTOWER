@@ -26,7 +26,6 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
 <body>
 <canvas id="cv"></canvas>
 <!-- Full-screen tap overlay for start — bypasses all canvas hit logic -->
-<div id="startbtn" onclick="doStart()" ontouchstart="doStart();event.preventDefault();" style="position:fixed;top:0;left:0;right:0;bottom:0;z-index:50;background:transparent;cursor:pointer"></div>
 <!-- Error display — always visible if JS throws -->
 <div id="errdiv" style="position:fixed;top:0;left:0;right:0;z-index:999;background:#900;color:#fff;font:13px monospace;padding:8px;display:none;white-space:pre-wrap"></div>
 
@@ -116,27 +115,6 @@ function showErr(msg){
   if(d){ d.style.display='block'; d.textContent += '\n'+msg; }
 }
 
-function doStart(){
-  var btn = document.getElementById('startbtn');
-  if(btn) btn.style.display = 'none';
-  try {
-    startGame();
-  } catch(e) {
-    showErr('startGame ERR: '+e.message+'\n'+(e.stack||''));
-    if(btn) btn.style.display = 'block';
-  }
-}
-
-function doRestart(){
-  var btn = document.getElementById('startbtn');
-  if(btn) btn.style.display = 'none';
-  try {
-    restart();
-  } catch(e) {
-    showErr('restart ERR: '+e.message+'\n'+(e.stack||''));
-    if(btn) btn.style.display = 'block';
-  }
-}
 // ═══════════════════════════════════════════════════════════════════════
 // CELLTOWER — single-canvas renderer
 // All layout, UI, input handled here. Game logic below is unchanged.
@@ -175,12 +153,11 @@ let ui = {
   autoOn:false,
   autoUsed:false,
   autoSpeed:5,
-  // start screen pulse
   startPulse:0,
-  // notification flash
   flash:null,          // {text, until}
-  // tower severity
   towerSev:0,
+  debugMode:false,     // triple-tap LEVEL box to toggle
+  _levelTaps:[],       // timestamps for triple-tap detection
 };
 
 // ── Fonts ─────────────────────────────────────────────────────────────
@@ -454,6 +431,24 @@ function draw(ts){
 
   if(_receiptOpen) drawReceiptOverlay(t);
   if(ui.flash && ts < ui.flash.until) drawFlash(t);
+
+  // DEBUG TAP — only shown when debug mode is on
+  if(ui.debugMode && ui._dbgTap && (t - ui._dbgTap.t) < 2.0){
+    CTX.save();
+    CTX.globalAlpha = 1.0;
+    CTX.fillStyle = 'rgba(0,0,0,0.7)';
+    CTX.fillRect(0, SH*0.45, SW, 40);
+    CTX.font = 'bold 16px monospace';
+    CTX.fillStyle = '#ff0';
+    CTX.textAlign = 'center';
+    CTX.textBaseline = 'middle';
+    CTX.fillText('TAP: '+ui._dbgTap.id+' ('+Math.round(ui._dbgTap.tx)+','+Math.round(ui._dbgTap.ty)+')', SW/2, SH*0.45+20);
+    // Also draw a crosshair at tap point
+    CTX.strokeStyle='#f00'; CTX.lineWidth=2;
+    CTX.beginPath(); CTX.moveTo(ui._dbgTap.tx-10,ui._dbgTap.ty); CTX.lineTo(ui._dbgTap.tx+10,ui._dbgTap.ty); CTX.stroke();
+    CTX.beginPath(); CTX.moveTo(ui._dbgTap.tx,ui._dbgTap.ty-10); CTX.lineTo(ui._dbgTap.tx,ui._dbgTap.ty+10); CTX.stroke();
+    CTX.restore();
+  }
   // drawDebug();
 }
 
@@ -517,9 +512,11 @@ function drawStartScreen(t){
   CTX.fillText('TAP TO PLAY', mx, btnY + btnH/2);
   CTX.shadowBlur=0;
 
-  // Register hit zone for TAP TO PLAY
-  hitZones = hitZones.filter(z=>z.id!=='start');
-  addHit('start', btnX, btnY, btnW, btnH);
+  // Register hit zone for TAP TO PLAY — NOT added to hitZones
+  // Start tap is handled inline in handleTap by checking coords against this rect
+  // Store button rect for tap detection
+  ui._startBtnX = btnX; ui._startBtnY = btnY;
+  ui._startBtnW = btnW; ui._startBtnH = btnH;
 
   // Hint text
   CTX.font = F('500 {S}px monospace', Math.max(7, bw*0.045));
@@ -678,11 +675,11 @@ function drawPlayfield(t){
   CTX.restore();
 
   // READY/status text in bottom-left of playfield
-  drawPlayfieldStatus(t, gx, gy, gw, gh);
 }
 
 function drawGhosts(t, gx, gy){
   if(!placements) return;
+  labelPositions = []; // reset each frame so positions stay current
   const elapsed = AT - moveStartTime;
 
   for(let i=0;i<placements.length;i++){
@@ -696,66 +693,65 @@ function drawGhosts(t, gx, gy){
     else { alpha = 0.38 * Math.min(1, (elapsed-0.5)/0.5); }
     if(alpha <= 0) continue;
 
-    // Use the falling piece's own color — ghost is a very dim version of it
     const [r0,g0,b0] = cur ? cur.rgb : [100,100,100];
 
     CTX.save();
+    CTX.globalAlpha = 1.0; // never change globalAlpha — use rgba() for all transparency
 
-    // Ghost rendering: transparent fill (piece color tinted) + pure white outline
-    // Outer silhouette = exposed edges only, pure white at 75% alpha
-    // Interior dividers = thinner white at 37% alpha (half of outer)
-    // Even placements slightly brighter than odd to delineate adjacent ghosts
-    const outAlpha = (i % 2 === 0) ? 0.90 : 0.55;
-    const lw = Math.max(2, CELL * 0.2);  // 2x thicker
+    // Alternating fill brightness: pieces 1&3 brighter, 2&4 dimmer
+    const fillA = (i % 2 === 0) ? (alpha * 0.50) : (alpha * 0.18);
+    const outA  = 0.4; // outline always 40%
 
-    // Transparent fill — piece color at very low opacity so shape reads without blocking
-    CTX.globalAlpha = alpha * 0.18;
-    CTX.fillStyle = `rgb(${r0},${g0},${b0})`;
+    // ── LAYER 1: Color fill ───────────────────────────────────────────────
+    CTX.fillStyle = `rgba(${r0},${g0},${b0},${fillA.toFixed(3)})`;
     for(let r=0;r<p.c.length;r++) for(let c=0;c<p.c[r].length;c++){
       if(!p.c[r][c]) continue;
-      CTX.fillRect(gx+(p.x+c)*CELL+1, gy+(p.dropY+r)*CELL+1, CELL-2, CELL-2);
+      CTX.fillRect(gx+(p.x+c)*CELL, gy+(p.dropY+r)*CELL, CELL, CELL);
     }
 
-    // Outer silhouette: pure white, exposed edges only
-    CTX.globalAlpha = alpha * outAlpha;
-    CTX.strokeStyle = '#ffffff';
+    // ── LAYER 2: Outline ──────────────────────────────────────────────────
+    const lw = Math.max(2, CELL * 0.15);
+    const ins = lw * 0.5;
+    CTX.strokeStyle = `rgba(255,255,255,${outA.toFixed(3)})`;
     CTX.lineWidth = lw;
-    for(let r=0;r<p.c.length;r++) for(let c=0;c<p.c[r].length;c++){
-      if(!p.c[r][c]) continue;
-      const px2 = gx + (p.x+c)*CELL;
-      const py2 = gy + (p.dropY+r)*CELL;
-      const hasUp    = r>0 && p.c[r-1][c];
-      const hasDown  = r<p.c.length-1 && p.c[r+1] && p.c[r+1][c];
-      const hasLeft  = c>0 && p.c[r][c-1];
-      const hasRight = c<p.c[r].length-1 && p.c[r][c+1];
-      CTX.beginPath();
-      if(!hasUp)    { CTX.moveTo(px2,      py2);      CTX.lineTo(px2+CELL, py2); }
-      if(!hasDown)  { CTX.moveTo(px2,      py2+CELL); CTX.lineTo(px2+CELL, py2+CELL); }
-      if(!hasLeft)  { CTX.moveTo(px2,      py2);      CTX.lineTo(px2,      py2+CELL); }
-      if(!hasRight) { CTX.moveTo(px2+CELL, py2);      CTX.lineTo(px2+CELL, py2+CELL); }
-      CTX.stroke();
+    CTX.lineJoin = 'miter';
+    CTX.lineCap = 'butt';
+    CTX.beginPath();
+    const rows = p.c.length, cols = (p.c[0]||[]).length;
+
+    // Horizontal edges: draw cell-by-cell, alternating alpha per cell column
+    for(let r=0; r<=rows; r++){
+      for(let c=0; c<cols; c++){
+        const above = r>0    && p.c[r-1] && p.c[r-1][c];
+        const below = r<rows && p.c[r]   && p.c[r][c];
+        if(!((above && !below) || (!above && below))) continue;
+        const topEdge = (!above && below);
+        const y = gy+(p.dropY+r)*CELL + (topEdge ? ins : -ins);
+        CTX.globalAlpha = (c % 2 === 0) ? 0.60 : 0.40;
+        CTX.beginPath();
+        CTX.moveTo(gx+(p.x+c)*CELL,      y);
+        CTX.lineTo(gx+(p.x+c+1)*CELL,    y);
+        CTX.stroke();
+      }
     }
 
-    // Interior cell dividers: pure white, half alpha, thinner
-    CTX.globalAlpha = alpha * outAlpha * 0.5;
-    CTX.lineWidth = Math.max(0.5, lw * 0.5);
-    for(let r=0;r<p.c.length;r++) for(let c=0;c<p.c[r].length;c++){
-      if(!p.c[r][c]) continue;
-      const px2 = gx + (p.x+c)*CELL;
-      const py2 = gy + (p.dropY+r)*CELL;
-      const hasUp    = r>0 && p.c[r-1][c];
-      const hasDown  = r<p.c.length-1 && p.c[r+1] && p.c[r+1][c];
-      const hasLeft  = c>0 && p.c[r][c-1];
-      const hasRight = c<p.c[r].length-1 && p.c[r][c+1];
-      CTX.beginPath();
-      if(hasUp)    { CTX.moveTo(px2,      py2);      CTX.lineTo(px2+CELL, py2); }
-      if(hasDown)  { CTX.moveTo(px2,      py2+CELL); CTX.lineTo(px2+CELL, py2+CELL); }
-      if(hasLeft)  { CTX.moveTo(px2,      py2);      CTX.lineTo(px2,      py2+CELL); }
-      if(hasRight) { CTX.moveTo(px2+CELL, py2);      CTX.lineTo(px2+CELL, py2+CELL); }
-      CTX.stroke();
+    // Vertical edges: draw cell-by-cell, alternating alpha per cell row
+    for(let c=0; c<=cols; c++){
+      for(let r=0; r<rows; r++){
+        const left  = c>0    && p.c[r] && p.c[r][c-1];
+        const right = c<cols && p.c[r] && p.c[r][c];
+        if(!((left && !right) || (!left && right))) continue;
+        const leftEdge = (!left && right);
+        const x = gx+(p.x+c)*CELL + (leftEdge ? ins : -ins);
+        CTX.globalAlpha = (r % 2 === 0) ? 0.60 : 0.40;
+        CTX.beginPath();
+        CTX.moveTo(x, gy+(p.dropY+r)*CELL);
+        CTX.lineTo(x, gy+(p.dropY+r+1)*CELL);
+        CTX.stroke();
+      }
     }
 
-    // Number badge centered on bounding box
+    // Number badge — nearest-point snap
     let minR=99,maxR=0,minC=99,maxC=0;
     for(let r=0;r<p.c.length;r++) for(let c=0;c<p.c[r].length;c++){
       if(p.c[r][c]){minR=Math.min(minR,r);maxR=Math.max(maxR,r);minC=Math.min(minC,c);maxC=Math.max(maxC,c);}
@@ -784,21 +780,24 @@ function drawGhosts(t, gx, gy){
     const avgY = nearest.reduce((s,f)=>s+f.fy,0) / nearest.length;
     const numX = gx + (p.x + avgX) * CELL;
     const numY = gy + (p.dropY + avgY) * CELL;
-    const numSz = Math.max(14, CELL*1.2);  // large but 20% reduced
 
-    CTX.globalAlpha = Math.min(1, alpha * 1.6);
+    // ── Save to labelPositions for tap detection ─────────────────────────
+    labelPositions[i] = {x: numX, y: numY, idx: i};
+
+    const numSz = Math.max(14, CELL*1.2);
+
+    const numA = Math.min(1, alpha * 1.6);
+    CTX.globalAlpha = 1.0;
     CTX.font = `900 ${Math.round(numSz)}px "Arial Black","Impact",sans-serif`;
     CTX.textAlign = 'center';
     CTX.textBaseline = 'middle';
     CTX.shadowBlur = 0;
 
-    // Drop shadow: semi-transparent black, offset 1 stroke-width right+down
     const dropOff = Math.max(1, Math.round(numSz * 0.08));
-    CTX.fillStyle = 'rgba(0,0,0,0.6)';
+    CTX.fillStyle = `rgba(0,0,0,${(numA*0.6).toFixed(3)})`;
     CTX.fillText(String(i+1), numX + dropOff, numY + dropOff);
 
-    // White number on top
-    CTX.fillStyle = '#ffffff';
+    CTX.fillStyle = `rgba(255,255,255,${numA.toFixed(3)})`;
     CTX.fillText(String(i+1), numX, numY);
 
     CTX.restore();
@@ -1107,8 +1106,8 @@ function drawGameOverOverlay(){
   CTX.fillText('PLAY AGAIN', mx, by3+bh3/2);
   CTX.shadowBlur=0;
 
-  hitZones=hitZones.filter(z=>z.id!=='playagain');
-  addHit('playagain', bx3, by3, bw3, bh3);
+  // Store rect for coordinate-based tap detection (not hitZones)
+  ui._playAgainX=bx3; ui._playAgainY=by3; ui._playAgainW=bw3; ui._playAgainH=bh3;
 }
 
 // ── Flash notification ───────────────────────────────────────────────
@@ -1186,11 +1185,47 @@ function hitTest(tx, ty){
 }
 
 function handleTap(tx, ty){
+  // Start screen: only fire if game not yet started AND tap is on the button
+  if(!ui.gameStarted){
+    if(ui._startBtnW && tx>=ui._startBtnX && tx<=ui._startBtnX+ui._startBtnW &&
+       ty>=ui._startBtnY && ty<=ui._startBtnY+ui._startBtnH){
+      startGame();
+    }
+    return;
+  }
+
   const id=hitTest(tx,ty);
-  if(!id) return;
+
+  // Triple-tap on LEVEL box toggles debug mode
+  if(R.lLevel && tx>=R.lLevel.x && tx<=R.lLevel.x+R.lLevel.w &&
+     ty>=R.lLevel.y && ty<=R.lLevel.y+R.lLevel.h){
+    const now = AT;
+    ui._levelTaps.push(now);
+    ui._levelTaps = ui._levelTaps.filter(t2 => now - t2 < 1.0); // within 1 sec
+    if(ui._levelTaps.length >= 3){
+      ui._levelTaps = [];
+      ui.debugMode = !ui.debugMode;
+      ui.flash = {text: 'DEBUG '+(ui.debugMode?'ON':'OFF'), until: performance.now()+1200};
+    }
+  }
+
+  // DEBUG: record tap (shown only when debugMode on)
+  ui._dbgTap = {tx,ty,id:id||'canvas',t:AT};
+
+  // Game-over: only fire playagain if actually dead AND tap is on the button
+  if(dead){
+    if(ui._playAgainW && tx>=ui._playAgainX && tx<=ui._playAgainX+ui._playAgainW &&
+       ty>=ui._playAgainY && ty<=ui._playAgainY+ui._playAgainH){
+      restart();
+    }
+    return; // never fall through to game controls while dead
+  }
+
+  if(!id){
+    handleCanvasTap(tx, ty);
+    return;
+  }
   switch(id){
-    case 'start':     startGame(); break;
-    case 'playagain': restart(); break;
     case 'pause':     if(ui.gameStarted&&!dead) togglePause(); break;
     case 'piece0': case 'piece1': case 'piece2': case 'piece3':
       choose(parseInt(id[5])); break;
@@ -1204,7 +1239,10 @@ function handleTap(tx, ty){
     case 'auto_toggle': if(ui.gameStarted&&!dead) toggleAutoPlay(); break;
     case 'receipt':        showReceipt(); break;
     case 'receipt_close':  hideReceipt(); break;
-    case 'speed_slider': break; // handled by drag
+    case 'speed_slider': break;
+    default:
+      // Any unrecognised zone — also try ghost tap
+      if(ui.gameStarted && !dead) handleCanvasTap(tx, ty);
   }
 }
 
@@ -1236,8 +1274,6 @@ cv.addEventListener('touchstart', function(e){
   e.preventDefault();
   for(let t of e.changedTouches){
     const tx=t.clientX, ty=t.clientY;
-    // If game not started, any tap starts it
-    if(!ui.gameStarted){ startGame(); return; }
     const id=hitTest(tx,ty);
     if(id==='ctrl_left'||id==='ctrl_right'){
       ctrlPressed[id.replace('ctrl_','')]=true;
@@ -1272,7 +1308,6 @@ cv.addEventListener('touchcancel', function(e){
 
 // Mouse fallback (desktop)
 cv.addEventListener('mousedown', function(e){
-  if(!ui.gameStarted){ startGame(); return; }
   const id=hitTest(e.clientX,e.clientY);
   if(id==='speed_slider'){ _sliderDragging=true; handleSlider(e.clientX); return; }
   if(id==='ctrl_left'||id==='ctrl_right'){ startHold(id); return; }
@@ -3805,9 +3840,6 @@ function fanfare(tetrisPoints){
 // ─── GAME OVER ────────────────────────────────────────────────────────────────
 function triggerDead(){
   dead=true;stopDrop();stopSelTimer();
-  // Show the HTML overlay so PLAY AGAIN tap is reliable
-  var btn = document.getElementById('startbtn');
-  if(btn){ btn.style.display='block'; btn.onclick=function(){ doRestart(); }; btn.ontouchstart=function(){ doRestart(); event.preventDefault(); }; }
   sndGameOver();
   // Only update high score on human games (no auto used)
   if(!autoUsed && score>hi){
@@ -3854,6 +3886,7 @@ function init(){
 }
 function startGame(){
   ui.gameStarted = true;
+  // Belt-and-suspenders: always hide the overlay when game starts
   try{
     if(!AC) AC = new(window.AudioContext||window.webkitAudioContext)();
     if(AC.state==='suspended') AC.resume();
@@ -3870,8 +3903,7 @@ function startGame(){
 function _showErr(e){ console.error(e); }
 
 function restart(){
-  var btn = document.getElementById('startbtn');
-  if(btn) btn.style.display = 'none'; // canvas handles touches during play
+  ui._playAgainW = 0; // clear so stale rect never fires mid-game
   try{ stopDrop();stopSelTimer();init();_syncAutoUI(); }
   catch(e){ showErr('restart ERR: '+e.message); }
 }
@@ -3895,17 +3927,23 @@ document.addEventListener('keydown',e=>{
 // ─── CANVAS TAP / CLICK ──────────────────────────────────────────────────────
 function handleCanvasTap(clientX,clientY){
   if(dead||paused||!placements)return;
-  const rect=gc.getBoundingClientRect();
-  const scaleX=gc.width/rect.width, scaleY=gc.height/rect.height;
-  const mx=(clientX-rect.left)*scaleX;
-  const my=(clientY-rect.top)*scaleY;
-  // Hit radius: 1.8 × cell so numbers are easy to tap on small screens
-  const hitR=CELL*1.8;
-  for(const lp of labelPositions){
-    const dx=mx-lp.x, dy=my-lp.y;
-    if(dx*dx+dy*dy<hitR*hitR){ choose(lp.idx); return; }
+  const mx = clientX;
+  const my = clientY;
+  // Hit radius: 2.5 × cell — covers most of a 4-cell piece footprint
+  const hitR = CELL * 2.5;
+  let bestIdx = -1, bestDist = Infinity;
+  for(let i=0; i<labelPositions.length; i++){
+    const lp = labelPositions[i];
+    if(!lp) continue;
+    const dx = mx - lp.x, dy = my - lp.y;
+    const dist = dx*dx + dy*dy;
+    if(dist < hitR*hitR && dist < bestDist){
+      bestDist = dist;
+      bestIdx = lp.idx;
+    }
   }
-  // Tapped outside any label — cycle to fresh set of options
+  if(bestIdx >= 0){ choose(bestIdx); return; }
+  // Tapped outside any ghost — cycle options
   cycleOptions();
 }
 
