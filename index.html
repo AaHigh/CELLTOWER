@@ -22,7 +22,7 @@ body{background:radial-gradient(ellipse at 20% 50%,#1a0030 0%,#0a0010 60%)}
 .pbox{background:rgba(20,0,40,.85);border:2px solid #5500aa;border-radius:8px;padding:6px;box-shadow:0 0 12px #aa00ff44,inset 0 0 8px #0000aa22}
 .pbox h3{font-size:clamp(.4rem,1.3vw,.6rem);color:#aa88ff;text-transform:uppercase;letter-spacing:.1em;margin-bottom:3px}
 .pval{font-size:clamp(.65rem,2vw,1rem);font-weight:700;color:#00ffff;font-family:'Share Tech Mono',monospace;text-shadow:0 0 8px #00ffff}
-#canvas-wrap{position:relative;flex-shrink:0}
+#canvas-wrap{position:relative;flex:1 1 0;min-width:0;align-self:stretch}
 /* Ticker: fixed height from JS via --ticker-h, never changes with controls */
 #event-ticker{width:100%;height:var(--ticker-h,120px);position:relative;overflow:hidden;pointer-events:none;flex-shrink:0}
 #ticker-canvas{position:absolute;top:0;left:0;width:100%;height:100%;display:block}
@@ -979,24 +979,24 @@ const nx_=nc.getContext(‘2d’);
 let CELL;
 
 function layout(){
-const W=window.innerWidth||document.documentElement.clientWidth||375;
-const H=window.innerHeight||document.documentElement.clientHeight||667;
-const side=Math.min(110,W*.16)*2+20;
-const ctrlH=Math.min(60,W*.11)*2+50+16;
-const avW=Math.min(W-side-16,380);
-const avH=H-40-10-ctrlH-16;
-CELL=Math.floor(Math.min(avW/COLS,avH/ROWS));
-if(CELL<12)CELL=12;
-gc.width=CELL*COLS; gc.height=CELL*ROWS;
-// Ticker height = gap between bottom of Lines pbox and bottom of canvas-wrap
+// Measure canvas-wrap’s actual rendered size — CSS handles the layout,
+// we just fit the canvas into whatever space CSS gives us.
+const wrap=document.getElementById(‘canvas-wrap’);
+const W=wrap.clientWidth||wrap.offsetWidth||200;
+const H=wrap.clientHeight||wrap.offsetHeight||400;
+CELL=Math.floor(Math.min(W/COLS, H/ROWS));
+if(CELL<8)CELL=8;
+gc.width=CELL*COLS;
+gc.height=CELL*ROWS;
+// Ticker height
 requestAnimationFrame(()=>{
-const linesBox = document.querySelector(’#left-panel .pbox:nth-child(3)’);
-const canvasWrap = document.getElementById(‘canvas-wrap’);
-if(linesBox && canvasWrap){
-const linesBottom = linesBox.getBoundingClientRect().bottom;
-const canvasBottom = canvasWrap.getBoundingClientRect().bottom;
-const tickerH = Math.max(40, canvasBottom - linesBottom - 6);
-document.documentElement.style.setProperty(’–ticker-h’, tickerH+‘px’);
+const linesBox=document.querySelector(’#left-panel .pbox:nth-child(3)’);
+const canvasWrap=document.getElementById(‘canvas-wrap’);
+if(linesBox&&canvasWrap){
+const linesBottom=linesBox.getBoundingClientRect().bottom;
+const canvasBottom=canvasWrap.getBoundingClientRect().bottom;
+const tickerH=Math.max(40,canvasBottom-linesBottom-6);
+document.documentElement.style.setProperty(’–ticker-h’,tickerH+‘px’);
 }
 });
 }
@@ -3200,16 +3200,13 @@ handleCanvasTap(t.clientX,t.clientY);
 function _wire(id, fn){
 const el=document.getElementById(id);
 if(!el) return;
-let _lastFire=0;
-const fire=function(e){
-const now=Date.now();
-if(now-_lastFire<300) return; // debounce double-fire (touchend+click)
-_lastFire=now;
-if(e.cancelable) e.preventDefault();
+el.addEventListener(‘click’, function(e){ e.stopPropagation(); fn(); });
+// Also touchend for faster response on iOS
+el.addEventListener(‘touchend’, function(e){
+e.preventDefault();
+e.stopPropagation();
 fn();
-};
-el.addEventListener(‘touchend’, fire, {passive:false});
-el.addEventListener(‘click’, fire);
+}, {passive:false});
 }
 function _wireHold(id, fn){
 const el=document.getElementById(id);
@@ -3707,9 +3704,8 @@ document.getElementById(‘receipt-overlay’).classList.remove(‘show’);
 
 // Wait for real layout dimensions before starting — fixes GitHub Pages/Safari timing
 (function waitForDims(){
-const W=window.innerWidth||document.documentElement.clientWidth||0;
-const H=window.innerHeight||document.documentElement.clientHeight||0;
-if(W>100 && H>200){
+const wrap=document.getElementById(‘canvas-wrap’);
+if(wrap && wrap.clientWidth>50 && wrap.clientHeight>100){
 layout();init();_syncAutoUI();requestAnimationFrame(loop);
 } else {
 setTimeout(waitForDims,50);
