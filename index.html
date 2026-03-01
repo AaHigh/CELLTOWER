@@ -25,6 +25,10 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
 </head>
 <body>
 <canvas id="cv"></canvas>
+<!-- Full-screen tap overlay for start — bypasses all canvas hit logic -->
+<div id="startbtn" onclick="doStart()" ontouchstart="doStart();event.preventDefault();" style="position:fixed;top:0;left:0;right:0;bottom:0;z-index:50;background:transparent;cursor:pointer"></div>
+<!-- Error display — always visible if JS throws -->
+<div id="errdiv" style="position:fixed;top:0;left:0;right:0;z-index:999;background:#900;color:#fff;font:13px monospace;padding:8px;display:none;white-space:pre-wrap"></div>
 
 <!-- ── RECEIPT OVERLAY — HTML/CSS for beautiful thermal paper look ── -->
 
@@ -96,16 +100,43 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
 </style>
 
 <script>
-// Error reporter — works even if canvas never initializes
+// Error reporter — HTML div visible before canvas works
 window.onerror = function(msg, src, line, col, err) {
-  var d = document.getElementById('diag');
+  var d = document.getElementById('errdiv');
   if(d){ d.style.display='block'; d.textContent = 'ERR L'+line+': '+msg+'\n'+(err&&err.stack?err.stack:''); }
   return false;
 };
 window.addEventListener('unhandledrejection', function(e){
-  var d = document.getElementById('diag');
+  var d = document.getElementById('errdiv');
   if(d){ d.style.display='block'; d.textContent += '\nPromise: '+e.reason; }
 });
+
+function showErr(msg){
+  var d = document.getElementById('errdiv');
+  if(d){ d.style.display='block'; d.textContent += '\n'+msg; }
+}
+
+function doStart(){
+  var btn = document.getElementById('startbtn');
+  if(btn) btn.style.display = 'none';
+  try {
+    startGame();
+  } catch(e) {
+    showErr('startGame ERR: '+e.message+'\n'+(e.stack||''));
+    if(btn) btn.style.display = 'block';
+  }
+}
+
+function doRestart(){
+  var btn = document.getElementById('startbtn');
+  if(btn) btn.style.display = 'none';
+  try {
+    restart();
+  } catch(e) {
+    showErr('restart ERR: '+e.message+'\n'+(e.stack||''));
+    if(btn) btn.style.display = 'block';
+  }
+}
 // ═══════════════════════════════════════════════════════════════════════
 // CELLTOWER — single-canvas renderer
 // All layout, UI, input handled here. Game logic below is unchanged.
@@ -3774,6 +3805,9 @@ function fanfare(tetrisPoints){
 // ─── GAME OVER ────────────────────────────────────────────────────────────────
 function triggerDead(){
   dead=true;stopDrop();stopSelTimer();
+  // Show the HTML overlay so PLAY AGAIN tap is reliable
+  var btn = document.getElementById('startbtn');
+  if(btn){ btn.style.display='block'; btn.onclick=function(){ doRestart(); }; btn.ontouchstart=function(){ doRestart(); event.preventDefault(); }; }
   sndGameOver();
   // Only update high score on human games (no auto used)
   if(!autoUsed && score>hi){
@@ -3819,32 +3853,27 @@ function init(){
   nxt=mkPiece();spawn();scheduleDrop();
 }
 function startGame(){
-  dbg('startGame called');
-  // Fire init immediately — don't block on AudioContext.resume()
-  // iOS audio will work on first sound because we're inside the gesture
   ui.gameStarted = true;
   try{
-    // Create AC now while inside gesture handler so iOS allows it
     if(!AC) AC = new(window.AudioContext||window.webkitAudioContext)();
-    if(AC.state==='suspended') AC.resume(); // fire-and-forget, don't await
-  }catch(e){ dbg('AC warn: '+e.message); }
+    if(AC.state==='suspended') AC.resume();
+  }catch(e){ showErr('AC: '+e.message); }
   try{
-    dbg('init starting...');
     init();
-    dbg('init done');
     _syncAutoUI();
-    dbg('game running');
   }catch(e){
-    dbg('ERR init: '+e.message);
-    console.error(e);
+    showErr('init ERR: '+e.message+'\n'+(e.stack||''));
+    ui.gameStarted = false;
   }
 }
 
 function _showErr(e){ console.error(e); }
 
 function restart(){
-  try{ stopDrop();stopSelTimer();init(); }
-  catch(e){ console.error(e); }
+  var btn = document.getElementById('startbtn');
+  if(btn) btn.style.display = 'none'; // canvas handles touches during play
+  try{ stopDrop();stopSelTimer();init();_syncAutoUI(); }
+  catch(e){ showErr('restart ERR: '+e.message); }
 }
 
 // ─── KEYBOARD ────────────────────────────────────────────────────────────────
