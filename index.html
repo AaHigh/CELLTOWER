@@ -979,8 +979,8 @@ const nx_=nc.getContext(‘2d’);
 let CELL;
 
 function layout(){
-const W=window.innerWidth;
-const H=window.innerHeight;
+const W=window.innerWidth||document.documentElement.clientWidth||375;
+const H=window.innerHeight||document.documentElement.clientHeight||667;
 const side=Math.min(110,W*.16)*2+20;
 const ctrlH=Math.min(60,W*.11)*2+50+16;
 const avW=Math.min(W-side-16,380);
@@ -3200,10 +3200,16 @@ handleCanvasTap(t.clientX,t.clientY);
 function _wire(id, fn){
 const el=document.getElementById(id);
 if(!el) return;
-// Use touchend for iOS — pointerdown with preventDefault blocks button activation
-el.addEventListener(‘touchend’, function(e){ e.preventDefault(); fn(); },{passive:false});
-// Also handle click for non-touch environments
-el.addEventListener(‘click’, function(e){ fn(); });
+let _lastFire=0;
+const fire=function(e){
+const now=Date.now();
+if(now-_lastFire<300) return; // debounce double-fire (touchend+click)
+_lastFire=now;
+if(e.cancelable) e.preventDefault();
+fn();
+};
+el.addEventListener(‘touchend’, fire, {passive:false});
+el.addEventListener(‘click’, fire);
 }
 function _wireHold(id, fn){
 const el=document.getElementById(id);
@@ -3699,7 +3705,16 @@ function hideReceipt() {
 document.getElementById(‘receipt-overlay’).classList.remove(‘show’);
 }
 
+// Wait for real layout dimensions before starting — fixes GitHub Pages/Safari timing
+(function waitForDims(){
+const W=window.innerWidth||document.documentElement.clientWidth||0;
+const H=window.innerHeight||document.documentElement.clientHeight||0;
+if(W>100 && H>200){
 layout();init();_syncAutoUI();requestAnimationFrame(loop);
+} else {
+setTimeout(waitForDims,50);
+}
+})();
 }); // end DOMContentLoaded
 </script>
 
