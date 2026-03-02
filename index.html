@@ -1082,32 +1082,58 @@ function drawGameOverOverlay(){
   const qualifier = autoUsed ? '· AUTO ·' : (score>=hi && score>0 ? '★ NEW HIGH ★':'');
   CTX.font=F(FONT_LABEL, Math.max(9,R.gw*0.065));
   CTX.fillStyle=C.cyan;
-  CTX.fillText('Score: '+score, mx, my+bh*0.34);
+  CTX.fillText('Score: '+score, mx, my+bh*0.32);
   if(qualifier){
     CTX.fillStyle=autoUsed?C.orange:C.yellow;
     CTX.shadowColor=CTX.fillStyle; CTX.shadowBlur=8;
-    CTX.fillText(qualifier, mx, my+bh*0.44);
+    CTX.fillText(qualifier, mx, my+bh*0.42);
     CTX.shadowBlur=0;
   }
 
-  // PLAY AGAIN button
-  const bw3=R.gw*0.72, bh3=bh*0.13;
-  const bx3=mx-bw3/2, by3=my+bh*0.56;
-  const grdBtn=CTX.createLinearGradient(bx3,0,bx3+bw3,0);
-  grdBtn.addColorStop(0,'#aa00ff'); grdBtn.addColorStop(1,'#ff00aa');
-  roundRect(bx3,by3,bw3,bh3,8); CTX.fillStyle=grdBtn; CTX.fill();
-  // Auto-fit font so text never exceeds button width
-  let paFontSz = Math.max(8, bh3*0.38);
-  CTX.font=F(FONT_VAL, paFontSz);
-  while(CTX.measureText('PLAY AGAIN').width > bw3*0.85 && paFontSz > 8){
-    paFontSz -= 1; CTX.font=F(FONT_VAL, paFontSz);
+  // Best clean streak summary
+  if(hfBest > 0){
+    CTX.font=F(FONT_LABEL, Math.max(8,R.gw*0.055));
+    CTX.fillStyle='#88ffcc';
+    CTX.fillText('Best Clean Run: '+hfBest+'CS', mx, my+bh*0.52);
+  }
+
+  // Two buttons: RECEIPT (left) | PLAY AGAIN (right)
+  const gap = R.gw * 0.05;
+  const btnW = (R.gw - gap*3) / 2;
+  const btnH = bh * 0.12;
+  const btnY = my + bh * 0.63;
+
+  // RECEIPT button
+  const rxBx = R.gx + gap;
+  const grdR = CTX.createLinearGradient(rxBx,0,rxBx+btnW,0);
+  grdR.addColorStop(0,'#006644'); grdR.addColorStop(1,'#00aa66');
+  roundRect(rxBx, btnY, btnW, btnH, 8); CTX.fillStyle=grdR; CTX.fill();
+  let rFontSz = Math.max(8, btnH*0.36);
+  CTX.font=F(FONT_VAL, rFontSz);
+  while(CTX.measureText('🧾 RECEIPT').width > btnW*0.85 && rFontSz > 8){
+    rFontSz--; CTX.font=F(FONT_VAL, rFontSz);
   }
   CTX.fillStyle='#fff'; CTX.shadowColor='#fff'; CTX.shadowBlur=6;
-  CTX.fillText('PLAY AGAIN', mx, by3+bh3/2);
+  CTX.fillText('🧾 RECEIPT', rxBx+btnW/2, btnY+btnH/2);
   CTX.shadowBlur=0;
 
-  // Store rect for coordinate-based tap detection (not hitZones)
-  ui._playAgainX=bx3; ui._playAgainY=by3; ui._playAgainW=bw3; ui._playAgainH=bh3;
+  // PLAY AGAIN button
+  const paBx = rxBx + btnW + gap;
+  const grdP = CTX.createLinearGradient(paBx,0,paBx+btnW,0);
+  grdP.addColorStop(0,'#aa00ff'); grdP.addColorStop(1,'#ff00aa');
+  roundRect(paBx, btnY, btnW, btnH, 8); CTX.fillStyle=grdP; CTX.fill();
+  let paFontSz = Math.max(8, btnH*0.36);
+  CTX.font=F(FONT_VAL, paFontSz);
+  while(CTX.measureText('PLAY AGAIN').width > btnW*0.85 && paFontSz > 8){
+    paFontSz--; CTX.font=F(FONT_VAL, paFontSz);
+  }
+  CTX.fillStyle='#fff'; CTX.shadowColor='#fff'; CTX.shadowBlur=6;
+  CTX.fillText('PLAY AGAIN', paBx+btnW/2, btnY+btnH/2);
+  CTX.shadowBlur=0;
+
+  // Store rects for coordinate-based tap detection
+  ui._receiptBtnX=rxBx; ui._receiptBtnY=btnY; ui._receiptBtnW=btnW; ui._receiptBtnH=btnH;
+  ui._playAgainX=paBx;  ui._playAgainY=btnY; ui._playAgainW=btnW;  ui._playAgainH=btnH;
 }
 
 // ── Flash notification ───────────────────────────────────────────────
@@ -1214,11 +1240,15 @@ function handleTap(tx, ty){
 
   // Game-over: only fire playagain if actually dead AND tap is on the button
   if(dead){
+    if(ui._receiptBtnW && tx>=ui._receiptBtnX && tx<=ui._receiptBtnX+ui._receiptBtnW &&
+       ty>=ui._receiptBtnY && ty<=ui._receiptBtnY+ui._receiptBtnH){
+      showReceipt(); return;
+    }
     if(ui._playAgainW && tx>=ui._playAgainX && tx<=ui._playAgainX+ui._playAgainW &&
        ty>=ui._playAgainY && ty<=ui._playAgainY+ui._playAgainH){
       restart();
     }
-    return; // never fall through to game controls while dead
+    return;
   }
 
   if(!id){
@@ -3903,7 +3933,8 @@ function startGame(){
 function _showErr(e){ console.error(e); }
 
 function restart(){
-  ui._playAgainW = 0; // clear so stale rect never fires mid-game
+  ui._playAgainW = 0;
+  ui._receiptBtnW = 0;
   try{ stopDrop();stopSelTimer();init();_syncAutoUI(); }
   catch(e){ showErr('restart ERR: '+e.message); }
 }
@@ -4257,6 +4288,7 @@ function buildReceiptDOM() {
   L(dmRow('  LINES CLEARED',   String(lines)));
   L(dmRow('  LEVEL REACHED',   String(level)));
   L(dmRow('  PIECES PLACED',   String(piecesPlaced)));
+  L(dmRow('  BEST CLEAN RUN',  hfBest > 0 ? hfBest+'CS' : '0CS'));
   L(dmRow('  HOLE FREE RUN',   currentScoringHoles===0 ? 'YES' : 'NO'));
   HR('-');
   L(dmRow('  SUBTOTAL',        score.toLocaleString()));
