@@ -1042,7 +1042,7 @@ function drawAutoRow(t){
   CTX.font=F(FONT_VAL, Math.max(8,r.h*0.40));
   CTX.textAlign='center'; CTX.textBaseline='middle';
   CTX.fillStyle=C.yellow; CTX.shadowColor=C.yellow; CTX.shadowBlur=4;
-  CTX.fillText(String(AUTO_SPEED), speedLabelX, SLY);
+  CTX.fillText(AUTO_SPEED >= 11 ? '11' : String(Math.floor(AUTO_SPEED)), speedLabelX, SLY);
   CTX.shadowBlur=0;
 
   // RECEIPT button
@@ -1278,7 +1278,8 @@ function handleTap(tx, ty){
 
 function handleSlider(tx){
   const frac = Math.max(0, Math.min(1, (tx - R.sliderX) / R.sliderW));
-  const spd = 1 + Math.round(frac * 10);
+  // 101 positions: 1.0 → 11.0 in steps of 0.1, clamped so max is exactly 11.0
+  const spd = Math.min(11.0, 1 + frac * 10);
   setAutoSpeed(spd);
 }
 
@@ -3361,8 +3362,76 @@ function choose(i){
   if(dead||paused||clearAnimating||!cur)return;
   const p=placements[i];if(!p)return;
   stopSelTimer();stopDrop();
-  cur.c=p.c;cx=p.x;cy=p.dropY;
-  lock();
+
+  // If player already manually moved/rotated, or speed is 11, teleport directly
+  if(playerHasMoved || AUTO_SPEED >= 11){
+    cur.c=p.c;cx=p.x;cy=p.dropY;
+    lock();
+    return;
+  }
+
+  // Otherwise animate the path visually (same as auto-play)
+  _animatePlacement(p, i);
+}
+
+function _animatePlacement(p, bestIdx){
+  if(!cur||dead||paused)return;
+
+  const pieceKey = cur.type||'S';
+  const path = _bfsPath(cx, cur.rot||0, cy, p.x, p.rotation, pieceKey);
+
+  // No path found or empty — teleport
+  if(!path || path.length===0){
+    cur.c=p.c;cx=p.x;cy=p.dropY;
+    lock(); return;
+  }
+
+  let idx=0;
+  const speedFactor = AUTO_SPEED;
+  const baseMoveMs  = Math.round(180 - (speedFactor-1) * 18);
+  const frameSkip   = speedFactor >= 9 ? 3 : speedFactor >= 7 ? 2 : 1;
+  const MS={CW:0, L:baseMoveMs, R:baseMoveMs, D:Math.round(baseMoveMs*0.5)};
+
+  const execMove=(move)=>{
+    const rot=cur.rot||0;
+    const pivDx=(PIVOT_DX[pieceKey]||[0,0,0,0]);
+    const kicks=[0,-1,1,-2,2];
+    if(move==='CW'){
+      const nr=(rot+1)%4;
+      const nc=NRS[pieceKey][nr];
+      const pdx=pivDx[rot];
+      for(const k of kicks){
+        const px=cx+pdx+k;
+        if(isOk(nc,px,cy)){ cur.c=nc.map(r=>[...r]); cur.rot=nr; cx=px; break; }
+      }
+    } else if(move==='L'){ if(isOk(cur.c,cx-1,cy)) cx--; }
+      else if(move==='R'){ if(isOk(cur.c,cx+1,cy)) cx++; }
+      else if(move==='D'){ if(isOk(cur.c,cx,cy+1)) cy++; }
+  };
+
+  const step=()=>{
+    if(dead||paused||clearAnimating||!cur){ clearTimeout(_autoIv); return; }
+    if(idx>=path.length){
+      cur.c=p.c;cx=p.x;cy=p.dropY;
+      lock(); return;
+    }
+    let drawn=0;
+    while(idx<path.length && (drawn<frameSkip || path[idx]==='CW')){
+      execMove(path[idx++]);
+      if(idx>0 && path[idx-1]!=='CW') drawn++;
+    }
+    const nextMs = idx<path.length ? MS[path[idx]]||baseMoveMs : 0;
+    if(nextMs <= 0){
+      while(idx<path.length) execMove(path[idx++]);
+      cur.c=p.c;cx=p.x;cy=p.dropY;
+      lock();
+    } else {
+      _autoIv=setTimeout(step, nextMs);
+    }
+  };
+
+  const initMs = MS[path[0]]||0;
+  if(initMs <= 0) step(); else _autoIv=setTimeout(step, initMs);
 }
 
 function lock(){
@@ -3559,10 +3628,18 @@ function hdrop(){
 // ─── TIMERS ──────────────────────────────────────────────────────────────────
 function scheduleDrop(){
   clearInterval(dropIv);if(dead)return;
-  // When auto is on, slider overrides NES gravity: speed 1=800ms, 11=17ms
   const nesMs = NES_SP[Math.min(level-1,NES_SP.length-1)];
-  const autoMs = AUTO_PLAY ? NES_SP[Math.min(AUTO_SPEED-1, NES_SP.length-1)] : nesMs;
-  const sp = Math.min(nesMs, autoMs); // never slower than NES level speed
+  let autoMs = nesMs;
+  if(AUTO_PLAY){
+    // Interpolate between floor and ceil NES_SP entries using fractional part
+    const lo = Math.floor(AUTO_SPEED) - 1; // 0-based index
+    const hi = Math.min(lo + 1, NES_SP.length - 1);
+    const frac = AUTO_SPEED - Math.floor(AUTO_SPEED);
+    const loMs = NES_SP[Math.max(0, Math.min(lo, NES_SP.length-1))];
+    const hiMs = NES_SP[hi];
+    autoMs = loMs + (hiMs - loMs) * frac; // linear interp
+  }
+  const sp = Math.round(Math.min(nesMs, autoMs));
   dropIv=setInterval(()=>{
     if(paused||dead||clearAnimating||!cur)return;
     if(isOk(cur.c,cx,cy+1))cy++;
@@ -3790,10 +3867,11 @@ function toggleAutoPlay(){
 }
 
 function setAutoSpeed(v){
-  AUTO_SPEED=parseInt(v);
+  AUTO_SPEED = Math.min(11.0, Math.max(1.0, parseFloat(v)));
+  // Display: floor so "2" only shows once fully in that band; 11.0 shows as "11"
+  const displayVal = AUTO_SPEED >= 11 ? '11🔊' : String(Math.floor(AUTO_SPEED));
   const el=document.getElementById('ap-speed-val');
-  if(el) el.textContent=AUTO_SPEED===11?'11🔊':String(AUTO_SPEED);
-  // Apply new drop speed immediately if game is running
+  if(el) el.textContent = displayVal;
   if(AUTO_PLAY && !dead && !paused) scheduleDrop();
 }
 
@@ -3801,7 +3879,7 @@ function _syncAutoUI(){
   const lbl=document.getElementById('ap-toggle-label');
   if(lbl) lbl.classList.toggle('on',AUTO_PLAY);
   const sv=document.getElementById('ap-speed-val');
-  if(sv) sv.textContent=AUTO_SPEED===11?'11🔊':String(AUTO_SPEED);
+  if(sv) sv.textContent = AUTO_SPEED >= 11 ? '11🔊' : String(Math.floor(AUTO_SPEED));
 }
 
 // ─── FANFARE ─────────────────────────────────────────────────────────────────
