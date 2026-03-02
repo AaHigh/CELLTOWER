@@ -3559,7 +3559,10 @@ function hdrop(){
 // ─── TIMERS ──────────────────────────────────────────────────────────────────
 function scheduleDrop(){
   clearInterval(dropIv);if(dead)return;
-  const sp=NES_SP[Math.min(level-1,NES_SP.length-1)];
+  // When auto is on, slider overrides NES gravity: speed 1=800ms, 11=17ms
+  const nesMs = NES_SP[Math.min(level-1,NES_SP.length-1)];
+  const autoMs = AUTO_PLAY ? NES_SP[Math.min(AUTO_SPEED-1, NES_SP.length-1)] : nesMs;
+  const sp = Math.min(nesMs, autoMs); // never slower than NES level speed
   dropIv=setInterval(()=>{
     if(paused||dead||clearAnimating||!cur)return;
     if(isOk(cur.c,cx,cy+1))cy++;
@@ -3586,11 +3589,15 @@ function startSelTimer(){
     if(timerLeft<=0){ stopSelTimer(); if(!dead&&!clearAnimating) autoChooseBest(); }
   },100);
 
-  // Initial delay scales with speed: 600ms at speed 1, 0ms at speed 11
-  const startDelay = Math.round(600 * (1 - (AUTO_SPEED-1)/10));
-  setTimeout(()=>{
+  // Initial delay: 500ms at speed 1, 0ms at speed 11
+  const startDelay = AUTO_SPEED >= 11 ? 0 : Math.round(500 * (1 - (AUTO_SPEED-1)/10));
+  if(startDelay <= 0){
     if(!dead&&!paused&&!clearAnimating&&cur&&AUTO_PLAY) _startAutoPlay();
-  }, startDelay);
+  } else {
+    setTimeout(()=>{
+      if(!dead&&!paused&&!clearAnimating&&cur&&AUTO_PLAY) _startAutoPlay();
+    }, startDelay);
+  }
 }
 
 function stopSelTimer(){
@@ -3685,12 +3692,10 @@ function _startAutoPlay(){
   // Stop gravity during animation — we control all movement
   stopDrop();
 
-  // Speed mapping: 1=180ms/step, 11=~15ms with frame-skipping
-  // At speed 11 we draw only 1 in 4 frames by batching 4 moves per setTimeout
   const speedFactor = AUTO_SPEED; // 1..11
-  const baseMoveMs  = Math.round(180 - (speedFactor-1) * 15); // 180→15ms
-  const frameSkip   = speedFactor >= 11 ? 4 : speedFactor >= 9 ? 2 : 1;
-  const MS={CW:0, L:baseMoveMs, R:baseMoveMs, D: best.slide ? Math.round(baseMoveMs*0.4) : Math.round(baseMoveMs*0.55)};
+  const baseMoveMs  = Math.round(180 - (speedFactor-1) * 18); // 180→0ms at speed 11
+  const frameSkip   = speedFactor >= 11 ? 999 : speedFactor >= 9 ? 3 : speedFactor >= 7 ? 2 : 1;
+  const MS={CW:0, L:baseMoveMs, R:baseMoveMs, D: Math.round(baseMoveMs*0.5)};
 
   let idx=0;
 
@@ -3717,22 +3722,26 @@ function _startAutoPlay(){
     }
   };
 
+  // Speed 11: execute entire path instantly in one shot, then choose next frame
+  if(speedFactor >= 11){
+    while(idx < path.length) execMove(path[idx++]);
+    requestAnimationFrame(()=>{ if(!dead&&!paused&&cur) choose(bestIdx); });
+    return;
+  }
+
   const step=()=>{
     if(dead||paused||clearAnimating||!cur){ clearTimeout(_autoIv); return; }
 
     if(idx>=path.length){
-      const btn=document.getElementById('pb'+bestIdx);
-      if(btn){
-        btn.style.boxShadow='0 0 32px #fff,0 0 56px #ffff00';
-        setTimeout(()=>{ if(btn)btn.style.boxShadow=''; },300);
+      const commitDelay = Math.round(100 * (1 - (AUTO_SPEED-1)/10));
+      if(commitDelay <= 0){
+        if(!dead&&!paused&&cur) choose(bestIdx);
+      } else {
+        setTimeout(()=>{ if(!dead&&!paused&&cur) choose(bestIdx); }, commitDelay);
       }
-      const commitDelay = Math.round(150 * (1 - (AUTO_SPEED-1)/10));
-      setTimeout(()=>{ if(!dead&&!paused&&cur) choose(bestIdx); },commitDelay);
       return;
     }
 
-    // Execute frameSkip moves per tick (batched at high speed)
-    // Rotations (CW=0ms) are always consumed immediately regardless of frameSkip
     let drawn=0;
     while(idx<path.length && (drawn<frameSkip || path[idx]==='CW')){
       const move=path[idx++];
@@ -3740,11 +3749,19 @@ function _startAutoPlay(){
       if(move!=='CW') drawn++;
     }
 
-    _autoIv=setTimeout(step, idx<path.length ? MS[path[idx]]||baseMoveMs : 150);
+    const nextMs = idx<path.length ? MS[path[idx]]||baseMoveMs : 0;
+    if(nextMs <= 0){
+      // batch remaining synchronously
+      while(idx < path.length) execMove(path[idx++]);
+      if(!dead&&!paused&&cur) choose(bestIdx);
+    } else {
+      _autoIv=setTimeout(step, nextMs);
+    }
   };
 
-  // Kick off — first step after a brief "thinking" pause
-  _autoIv=setTimeout(step, MS[path[0]]);
+  // Kick off — no initial thinking pause at high speeds
+  const initMs = MS[path[0]] || 0;
+  if(initMs <= 0){ step(); } else { _autoIv=setTimeout(step, initMs); }
 }
 
 // Fallback: if timer fully expires without auto-play finishing, force commit
@@ -3776,6 +3793,8 @@ function setAutoSpeed(v){
   AUTO_SPEED=parseInt(v);
   const el=document.getElementById('ap-speed-val');
   if(el) el.textContent=AUTO_SPEED===11?'11🔊':String(AUTO_SPEED);
+  // Apply new drop speed immediately if game is running
+  if(AUTO_PLAY && !dead && !paused) scheduleDrop();
 }
 
 function _syncAutoUI(){
