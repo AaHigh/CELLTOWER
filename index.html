@@ -1240,70 +1240,61 @@ function drawGameOverOverlay(){
   CTX.fillStyle='rgba(0,0,0,0.78)';
   roundRect(R.gx, R.gy, R.gw, R.gh, 6); CTX.fill();
 
-  const mx=R.gx+R.gw/2, my=R.gy;
-  const bh=R.gh;
-
+  const mx=R.gx+R.gw/2, my=R.gy, bh=R.gh;
   CTX.textAlign='center';
-  CTX.font=F(FONT_TITLE, Math.max(14,R.gw*0.10));
+
+  // GAME OVER title
+  CTX.font=F(FONT_TITLE, Math.max(13,R.gw*0.095));
   CTX.fillStyle='#ff4444'; CTX.shadowColor='#ff4444'; CTX.shadowBlur=10;
-  CTX.fillText('GAME OVER', mx, my+bh*0.20);
+  CTX.fillText('GAME OVER', mx, my+bh*0.14);
   CTX.shadowBlur=0;
 
+  // Score
   const qualifier = autoUsed ? '· AUTO ·' : (score>=hi && score>0 ? '★ NEW HIGH ★':'');
   CTX.font=F(FONT_LABEL, Math.max(9,R.gw*0.065));
   CTX.fillStyle=C.cyan;
-  CTX.fillText('Score: '+score, mx, my+bh*0.32);
+  CTX.fillText('Score: '+score, mx, my+bh*0.25);
   if(qualifier){
-    CTX.fillStyle=autoUsed?C.orange:C.yellow;
+    CTX.fillStyle=autoUsed ? C.orange : C.yellow;
     CTX.shadowColor=CTX.fillStyle; CTX.shadowBlur=8;
-    CTX.fillText(qualifier, mx, my+bh*0.42);
+    CTX.fillText(qualifier, mx, my+bh*0.34);
     CTX.shadowBlur=0;
   }
-
-  // Best clean streak summary
   if(hfBest > 0){
-    CTX.font=F(FONT_LABEL, Math.max(8,R.gw*0.055));
+    CTX.font=F(FONT_LABEL, Math.max(7,R.gw*0.048));
     CTX.fillStyle='#88ffcc';
-    CTX.fillText('Best Clean Run: '+hfBest+'CS', mx, my+bh*0.52);
+    CTX.fillText('Best Clean Run: '+hfBest+'CS', mx, my+bh*0.43);
   }
 
-  // Two buttons: RECEIPT (left) | PLAY AGAIN (right)
-  const gap = R.gw * 0.05;
-  const btnW = (R.gw - gap*3) / 2;
-  const btnH = bh * 0.12;
-  const btnY = my + bh * 0.63;
+  // Three stacked buttons
+  const gap  = R.gw * 0.05;
+  const bx   = R.gx + gap;
+  const btnW = R.gw - gap*2;
+  const btnH = bh  * 0.105;
+  const btn1Y = my + bh * 0.52;
+  const btn2Y = btn1Y + btnH + gap*0.7;
+  const btn3Y = btn2Y + btnH + gap*0.7;
 
-  // RECEIPT button
-  const rxBx = R.gx + gap;
-  const grdR = CTX.createLinearGradient(rxBx,0,rxBx+btnW,0);
-  grdR.addColorStop(0,'#006644'); grdR.addColorStop(1,'#00aa66');
-  roundRect(rxBx, btnY, btnW, btnH, 8); CTX.fillStyle=grdR; CTX.fill();
-  let rFontSz = Math.max(8, btnH*0.36);
-  CTX.font=F(FONT_VAL, rFontSz);
-  while(CTX.measureText('🧾 RECEIPT').width > btnW*0.85 && rFontSz > 8){
-    rFontSz--; CTX.font=F(FONT_VAL, rFontSz);
-  }
-  CTX.fillStyle='#fff'; CTX.shadowColor='#fff'; CTX.shadowBlur=6;
-  CTX.fillText('🧾 RECEIPT', rxBx+btnW/2, btnY+btnH/2);
-  CTX.shadowBlur=0;
+  const drawBtn = (by, g0, g1, txt) => {
+    const grd = CTX.createLinearGradient(bx,0,bx+btnW,0);
+    grd.addColorStop(0,g0); grd.addColorStop(1,g1);
+    roundRect(bx,by,btnW,btnH,8); CTX.fillStyle=grd; CTX.fill();
+    let fsz = Math.max(7, btnH*0.40);
+    CTX.font=F(FONT_VAL, fsz);
+    while(CTX.measureText(txt).width > btnW*0.88 && fsz>7){ fsz--; CTX.font=F(FONT_VAL,fsz); }
+    CTX.fillStyle='#fff'; CTX.shadowColor='#fff'; CTX.shadowBlur=5;
+    CTX.fillText(txt, bx+btnW/2, by+btnH/2);
+    CTX.shadowBlur=0;
+  };
 
-  // PLAY AGAIN button
-  const paBx = rxBx + btnW + gap;
-  const grdP = CTX.createLinearGradient(paBx,0,paBx+btnW,0);
-  grdP.addColorStop(0,'#aa00ff'); grdP.addColorStop(1,'#ff00aa');
-  roundRect(paBx, btnY, btnW, btnH, 8); CTX.fillStyle=grdP; CTX.fill();
-  let paFontSz = Math.max(8, btnH*0.36);
-  CTX.font=F(FONT_VAL, paFontSz);
-  while(CTX.measureText('PLAY AGAIN').width > btnW*0.85 && paFontSz > 8){
-    paFontSz--; CTX.font=F(FONT_VAL, paFontSz);
-  }
-  CTX.fillStyle='#fff'; CTX.shadowColor='#fff'; CTX.shadowBlur=6;
-  CTX.fillText('PLAY AGAIN', paBx+btnW/2, btnY+btnH/2);
-  CTX.shadowBlur=0;
+  drawBtn(btn1Y, '#005533','#00aa66', 'VIEW RECEIPT');
+  drawBtn(btn2Y, '#1a0066','#5500cc', 'PLAY AGAIN  [ HUMAN ]');
+  drawBtn(btn3Y, '#660022','#cc0055', 'PLAY AGAIN  [ AUTO ]');
 
-  // Store rects for coordinate-based tap detection
-  ui._receiptBtnX=rxBx; ui._receiptBtnY=btnY; ui._receiptBtnW=btnW; ui._receiptBtnH=btnH;
-  ui._playAgainX=paBx;  ui._playAgainY=btnY; ui._playAgainW=btnW;  ui._playAgainH=btnH;
+  // Hit rects
+  ui._receiptBtnX=bx; ui._receiptBtnY=btn1Y; ui._receiptBtnW=btnW; ui._receiptBtnH=btnH;
+  ui._playAgainX =bx; ui._playAgainY =btn2Y; ui._playAgainW =btnW; ui._playAgainH =btnH;
+  ui._playAutoX  =bx; ui._playAutoY  =btn3Y; ui._playAutoW  =btnW; ui._playAutoH  =btnH;
 }
 
 // ── Flash notification ───────────────────────────────────────────────
@@ -1409,7 +1400,7 @@ function handleTap(tx, ty){
   // DEBUG: record tap (shown only when debugMode on)
   ui._dbgTap = {tx,ty,id:id||'canvas',t:AT};
 
-  // Game-over: only fire playagain if actually dead AND tap is on the button
+  // Game-over state: only fire buttons if actually dead
   if(dead){
     if(ui._receiptBtnW && tx>=ui._receiptBtnX && tx<=ui._receiptBtnX+ui._receiptBtnW &&
        ty>=ui._receiptBtnY && ty<=ui._receiptBtnY+ui._receiptBtnH){
@@ -1417,7 +1408,11 @@ function handleTap(tx, ty){
     }
     if(ui._playAgainW && tx>=ui._playAgainX && tx<=ui._playAgainX+ui._playAgainW &&
        ty>=ui._playAgainY && ty<=ui._playAgainY+ui._playAgainH){
-      restart();
+      restart(false); return;  // HUMAN game — AUTO_PLAY will be false
+    }
+    if(ui._playAutoW && tx>=ui._playAutoX && tx<=ui._playAutoX+ui._playAutoW &&
+       ty>=ui._playAutoY && ty<=ui._playAutoY+ui._playAutoH){
+      restart(true); return;   // AUTO game — AUTO_PLAY will be true, autoUsed=true
     }
     return;
   }
@@ -4030,11 +4025,20 @@ function autoChooseBest(){
 }
 
 function toggleAutoPlay(){
-  AUTO_PLAY=!AUTO_PLAY;
-  if(AUTO_PLAY) autoUsed=true; // turning on auto disqualifies this game's score
+  if(ui.gameStarted && !dead && AUTO_PLAY) return; // can't turn OFF mid-game once enabled
+  AUTO_PLAY = !AUTO_PLAY;
+  if(AUTO_PLAY){
+    autoUsed = true; // disqualify hi score immediately
+    hi = Math.min(hi, score); // don't let current score become hi if auto just turned on
+  }
   const lbl=document.getElementById('ap-toggle-label');
   if(lbl) lbl.classList.toggle('on',AUTO_PLAY);
-  if(!AUTO_PLAY){ clearTimeout(_autoIv); _autoIv=null; }
+  if(!AUTO_PLAY){ clearTimeout(_autoIv); _autoIv=null; return; }
+  // Auto just turned on mid-game — immediately trigger placement of current piece
+  if(ui.gameStarted && !dead && !paused && cur){
+    stopSelTimer();
+    _startAutoPlay();
+  }
 }
 
 function setAutoSpeed(v){
@@ -4165,7 +4169,7 @@ function init(){
   currentScoringHoles=0;scoringDisabledSound=false;
   hfRun=0;hfBest=0;
   _towerSeverity=0;
-  autoUsed=false;
+  autoUsed = AUTO_PLAY; // if auto is on when game starts, immediately disqualify hi score
   _gamesPlayed++;
   _tickerInit();
   setTimeout(()=>{ try{tickerPush([`READY`,`LVL ${level}`]);}catch(e){} }, 100);
@@ -4200,10 +4204,13 @@ function startGame(){
 
 function _showErr(e){ console.error(e); }
 
-function restart(){
-  ui._playAgainW = 0;
+function restart(asAuto){
+  // Set AUTO_PLAY BEFORE init() so autoUsed seeds correctly inside init()
+  AUTO_PLAY = (asAuto === true);
+  ui._playAgainW  = 0;
   ui._receiptBtnW = 0;
-  try{ stopDrop();stopSelTimer();init();_syncAutoUI(); }
+  ui._playAutoW   = 0;
+  try{ stopDrop(); stopSelTimer(); clearTimeout(_autoIv); _autoIv=null; init(); _syncAutoUI(); }
   catch(e){ showErr('restart ERR: '+e.message); }
 }
 
