@@ -381,9 +381,9 @@ function draw7SegScore(r, labelText, value){
   const inset = sw * 0.6;                // chamfer inset
 
   // Dim (ghost) color for unlit segments
-  const dimColor = 'rgba(0,80,60,0.35)';
-  const litColor = C.cyan;
-  const glowColor = C.cyan;
+  const dimColor  = 'rgba(80,20,20,0.35)';
+  const litColor  = 'rgb(255,128,128)';
+  const glowColor = 'rgb(255,128,128)';
 
   CTX.save();
   CTX.lineCap = 'round';
@@ -2261,7 +2261,7 @@ function checkNoHoleBonus(){
   updateHoleDisplay(newScoringHoles);
   _lastScoringHoleCheck=(newScoringHoles===0);
 
-  const pieceBonus=Math.min(100*tetrisMultiplier,1600);
+  const pieceBonus = 100; // flat per clean piece — tetrisMultiplier only affects tetrisPot
   piecePot+=pieceBonus;
   updateTBDisplay();
   checkTowers();
