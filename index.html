@@ -132,7 +132,7 @@ var score=0, level=1, lines=0, hi=0, dead=false, paused=false;
 var board=null, cur=null, cx=0, cy=0, nxt=null;
 var placements=null, particles=[], explodedCells=new Set();
 var piecePot=0, tetrisPot=0;
-var AUTO_PLAY=false, AUTO_SPEED=5, autoUsed=false;
+var AUTO_PLAY=false, AUTO_SPEED=7.11, autoUsed=false;
 var AT=0;
 var playerHasMoved=false, moveStartTime=0;
 
@@ -152,7 +152,7 @@ let ui = {
   gameStarted:false,   // false = show start screen
   autoOn:false,
   autoUsed:false,
-  autoSpeed:5,
+  autoSpeed:7.11,
   startPulse:0,
   flash:null,          // {text, until}
   towerSev:0,
@@ -348,6 +348,89 @@ function val(text, x, y, w, color, size){
   CTX.shadowBlur = 0;
 }
 
+// ── 7-Segment LED score display ──────────────────────────────────────
+// Standard 7-seg: a=top b=top-right c=bot-right d=bot e=bot-left f=top-left g=mid
+// Bit encoding: a=1 b=2 c=4 d=8 e=16 f=32 g=64
+const SEG7 = {'0':0x3F,'1':0x06,'2':0x5B,'3':0x4F,'4':0x66,
+               '5':0x6D,'6':0x7D,'7':0x07,'8':0x7F,'9':0x6F,' ':0x00,'-':0x40};
+
+function draw7SegScore(r, labelText, value){
+  panel(r.x, r.y, r.w, r.h);
+  label(labelText, r.x, r.y + r.h*0.05, r.w, C.purple, Math.max(7, r.h*0.20));
+
+  const str = String(value);
+  const padded = str.length < 6 ? str.padStart(6, ' ') : str;
+  const digits = padded.split('');
+
+  // Available area below label
+  const areaX = r.x + 3;
+  const areaW = r.w - 6;
+  const areaY = r.y + r.h * 0.34;
+  const areaH = r.h * 0.60;
+
+  // Each digit: 3 segments wide, 5 tall (w:h = 3:5 approx)
+  // gap between digits = 15% of digit width
+  const n = digits.length;
+  const segW = Math.min(areaW / (n * 1.22), areaH * 0.52);
+  const segH = segW * 1.9;
+  const gap  = segW * 0.22;
+  const totalW = n * segW + (n - 1) * gap;
+  const startX = areaX + (areaW - totalW) / 2;
+  const startY = areaY + (areaH - segH) / 2;
+  const sw = Math.max(1.5, segW * 0.14); // segment stroke width
+  const inset = sw * 0.6;                // chamfer inset
+
+  // Dim (ghost) color for unlit segments
+  const dimColor = 'rgba(0,80,60,0.35)';
+  const litColor = C.cyan;
+  const glowColor = C.cyan;
+
+  CTX.save();
+  CTX.lineCap = 'round';
+
+  digits.forEach((ch, i) => {
+    const bits = SEG7[ch] !== undefined ? SEG7[ch] : 0x00;
+    const dx = startX + i * (segW + gap);
+    const dy = startY;
+    const mx = dx + segW / 2;
+    const my = dy + segH / 2;
+
+    // Draw one segment: lit or dim
+    const seg = (on, path) => {
+      CTX.beginPath();
+      path();
+      CTX.strokeStyle = on ? litColor : dimColor;
+      CTX.lineWidth = sw;
+      if(on){
+        CTX.shadowColor = glowColor;
+        CTX.shadowBlur = sw * 2.5;
+      } else {
+        CTX.shadowBlur = 0;
+      }
+      CTX.stroke();
+    };
+
+    const s = inset;
+    // a - top horizontal
+    seg(bits & 0x01, () => { CTX.moveTo(dx+s, dy+sw*0.5); CTX.lineTo(dx+segW-s, dy+sw*0.5); });
+    // b - top-right vertical
+    seg(bits & 0x02, () => { CTX.moveTo(dx+segW-sw*0.5, dy+s); CTX.lineTo(dx+segW-sw*0.5, my-s); });
+    // c - bot-right vertical
+    seg(bits & 0x04, () => { CTX.moveTo(dx+segW-sw*0.5, my+s); CTX.lineTo(dx+segW-sw*0.5, dy+segH-s); });
+    // d - bottom horizontal
+    seg(bits & 0x08, () => { CTX.moveTo(dx+s, dy+segH-sw*0.5); CTX.lineTo(dx+segW-s, dy+segH-sw*0.5); });
+    // e - bot-left vertical
+    seg(bits & 0x10, () => { CTX.moveTo(dx+sw*0.5, my+s); CTX.lineTo(dx+sw*0.5, dy+segH-s); });
+    // f - top-left vertical
+    seg(bits & 0x20, () => { CTX.moveTo(dx+sw*0.5, dy+s); CTX.lineTo(dx+sw*0.5, my-s); });
+    // g - middle horizontal
+    seg(bits & 0x40, () => { CTX.moveTo(dx+s, my); CTX.lineTo(dx+segW-s, my); });
+  });
+
+  CTX.shadowBlur = 0;
+  CTX.restore();
+}
+
 function infoBox(r, labelText, valueText, valColor, labelSize, valSize){
   panel(r.x, r.y, r.w, r.h);
   const lh = r.h * 0.38;
@@ -527,7 +610,7 @@ function drawStartScreen(t){
 
 // ── Left panel ───────────────────────────────────────────────────────
 function drawLeftPanel(t){
-  infoBox(R.lScore, 'SCORE', String(score), C.cyan);
+  draw7SegScore(R.lScore, 'SCORE', score);
   infoBox(R.lLevel, 'LEVEL', String(level), C.cyan);
   infoBox(R.lLines, 'LINES', String(lines), C.cyan);
   drawTicker(t);
@@ -565,7 +648,7 @@ function drawTicker(t){
 // ── Right panel ──────────────────────────────────────────────────────
 function drawRightPanel(t){
   drawNextPiece(t);
-  infoBox(R.rHi,    'HIGH',  String(hi),    C.cyan);
+  draw7SegScore(R.rHi,    'HIGH',  hi);
   drawPauseBox(t);
   drawTBonusBox(t);
   infoBox(R.rHoles, 'HOLES', String(ui.holes), C.red);
@@ -1021,29 +1104,116 @@ function drawAutoRow(t){
     CTX.fillStyle=C.green; CTX.fill();
   }
 
-  // Speed slider
+  // ── Speed control zone ───────────────────────────────────────────────
   const SLX = r.x + AUTO_BTN_W + GAP;
   const SLW = R.sliderW;
   const SLY = r.y + r.h/2;
-  const sliderH = 5;
-  CTX.fillStyle='rgba(85,0,170,0.8)';
-  roundRect(SLX, SLY-sliderH/2, SLW, sliderH, 3);
-  CTX.fill();
-  const frac = (AUTO_SPEED-1)/10;
-  CTX.fillStyle='#ff00ff';
-  roundRect(SLX, SLY-sliderH/2, SLW*frac, sliderH, 3);
-  CTX.fill();
+  const frac = (AUTO_SPEED - 1) / 10;
+
+  // Track background
+  const trkH = Math.max(6, r.h * 0.18);
+  CTX.fillStyle = 'rgba(20,0,50,0.9)';
+  roundRect(SLX, SLY - trkH/2, SLW, trkH, trkH/2); CTX.fill();
+
+  // Filled portion gradient
+  const fillGrd = CTX.createLinearGradient(SLX, 0, SLX + SLW, 0);
+  fillGrd.addColorStop(0,    '#6600ff');
+  fillGrd.addColorStop(0.45, '#00ccff');
+  fillGrd.addColorStop(0.72, '#00ffaa');
+  fillGrd.addColorStop(0.88, '#ffff00');
+  fillGrd.addColorStop(1.0,  '#ff4400');
+  CTX.fillStyle = fillGrd;
+  roundRect(SLX, SLY - trkH/2, SLW * frac, trkH, trkH/2); CTX.fill();
+
+  CTX.strokeStyle = 'rgba(100,0,200,0.5)';
+  CTX.lineWidth = 1;
+  roundRect(SLX, SLY - trkH/2, SLW, trkH, trkH/2); CTX.stroke();
+
   // Thumb
-  const thumbX = SLX + SLW*frac;
-  CTX.beginPath(); CTX.arc(thumbX, SLY, 8, 0, Math.PI*2);
-  CTX.fillStyle=C.yellow; CTX.fill();
-  // Speed value
-  const speedLabelX = SLX + SLW + GAP + 14;
-  CTX.font=F(FONT_VAL, Math.max(8,r.h*0.40));
-  CTX.textAlign='center'; CTX.textBaseline='middle';
-  CTX.fillStyle=C.yellow; CTX.shadowColor=C.yellow; CTX.shadowBlur=4;
-  CTX.fillText(AUTO_SPEED >= 11 ? '11' : String(Math.floor(AUTO_SPEED)), speedLabelX, SLY);
-  CTX.shadowBlur=0;
+  const thumbX = SLX + SLW * frac;
+  const thumbR = Math.max(7, r.h * 0.28);
+  CTX.beginPath(); CTX.arc(thumbX, SLY, thumbR + 4, 0, Math.PI*2);
+  CTX.fillStyle = `hsla(${280 - frac*280},100%,60%,0.25)`; CTX.fill();
+  CTX.beginPath(); CTX.arc(thumbX, SLY, thumbR, 0, Math.PI*2);
+  const thumbGrd = CTX.createRadialGradient(thumbX-thumbR*0.3, SLY-thumbR*0.3, 1, thumbX, SLY, thumbR);
+  thumbGrd.addColorStop(0, '#ffffff');
+  thumbGrd.addColorStop(1, `hsl(${280 - frac*280},100%,55%)`);
+  CTX.fillStyle = thumbGrd; CTX.fill();
+  CTX.strokeStyle = 'rgba(255,255,255,0.6)'; CTX.lineWidth = 1; CTX.stroke();
+
+  // ── Centered SPEED label + number overlay ───────────────────────────
+  // Center point is middle of the slider zone (not thumb)
+  const centerX = SLX + SLW / 2;
+  const centerY = SLY;
+
+  // Pulse: active while dragging + 1s decay after release
+  const secsSinceMove = AT - _lastSliderMoveT;
+  const pulseDecay = _sliderDragging ? 1.0 : Math.max(0, 1.0 - secsSinceMove);
+  // Size burst: oscillates at ~6Hz while active, decays smoothly
+  const pulseMag = pulseDecay * (0.18 + 0.10 * Math.abs(Math.sin(t * 6 * Math.PI)));
+
+  // Number string: suppress .00 fractional part
+  const rawNum = AUTO_SPEED >= 11 ? '11.00' : AUTO_SPEED.toFixed(2);
+  const numStr = rawNum.endsWith('.00') ? rawNum.slice(0, -3) : rawNum;
+
+  // "SPEED" word — baseline size, centered, drawn first (under number)
+  const labelBaseSz = Math.max(7, r.h * 0.26);
+  const labelSz = labelBaseSz * (1 + pulseMag * 0.4);
+  CTX.font = `900 ${Math.round(labelSz)}px monospace`;
+  CTX.textAlign = 'center';
+  CTX.textBaseline = 'middle';
+  CTX.fillStyle = `rgba(160,80,255,${0.35 + pulseDecay * 0.25})`;
+  CTX.fillText('SPEED', centerX, centerY);
+
+  // Number — larger, on top of "SPEED"
+  const numBaseSz = Math.max(12, r.h * 0.54);
+  const numSz = numBaseSz * (1 + pulseMag);
+  CTX.font = `900 ${Math.round(numSz)}px "Arial Black", monospace`;
+  CTX.textBaseline = 'middle';
+
+  // Drop shadow helper — draw numStr offset +2,+2 in 50% black before each color pass
+  const shadow = (x, y) => {
+    CTX.save();
+    CTX.globalAlpha = 0.5;
+    CTX.fillStyle = '#000000';
+    CTX.shadowBlur = 0;
+    CTX.fillText(numStr, x + 2, y + 2);
+    CTX.restore();
+  };
+
+  // Color cycling ONLY while pulse is active; after calm → steady color
+  const doCycle = AUTO_SPEED >= 10 && pulseDecay > 0;
+  if(doCycle){
+    const cycleRate = 2 + (AUTO_SPEED - 10) * 8;
+    const hue = ((t * cycleRate * 60) % 360);
+    const blendA = Math.min(1, (AUTO_SPEED - 10) * 2) * pulseDecay;
+    if(blendA < 1){
+      shadow(centerX, centerY);
+      CTX.globalAlpha = 1 - blendA;
+      CTX.fillStyle = '#ffffff';
+      CTX.shadowColor = C.yellow; CTX.shadowBlur = 6 + pulseMag * 20;
+      CTX.fillText(numStr, centerX, centerY);
+      CTX.globalAlpha = 1.0;
+    }
+    shadow(centerX, centerY);
+    CTX.globalAlpha = Math.max(blendA, 0.01);
+    CTX.fillStyle = `hsl(${hue},100%,68%)`;
+    CTX.shadowColor = `hsl(${hue},100%,68%)`;
+    CTX.shadowBlur = 14 + pulseMag * 24 + Math.sin(t * cycleRate * Math.PI) * 6;
+    CTX.fillText(numStr, centerX, centerY);
+    CTX.globalAlpha = 1.0;
+  } else {
+    // Steady — white→yellow normally, white→orange for speed >=10 at rest
+    const nGrd = CTX.createLinearGradient(centerX - 30, centerY, centerX + 30, centerY + numSz);
+    nGrd.addColorStop(0, '#ffffff');
+    nGrd.addColorStop(1, AUTO_SPEED >= 10 ? '#ff8800' : C.yellow);
+    CTX.fillStyle = nGrd;
+    CTX.shadowColor = AUTO_SPEED >= 10 ? '#ff8800' : C.yellow;
+    CTX.shadowBlur = 4 + pulseMag * 22;
+    shadow(centerX, centerY);
+    CTX.fillText(numStr, centerX, centerY);
+  }
+  CTX.shadowBlur = 0;
 
   // RECEIPT button
   const RX = r.x + r.w - RECEIPT_W;
@@ -1201,6 +1371,7 @@ function drawReceiptOverlay(t){
 // ══════════════════════════════════════════════════════════════════════
 
 let _sliderDragging=false;
+let _lastSliderMoveT=0; // AT timestamp of last slider move
 
 function hitTest(tx, ty){
   for(let i=hitZones.length-1;i>=0;i--){
@@ -1278,8 +1449,8 @@ function handleTap(tx, ty){
 
 function handleSlider(tx){
   const frac = Math.max(0, Math.min(1, (tx - R.sliderX) / R.sliderW));
-  // 101 positions: 1.0 → 11.0 in steps of 0.1, clamped so max is exactly 11.0
   const spd = Math.min(11.0, 1 + frac * 10);
+  _lastSliderMoveT = AT;
   setAutoSpeed(spd);
 }
 
@@ -4171,6 +4342,13 @@ const DM_FONT = (()=>{
   d('_',0x40,0x40,0x40,0x40,0x40);
   d('.',0x00,0x60,0x60,0x00,0x00);
   d(',',0x00,0x50,0x30,0x00,0x00);
+  // Custom icon glyphs mapped to unused control chars
+  // \x01=wave-hand  \x02=lightning  \x03=tower  \x04=robot  \x05=receipt
+  d('\x01',0x0E,0x5B,0x7E,0x5B,0x0E); // wave hand
+  d('\x02',0x04,0x16,0x7F,0x1D,0x05); // lightning bolt
+  d('\x03',0x04,0x2A,0x75,0x2A,0x04); // radio tower
+  d('\x04',0x1E,0x71,0x15,0x71,0x1E); // robot face
+  d('\x05',0x7F,0x55,0x55,0x55,0x55); // receipt/scroll
   // lowercase maps to uppercase for thermal caps style
   'abcdefghijklmnopqrstuvwxyz'.split('').forEach((c,i)=>{
     F[c] = F[String.fromCharCode(65+i)] || F[' '];
@@ -4297,14 +4475,14 @@ function buildReceiptDOM() {
 
   // \u2500\u2500 HEADER \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
   SP(10);
-  L(center('HIGHTOWER DISTRICT'), {inv:true, bold:true});
+  L(center('\x01 THE HIGH \x02 TOWER \x03 DISTRICT \x01'), {inv:true, bold:true});
   SP(2);
   L(center('777 OLIVE AVE'));
   L(center('FRESNO  CA  93728'));
   L(center('(559) 485-9050'));
   SP(4);
   HR('=');
-  L(center('CELLTOWER  GAME  RECEIPT'));
+  L(center('\x04 CELLTOWER  GAME  RECEIPT \x05'));
   L(center(new Date().toLocaleDateString('en-US',
     {weekday:'short',month:'short',day:'2-digit',year:'numeric'})));
   L(center(new Date().toLocaleTimeString()));
@@ -4451,6 +4629,11 @@ function _txDesc(tx) {
 }
 
 function showReceipt() {
+  // Pause game if running
+  if(ui.gameStarted && !dead && !paused){
+    paused = true;
+    ui._receiptAutoPaused = true;
+  }
   try {
     dbg('showReceipt: txLog='+txLog.length);
     buildReceiptDOM();
@@ -4469,6 +4652,12 @@ function hideReceipt() {
   const ov = document.getElementById('receipt-overlay');
   if(ov) ov.classList.remove('show');
   _receiptOpen = false;
+  // Unpause only if we auto-paused it
+  if(ui._receiptAutoPaused){
+    ui._receiptAutoPaused = false;
+    paused = false;
+    if(!dead) scheduleDrop();
+  }
 }
 
 
