@@ -135,6 +135,7 @@ var piecePot=0, tetrisPot=0;
 var AUTO_PLAY=false, AUTO_SPEED=7.11, autoUsed=false;
 var AT=0;
 var playerHasMoved=false, moveStartTime=0;
+var _tipMoveCount=0, _tipChoiceUsed=false, _tipShownAt=0, _tipDismissed=false;
 
 // ── Layout regions (computed in layout()) ────────────────────────────
 let R = {};   // named rects: {x,y,w,h}
@@ -348,87 +349,99 @@ function val(text, x, y, w, color, size){
   CTX.shadowBlur = 0;
 }
 
-// ── 7-Segment LED score display ──────────────────────────────────────
+// ── DM word label — render a word using the dot-matrix bitmap font, scaled ──
+function _dmWordLabel(ctx, word, x, y, w, h, color){
+  const str = word.toUpperCase();
+  const n   = str.length;
+  if(!n) return;
+  // Each glyph is 5 cols × 7 rows of dots
+  // Scale dot size so word fills width & height
+  const dotW = Math.min(w / (n * 6), h / 8); // 6 = 5cols+1gap, 8=7rows+1gap
+  const dotH = dotW;
+  const charW = 6 * dotW;
+  const charH = 7 * dotH;
+  const totalW = n * charW;
+  const startX = x + (w - totalW) / 2;
+  const startY = y + (h - charH) / 2;
+  ctx.fillStyle = color || '#ffffff';
+  ctx.shadowColor = color || '#ffffff';
+  ctx.shadowBlur  = dotW * 1.5;
+  for(let ci = 0; ci < n; ci++){
+    const ch = str[ci];
+    const glyph = DM_FONT[ch] || DM_FONT[' '];
+    const ox = startX + ci * charW;
+    for(let col = 0; col < 5; col++){
+      const colBits = glyph[col] || 0;
+      for(let row = 0; row < 7; row++){
+        if(colBits & (1 << row)){
+          ctx.fillRect(
+            ox  + col * dotW,
+            startY + row * dotH,
+            Math.max(1, dotW - 0.5),
+            Math.max(1, dotH - 0.5)
+          );
+        }
+      }
+    }
+  }
+  ctx.shadowBlur = 0;
+}
+
+
 // Standard 7-seg: a=top b=top-right c=bot-right d=bot e=bot-left f=top-left g=mid
 // Bit encoding: a=1 b=2 c=4 d=8 e=16 f=32 g=64
 const SEG7 = {'0':0x3F,'1':0x06,'2':0x5B,'3':0x4F,'4':0x66,
                '5':0x6D,'6':0x7D,'7':0x07,'8':0x7F,'9':0x6F,' ':0x00,'-':0x40};
 
-function draw7SegScore(r, labelText, value){
-  panel(r.x, r.y, r.w, r.h);
-  label(labelText, r.x, r.y + r.h*0.05, r.w, C.purple, Math.max(7, r.h*0.20));
-
-  const str = String(value);
-  const padded = str.length < 6 ? str.padStart(6, ' ') : str;
-  const digits = padded.split('');
-
-  // Available area below label
-  const areaX = r.x + 3;
-  const areaW = r.w - 6;
-  const areaY = r.y + r.h * 0.34;
-  const areaH = r.h * 0.60;
-
-  // Each digit: 3 segments wide, 5 tall (w:h = 3:5 approx)
-  // gap between digits = 15% of digit width
-  const n = digits.length;
-  const segW = Math.min(areaW / (n * 1.22), areaH * 0.52);
-  const segH = segW * 1.9;
-  const gap  = segW * 0.22;
-  const totalW = n * segW + (n - 1) * gap;
+function _draw7SegDigits(ctx, digits, areaX, areaW, areaY, areaH, padTo, litColor, glowColor, dimColor){
+  const str   = String(digits);
+  const padded = str.length < padTo ? str.padStart(padTo, ' ') : str;
+  const chars  = padded.split('');
+  const n      = chars.length;
+  const segW   = Math.min(areaW / (n * 1.22), areaH * 0.52);
+  const segH   = segW * 1.9;
+  const gap    = segW * 0.22;
+  const totalW = n * segW + (n-1) * gap;
   const startX = areaX + (areaW - totalW) / 2;
   const startY = areaY + (areaH - segH) / 2;
-  const sw = Math.max(1.5, segW * 0.14); // segment stroke width
-  const inset = sw * 0.6;                // chamfer inset
-
-  // Dim (ghost) color for unlit segments
-  const dimColor  = 'rgba(80,20,20,0.35)';
-  const litColor  = 'rgb(255,128,128)';
-  const glowColor = 'rgb(255,128,128)';
-
-  CTX.save();
-  CTX.lineCap = 'round';
-
-  digits.forEach((ch, i) => {
+  const sw     = Math.max(1.5, segW * 0.14);
+  const inset  = sw * 0.6;
+  ctx.save(); ctx.lineCap = 'round';
+  chars.forEach((ch, i) => {
     const bits = SEG7[ch] !== undefined ? SEG7[ch] : 0x00;
-    const dx = startX + i * (segW + gap);
+    const dx = startX + i*(segW+gap);
     const dy = startY;
-    const mx = dx + segW / 2;
-    const my = dy + segH / 2;
-
-    // Draw one segment: lit or dim
+    const my2 = dy + segH/2;
     const seg = (on, path) => {
-      CTX.beginPath();
-      path();
-      CTX.strokeStyle = on ? litColor : dimColor;
-      CTX.lineWidth = sw;
-      if(on){
-        CTX.shadowColor = glowColor;
-        CTX.shadowBlur = sw * 2.5;
-      } else {
-        CTX.shadowBlur = 0;
-      }
-      CTX.stroke();
+      ctx.beginPath(); path();
+      ctx.strokeStyle = on ? litColor : dimColor;
+      ctx.lineWidth   = sw;
+      ctx.shadowBlur  = on ? sw*2.5 : 0;
+      ctx.shadowColor = on ? glowColor : 'transparent';
+      ctx.stroke();
     };
-
     const s = inset;
-    // a - top horizontal
-    seg(bits & 0x01, () => { CTX.moveTo(dx+s, dy+sw*0.5); CTX.lineTo(dx+segW-s, dy+sw*0.5); });
-    // b - top-right vertical
-    seg(bits & 0x02, () => { CTX.moveTo(dx+segW-sw*0.5, dy+s); CTX.lineTo(dx+segW-sw*0.5, my-s); });
-    // c - bot-right vertical
-    seg(bits & 0x04, () => { CTX.moveTo(dx+segW-sw*0.5, my+s); CTX.lineTo(dx+segW-sw*0.5, dy+segH-s); });
-    // d - bottom horizontal
-    seg(bits & 0x08, () => { CTX.moveTo(dx+s, dy+segH-sw*0.5); CTX.lineTo(dx+segW-s, dy+segH-sw*0.5); });
-    // e - bot-left vertical
-    seg(bits & 0x10, () => { CTX.moveTo(dx+sw*0.5, my+s); CTX.lineTo(dx+sw*0.5, dy+segH-s); });
-    // f - top-left vertical
-    seg(bits & 0x20, () => { CTX.moveTo(dx+sw*0.5, dy+s); CTX.lineTo(dx+sw*0.5, my-s); });
-    // g - middle horizontal
-    seg(bits & 0x40, () => { CTX.moveTo(dx+s, my); CTX.lineTo(dx+segW-s, my); });
+    seg(bits&0x01,()=>{ ctx.moveTo(dx+s,         dy+sw*.5);      ctx.lineTo(dx+segW-s,    dy+sw*.5);      });
+    seg(bits&0x02,()=>{ ctx.moveTo(dx+segW-sw*.5, dy+s);         ctx.lineTo(dx+segW-sw*.5,my2-s);         });
+    seg(bits&0x04,()=>{ ctx.moveTo(dx+segW-sw*.5, my2+s);        ctx.lineTo(dx+segW-sw*.5,dy+segH-s);     });
+    seg(bits&0x08,()=>{ ctx.moveTo(dx+s,          dy+segH-sw*.5);ctx.lineTo(dx+segW-s,    dy+segH-sw*.5); });
+    seg(bits&0x10,()=>{ ctx.moveTo(dx+sw*.5,      my2+s);        ctx.lineTo(dx+sw*.5,     dy+segH-s);     });
+    seg(bits&0x20,()=>{ ctx.moveTo(dx+sw*.5,      dy+s);         ctx.lineTo(dx+sw*.5,     my2-s);         });
+    seg(bits&0x40,()=>{ ctx.moveTo(dx+s,          my2);          ctx.lineTo(dx+segW-s,    my2);            });
   });
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
 
-  CTX.shadowBlur = 0;
-  CTX.restore();
+function draw7SegScore(r, labelText, value, colorOpts){
+  panel(r.x, r.y, r.w, r.h);
+  label(labelText, r.x, r.y + r.h*0.05, r.w, C.purple, Math.max(7, r.h*0.20));
+  const dimColor  = (colorOpts && colorOpts.dimColor)  || 'rgba(80,20,20,0.35)';
+  const litColor  = (colorOpts && colorOpts.litColor)  || 'rgb(255,128,128)';
+  const glowColor = (colorOpts && colorOpts.glowColor) || 'rgb(255,128,128)';
+  _draw7SegDigits(CTX, value,
+    r.x+3, r.w-6, r.y+r.h*0.34, r.h*0.60, 6,
+    litColor, glowColor, dimColor);
 }
 
 function infoBox(r, labelText, valueText, valColor, labelSize, valSize){
@@ -514,6 +527,7 @@ function draw(ts){
 
   if(_receiptOpen) drawReceiptOverlay(t);
   if(ui.flash && ts < ui.flash.until) drawFlash(t);
+  drawTipBubble(t);
 
   // DEBUG TAP — only shown when debug mode is on
   if(ui.debugMode && ui._dbgTap && (t - ui._dbgTap.t) < 2.0){
@@ -611,8 +625,8 @@ function drawStartScreen(t){
 // ── Left panel ───────────────────────────────────────────────────────
 function drawLeftPanel(t){
   draw7SegScore(R.lScore, 'SCORE', score);
-  infoBox(R.lLevel, 'LEVEL', String(level), C.cyan);
-  infoBox(R.lLines, 'LINES', String(lines), C.cyan);
+  draw7SegScore(R.lLevel, 'LEVEL', level,   {litColor:'#00ffff', glowColor:'#00ffff', dimColor:'rgba(0,50,60,0.35)'});
+  draw7SegScore(R.lLines, 'LINES', lines,   {litColor:'#00ffff', glowColor:'#00ffff', dimColor:'rgba(0,50,60,0.35)'});
   drawTicker(t);
 }
 
@@ -651,7 +665,7 @@ function drawRightPanel(t){
   draw7SegScore(R.rHi,    'HIGH',  hi);
   drawPauseBox(t);
   drawTBonusBox(t);
-  infoBox(R.rHoles, 'HOLES', String(ui.holes), C.red);
+  draw7SegScore(R.rHoles, 'HOLES', ui.holes, {litColor:'#ff4444', glowColor:'#ff4444', dimColor:'rgba(60,0,0,0.35)'});
 }
 
 function drawNextPiece(t){
@@ -679,22 +693,28 @@ function drawTBonusBox(t){
   const r = R.rTBonus;
   panel(r.x, r.y, r.w, r.h);
   label('T-BONUS', r.x, r.y+r.h*0.04, r.w, C.purple, Math.max(6,r.h*0.14));
-  const lsz = Math.max(7, r.h*0.17);
-  const vsz = Math.max(8, r.h*0.20);
-  CTX.textAlign='center'; CTX.textBaseline='middle';
-  CTX.font = F(FONT_SMALL, lsz);
-  CTX.fillStyle=C.cyan; CTX.fillText('CLEAN:', r.x+r.w/2, r.y+r.h*0.38);
-  CTX.font = F(FONT_VAL, vsz);
-  CTX.fillStyle=C.yellow;
-  CTX.shadowColor=C.yellow; CTX.shadowBlur=6;
-  CTX.fillText(String(piecePot ? Math.round(piecePot/100) : 0), r.x+r.w/2, r.y+r.h*0.55);
-  CTX.font = F(FONT_SMALL, lsz);
-  CTX.fillStyle=C.cyan; CTX.fillText('TETRIS:', r.x+r.w/2, r.y+r.h*0.72);
-  CTX.font = F(FONT_VAL, vsz);
-  CTX.fillStyle=C.orange;
-  CTX.shadowColor=C.orange;
-  CTX.fillText(String(tetrisPot ? Math.round(tetrisPot/100) : 0), r.x+r.w/2, r.y+r.h*0.88);
-  CTX.shadowBlur=0;
+
+  const cleanVal  = piecePot  ? Math.round(piecePot/100)  : 0;
+  const tetrisVal = tetrisPot ? Math.round(tetrisPot/100) : 0;
+
+  // Split box into two equal halves vertically
+  const halfH = r.h * 0.43;
+  const topY  = r.y + r.h * 0.20;
+  const botY  = topY + halfH;
+  const ax    = r.x + 2;
+  const aw    = r.w - 4;
+
+  // CLEAN label (DM font, cyan) — top 28% of each half
+  const wordH = halfH * 0.30;
+  _dmWordLabel(CTX, 'CLEAN',  ax, topY,         aw, wordH, '#00ffff');
+  _dmWordLabel(CTX, 'TETRIS', ax, botY,         aw, wordH, C.orange);
+
+  // LED digits — 3 digits for CLEAN (yellow), 4 for TETRIS (orange)
+  const numH = halfH * 0.62;
+  _draw7SegDigits(CTX, cleanVal,  ax, aw, topY+wordH*1.1, numH, 3,
+    C.yellow, C.yellow, 'rgba(60,50,0,0.35)');
+  _draw7SegDigits(CTX, tetrisVal, ax, aw, botY+wordH*1.1, numH, 4,
+    C.orange, C.orange, 'rgba(60,25,0,0.35)');
 }
 
 // ── Playfield ────────────────────────────────────────────────────────
@@ -1224,7 +1244,102 @@ function drawAutoRow(t){
   CTX.fillText('🧾 RECEIPT', RX+RECEIPT_W/2, r.y+r.h/2);
 }
 
-// ── Pause overlay ────────────────────────────────────────────────────
+// ── Tip bubble: hints player about faster placement controls ─────────
+function drawTipBubble(t){
+  if(AUTO_PLAY || autoUsed || dead || paused || !ui.gameStarted) return;
+  if(_tipChoiceUsed || _tipDismissed) return;
+  // Show after 12 movement-only inputs, auto-dismiss after 6 seconds
+  if(_tipMoveCount < 12) return;
+  if(_tipShownAt === 0) _tipShownAt = t;
+  const age = t - _tipShownAt;
+  if(age > 6.0){ _tipDismissed = true; return; }
+
+  // Fade in 0→0.5s, hold, fade out last 1s
+  let alpha = 1.0;
+  if(age < 0.5)       alpha = age / 0.5;
+  else if(age > 5.0)  alpha = (6.0 - age);
+  alpha = Math.max(0, Math.min(1, alpha));
+  if(alpha <= 0) return;
+
+  // Anchor: point to the piece buttons area (top of right panel, below NEXT piece)
+  // Arrow tip points at the center-top of piece button row
+  const arrowTipX = R.gx + R.gw * 0.5;
+  const arrowTipY = R.gy + R.gh * 0.12; // upper play area
+
+  // Bubble dimensions
+  const bw = R.gw * 0.78;
+  const bh = R.gh * 0.20;
+  const bx = R.gx + (R.gw - bw) / 2;
+  const by = arrowTipY + R.gh * 0.06;
+  const br = 12;
+  const tailLen = 18;
+
+  CTX.save();
+  CTX.globalAlpha = alpha;
+
+  // Shadow
+  CTX.shadowColor = 'rgba(0,0,0,0.6)';
+  CTX.shadowBlur  = 12;
+  CTX.shadowOffsetX = 3; CTX.shadowOffsetY = 3;
+
+  // Bubble body
+  CTX.fillStyle = 'rgba(10,10,30,0.92)';
+  roundRect(bx, by, bw, bh, br);
+  CTX.fill();
+  CTX.shadowBlur=0; CTX.shadowOffsetX=0; CTX.shadowOffsetY=0;
+
+  // Bubble border — pulsing cyan
+  const pulse = 0.6 + 0.4*Math.sin(t*4);
+  CTX.strokeStyle = `rgba(0,220,255,${pulse})`;
+  CTX.lineWidth = 2;
+  roundRect(bx, by, bw, bh, br);
+  CTX.stroke();
+
+  // Arrow tail — from bubble top-center to tip
+  const tailBaseX = bx + bw/2;
+  const tailBaseY = by;
+  CTX.beginPath();
+  CTX.moveTo(tailBaseX - 8, tailBaseY);
+  CTX.lineTo(tailBaseX + 8, tailBaseY);
+  CTX.lineTo(arrowTipX, arrowTipY + 4);
+  CTX.closePath();
+  CTX.fillStyle = 'rgba(10,10,30,0.92)';
+  CTX.fill();
+  CTX.strokeStyle = `rgba(0,220,255,${pulse})`;
+  CTX.lineWidth = 1.5;
+  CTX.stroke();
+
+  // Arrowhead dot
+  CTX.beginPath();
+  CTX.arc(arrowTipX, arrowTipY, 4, 0, Math.PI*2);
+  CTX.fillStyle = `rgba(0,220,255,${pulse})`;
+  CTX.fill();
+
+  // Text
+  CTX.shadowBlur=0;
+  const lineH = bh * 0.28;
+  const fsz   = Math.max(8, lineH * 0.72);
+  CTX.textAlign = 'center'; CTX.textBaseline = 'middle';
+
+  CTX.font = `700 ${Math.round(fsz*1.05)}px monospace`;
+  CTX.fillStyle = '#00eeff';
+  CTX.shadowColor='#00eeff'; CTX.shadowBlur=5;
+  CTX.fillText('TAP A PIECE TO PLACE IT INSTANTLY!', bx+bw/2, by+bh*0.32);
+
+  CTX.font = `500 ${Math.round(fsz*0.88)}px monospace`;
+  CTX.fillStyle = 'rgba(200,200,255,0.9)';
+  CTX.shadowColor='transparent'; CTX.shadowBlur=0;
+  CTX.fillText('Touch choices above \u2b06  or tap ghost on board', bx+bw/2, by+bh*0.62);
+
+  CTX.font = `400 ${Math.round(fsz*0.72)}px monospace`;
+  CTX.fillStyle = 'rgba(120,120,180,0.8)';
+  CTX.fillText('(this tip disappears automatically)', bx+bw/2, by+bh*0.88);
+
+  CTX.globalAlpha = 1.0;
+  CTX.restore();
+}
+
+
 function drawPauseOverlay(){
   CTX.fillStyle='rgba(0,0,0,0.6)';
   CTX.fillRect(R.gx, R.gy, R.gw, R.gh);
@@ -3527,6 +3642,7 @@ function cycleOptions(){
 function choose(i){
   if(dead||paused||clearAnimating||!cur)return;
   const p=placements[i];if(!p)return;
+  _tipChoiceUsed=true; _tipDismissed=true; // player discovered the faster controls
   stopSelTimer();stopDrop();
 
   // If player already manually moved/rotated, or speed is 11, teleport directly
@@ -3759,7 +3875,6 @@ function rot(d){
   if(dead||paused||clearAnimating||!cur)return;
   const next=rotNRS(cur,d);
   const r=next.c;
-  // Try center position, then kick ±1, then ±2 (allows rotating into slots)
   if(isOk(r,cx,cy)){
     cur.c=r;cur.rot=next.rot;
   } else if(isOk(r,cx-1,cy)){
@@ -3770,14 +3885,17 @@ function rot(d){
     cur.c=r;cur.rot=next.rot;cx-=2;
   } else if(isOk(r,cx+2,cy)){
     cur.c=r;cur.rot=next.rot;cx+=2;
-  } else return; // rotation genuinely blocked
+  } else return;
   playerHasMoved=true;moveStartTime=AT;
+  if(!_tipChoiceUsed) _tipMoveCount++;
   sndRotate();calcPlacements();scheduleDrop();
 }
 function mhz(d){
   if(dead||paused||clearAnimating||!cur)return;
   if(!isOk(cur.c,cx+d,cy))return;
-  cx+=d;playerHasMoved=true;moveStartTime=AT;sndMove();calcPlacements();scheduleDrop();
+  cx+=d;playerHasMoved=true;moveStartTime=AT;
+  if(!_tipChoiceUsed) _tipMoveCount++;
+  sndMove();calcPlacements();scheduleDrop();
 }
 function sdrop(){
   if(dead||paused||clearAnimating||!cur)return;
@@ -4028,8 +4146,7 @@ function toggleAutoPlay(){
   if(ui.gameStarted && !dead && AUTO_PLAY) return; // can't turn OFF mid-game once enabled
   AUTO_PLAY = !AUTO_PLAY;
   if(AUTO_PLAY){
-    autoUsed = true; // disqualify hi score immediately
-    hi = Math.min(hi, score); // don't let current score become hi if auto just turned on
+    autoUsed = true; // disqualify hi score immediately — but keep whatever hi already was
   }
   const lbl=document.getElementById('ap-toggle-label');
   if(lbl) lbl.classList.toggle('on',AUTO_PLAY);
@@ -4169,7 +4286,8 @@ function init(){
   currentScoringHoles=0;scoringDisabledSound=false;
   hfRun=0;hfBest=0;
   _towerSeverity=0;
-  autoUsed = AUTO_PLAY; // if auto is on when game starts, immediately disqualify hi score
+  autoUsed = AUTO_PLAY;
+  _tipMoveCount=0; _tipChoiceUsed=false; _tipShownAt=0; _tipDismissed=false;
   _gamesPlayed++;
   _tickerInit();
   setTimeout(()=>{ try{tickerPush([`READY`,`LVL ${level}`]);}catch(e){} }, 100);
