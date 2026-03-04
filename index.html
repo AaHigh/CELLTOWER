@@ -124,6 +124,7 @@ const cv = document.getElementById('cv');
 const CTX = cv.getContext('2d');
 
 // ── Screen dimensions ─────────────────────────────────────────────────
+const VERSION = '0.35B';
 let SW, SH;   // screen width/height
 var CELL = 20; // tetris cell size — also declared by game logic (var hoists safely)
 
@@ -299,6 +300,7 @@ function computeLayout(){
   const RECEIPT_W  = Math.round(R.auto.w * 0.25);
   addHit('auto_toggle', R.auto.x, R.auto.y, AUTO_BTN_W, R.auto.h);
   addHit('receipt',     R.auto.x + R.auto.w - RECEIPT_W, R.auto.y, RECEIPT_W, R.auto.h);
+  addHit('marquee',     0, R.title.y, SW, R.title.h);
   // Slider zone
   const SLX = R.auto.x + AUTO_BTN_W + GAP;
   const SLW = R.auto.w - AUTO_BTN_W - RECEIPT_W - 2*GAP;
@@ -331,14 +333,13 @@ function panel(x,y,w,h, borderColor){
 }
 
 function label(text, x, y, w, color, size){
-  CTX.font = F(FONT_LABEL, size||10);
-  CTX.fillStyle = color || C.purple;
-  CTX.textAlign = 'center';
-  CTX.textBaseline = 'top';
-  CTX.fillText(text, x + w/2, y);
+  // Route all labels through the DM dot-matrix bitmap font
+  const h = (size || 10) * 1.4;
+  _dmWordLabel(CTX, text, x, y, w, h, color || C.purple);
 }
 
 function val(text, x, y, w, color, size){
+  // Non-numeric values (like pause icon) still use canvas text
   CTX.font = F(FONT_VAL, size||14);
   CTX.fillStyle = color || C.cyan;
   CTX.textAlign = 'center';
@@ -435,10 +436,12 @@ function _draw7SegDigits(ctx, digits, areaX, areaW, areaY, areaH, padTo, litColo
 
 function draw7SegScore(r, labelText, value, colorOpts){
   panel(r.x, r.y, r.w, r.h);
-  label(labelText, r.x, r.y + r.h*0.05, r.w, C.purple, Math.max(7, r.h*0.20));
-  const dimColor  = (colorOpts && colorOpts.dimColor)  || 'rgba(80,20,20,0.35)';
   const litColor  = (colorOpts && colorOpts.litColor)  || 'rgb(255,128,128)';
   const glowColor = (colorOpts && colorOpts.glowColor) || 'rgb(255,128,128)';
+  const dimColor  = (colorOpts && colorOpts.dimColor)  || 'rgba(80,20,20,0.35)';
+  // Label color = complement: hue-shift litColor 180° — or just use it directly for legibility
+  const labelColor = (colorOpts && colorOpts.labelColor) || litColor;
+  label(labelText, r.x, r.y + r.h*0.05, r.w, labelColor, Math.max(7, r.h*0.20));
   _draw7SegDigits(CTX, value,
     r.x+3, r.w-6, r.y+r.h*0.34, r.h*0.60, 6,
     litColor, glowColor, dimColor);
@@ -550,23 +553,156 @@ function draw(ts){
 }
 
 // ── Title ────────────────────────────────────────────────────────────
+// ── Scrolling LED marquee — full viewport width ───────────────────────
+const MARQUEE_MESSAGES = [
+  '  \x03 CELLTOWER  v'+VERSION+'  \x02  ',
+  '  THE HIGH \x02 TOWER \x03 DISTRICT  ',
+  '  TAP A PIECE OR ITS GHOST TO PLACE INSTANTLY  ',
+  '  \x01 FRESNO CA  559-485-9050  \x01  ',
+  '  NO HOLES = BIGGER BONUS  \x04  ',
+  '  TETRIS STREAKS MULTIPLY YOUR POT  \x02  ',
+  '  MADE WITH ANTHROPIC CLAUDE AI  \x04  ',
+];
+const MARQUEE_PX_PER_SEC = 320;  // 4× faster scroll
+const MARQUEE_HUE_SPEED  = 0.5;
+const MARQUEE_SHEAR      = 0.22;
+
+let _mqOffset     = 0;      // current scroll pixel offset
+let _mqUserPaused = false;  // toggled by tapping the marquee
+let _mqHueOffset  = 0;      // advances continuously even when scroll is stopped
+let _mqLastT    = 0;
+let _mqText     = '';
+let _mqStopPts  = [];   // pixel offsets where scroll pauses (end of each message)
+let _mqStopped  = false;
+let _mqStopAt   = 0;    // timestamp when stop began
+let _mqBlinkVis = true; // blink state while stopped
+const MQ_STOP_ON  = 1.0;  // seconds on per blink cycle
+const MQ_STOP_OFF = 0.5;  // seconds off per blink cycle
+const MQ_STOP_DUR = 2.5;  // total stop duration before resuming
+
+function _mqInit(){
+  // Build full text and compute stop-pixel positions for each message boundary
+  const sep = '  ';  // gap between messages (2 spaces — tight, natural pause at end of message padding)
+  _mqText = MARQUEE_MESSAGES.join(sep);
+  _mqStopPts = [];
+  // Each message already has trailing spaces built in; stop point = end of that message in pixels
+  // We compute cumulative char width per message
+  let px = 0;
+  // dot-matrix char width: recomputed at draw time based on dotSz.
+  // Store as char counts instead, convert at draw time.
+  let charCount = 0;
+  for(let mi = 0; mi < MARQUEE_MESSAGES.length; mi++){
+    charCount += MARQUEE_MESSAGES[mi].length;
+    _mqStopPts.push(charCount); // char index, not px — converted at draw time
+    if(mi < MARQUEE_MESSAGES.length - 1) charCount += sep.length;
+  }
+}
+
+function _mqAdvance(t, charW){
+  if(_mqLastT === 0){ _mqLastT = t; _mqInit(); }
+  const dt = Math.min(t - _mqLastT, 0.05);
+  _mqLastT = t;
+
+  // Hue always moves regardless of scroll state
+  _mqHueOffset += MARQUEE_PX_PER_SEC * MARQUEE_HUE_SPEED * dt;
+
+  const totalW = _mqText.length * charW;
+
+  // User manually paused — freeze scroll, keep hue going
+  if(_mqUserPaused){ _mqBlinkVis = true; return; }
+
+  if(_mqStopped){
+    const elapsed = t - _mqStopAt;
+    if(elapsed >= MQ_STOP_DUR){
+      _mqStopped = false;
+      _mqBlinkVis = true;
+    } else {
+      const cycle = MQ_STOP_ON + MQ_STOP_OFF;
+      const phase = elapsed % cycle;
+      _mqBlinkVis = (phase < MQ_STOP_ON);
+    }
+    return;
+  }
+
+  _mqOffset += MARQUEE_PX_PER_SEC * dt;
+  if(_mqOffset >= totalW) _mqOffset -= totalW;
+
+  // Check if we just crossed a stop point
+  for(const stopCharIdx of _mqStopPts){
+    const stopPx = stopCharIdx * charW;
+    const prevPx = _mqOffset - MARQUEE_PX_PER_SEC * dt;
+    if(prevPx < stopPx && _mqOffset >= stopPx){
+      _mqOffset  = stopPx;
+      _mqStopped = true;
+      _mqStopAt  = t;
+      _mqBlinkVis = true;
+      break;
+    }
+  }
+}
+
 function drawTitle(t){
-  const r = R.title;
-  const sz = Math.max(12, r.h * 0.75);
+  const r   = R.title;
+  const H   = r.h;
+  const dotSz = Math.max(1, Math.floor((H - 2) / (7 + 6)));
+  const step  = dotSz + 1;
+  const charW = 5 * step + 2;
+  const charH = 7 * step;
+  const topY  = r.y + Math.floor((H - charH) / 2);
+
+  _mqAdvance(t, charW);
+
+  if(!_mqText) return;
+
+  const str    = _mqText.toUpperCase();
+  const totalW = str.length * charW;
+  const offset = _mqOffset % totalW;
+  const isScrolling = !_mqStopped && !_mqUserPaused;
+  const shear  = isScrolling ? MARQUEE_SHEAR : 0;
+
   CTX.save();
-  CTX.font = F('900 {S}px monospace', sz);
-  CTX.textAlign = 'center';
-  CTX.textBaseline = 'middle';
-  // Rainbow gradient
-  const grd = CTX.createLinearGradient(r.x, 0, r.x+r.w, 0);
-  grd.addColorStop(0,'#ff00ff');
-  grd.addColorStop(0.3,'#00ffff');
-  grd.addColorStop(0.6,'#ffff00');
-  grd.addColorStop(1,'#ff00aa');
-  CTX.fillStyle = grd;
-  CTX.shadowColor = '#ff00ff';
-  CTX.shadowBlur = 10;
-  CTX.fillText('✦ CELLTOWER ✦', SW/2, r.y + r.h/2);
+  CTX.beginPath();
+  CTX.rect(0, r.y, SW, H);
+  CTX.clip();
+
+  CTX.fillStyle = 'rgba(0,0,0,0.85)';
+  CTX.fillRect(0, r.y, SW, H);
+  CTX.strokeStyle = 'rgba(80,0,160,0.6)';
+  CTX.lineWidth = 1;
+  CTX.beginPath(); CTX.moveTo(0, r.y);   CTX.lineTo(SW, r.y);   CTX.stroke();
+  CTX.beginPath(); CTX.moveTo(0, r.y+H); CTX.lineTo(SW, r.y+H); CTX.stroke();
+
+  // User-paused: always show (no blink). Auto-stopped: respect blink phase.
+  const visible = _mqUserPaused ? true : _mqBlinkVis;
+  if(!visible){ CTX.restore(); return; }
+
+  for(let pass = 0; pass < 2; pass++){
+    const baseX = -offset + pass * totalW;
+    for(let ci = 0; ci < str.length; ci++){
+      const ch    = str[ci];
+      const glyph = DM_FONT[ch] || DM_FONT[' '];
+      const cx0   = baseX + ci * charW;
+      if(cx0 + charW + shear * charH < 0)  continue;
+      if(cx0 > SW + shear * charH + 20)    continue;
+
+      for(let col = 0; col < 5; col++){
+        const colBits = glyph[col] || 0;
+        for(let row = 0; row < 7; row++){
+          if(colBits & (1 << row)){
+            const lean = (3 - row) * step * shear;
+            const px   = Math.round(cx0 + col * step + lean);
+            const py   = topY + row * step;
+            const hue  = ((px + _mqHueOffset) * 0.8) % 360;
+            CTX.fillStyle   = `hsl(${hue},100%,65%)`;
+            CTX.shadowColor = `hsl(${hue},100%,65%)`;
+            CTX.shadowBlur  = dotSz * 1.8;
+            CTX.fillRect(px, py, dotSz, dotSz);
+          }
+        }
+      }
+    }
+  }
+  CTX.shadowBlur = 0;
   CTX.restore();
 }
 
@@ -587,10 +723,8 @@ function drawStartScreen(t){
   CTX.fillText('✦ CELLTOWER ✦', mx, by + bh*0.18);
   CTX.shadowBlur=0;
 
-  // by Aaron Hightower
-  CTX.font = F('600 {S}px monospace', Math.max(8, bw*0.055));
-  CTX.fillStyle = '#aa88ff';
-  CTX.fillText('by Aaron Hightower', mx, by + bh*0.30);
+  // by Aaron Hightower — DM font
+  _dmWordLabel(CTX, 'BY AARON HIGHTOWER', mx - bw*0.4, by + bh*0.27, bw*0.8, Math.max(6, bh*0.055), '#aa88ff');
 
   // TAP TO PLAY button
   const btnW = bw * 0.78, btnH = bh * 0.14;
@@ -602,31 +736,21 @@ function drawStartScreen(t){
   roundRect(btnX, btnY, btnW, btnH, 10);
   CTX.fillStyle = grdBtn; CTX.fill();
   CTX.strokeStyle=`rgba(255,255,255,${pulse*0.5})`; CTX.lineWidth=1; CTX.stroke();
+  _dmWordLabel(CTX, 'TAP TO PLAY', btnX + btnW*0.05, btnY + btnH*0.1, btnW*0.9, btnH*0.8, '#ffffff');
 
-  CTX.font = F('900 {S}px monospace', Math.max(10, btnH*0.38));
-  CTX.fillStyle = '#fff';
-  CTX.shadowColor='#fff'; CTX.shadowBlur=8;
-  CTX.fillText('TAP TO PLAY', mx, btnY + btnH/2);
-  CTX.shadowBlur=0;
-
-  // Register hit zone for TAP TO PLAY — NOT added to hitZones
-  // Start tap is handled inline in handleTap by checking coords against this rect
-  // Store button rect for tap detection
   ui._startBtnX = btnX; ui._startBtnY = btnY;
   ui._startBtnW = btnW; ui._startBtnH = btnH;
 
-  // Hint text
-  CTX.font = F('500 {S}px monospace', Math.max(7, bw*0.045));
-  CTX.fillStyle = '#664488';
-  CTX.fillText('AUTO available after start', mx, by + bh*0.63);
-  CTX.fillText('AUTO scores: no high score', mx, by + bh*0.70);
+  // Hint text — DM font
+  _dmWordLabel(CTX, 'AUTO AVAILABLE AFTER START', bx+bw*0.05, by + bh*0.60, bw*0.9, Math.max(5, bh*0.045), '#664488');
+  _dmWordLabel(CTX, 'AUTO SCORES: NO HIGH SCORE',  bx+bw*0.05, by + bh*0.66, bw*0.9, Math.max(5, bh*0.045), '#664488');
 }
 
 // ── Left panel ───────────────────────────────────────────────────────
 function drawLeftPanel(t){
-  draw7SegScore(R.lScore, 'SCORE', score);
-  draw7SegScore(R.lLevel, 'LEVEL', level,   {litColor:'#00ffff', glowColor:'#00ffff', dimColor:'rgba(0,50,60,0.35)'});
-  draw7SegScore(R.lLines, 'LINES', lines,   {litColor:'#00ffff', glowColor:'#00ffff', dimColor:'rgba(0,50,60,0.35)'});
+  draw7SegScore(R.lScore, 'SCORE', score);  // default pink
+  draw7SegScore(R.lLevel, 'LEVEL', level,   {litColor:'#00ffff', glowColor:'#00ffff', dimColor:'rgba(0,50,60,0.35)', labelColor:'#00ffff'});
+  draw7SegScore(R.lLines, 'LINES', lines,   {litColor:'#00ffff', glowColor:'#00ffff', dimColor:'rgba(0,50,60,0.35)', labelColor:'#00ffff'});
   drawTicker(t);
 }
 
@@ -662,10 +786,10 @@ function drawTicker(t){
 // ── Right panel ──────────────────────────────────────────────────────
 function drawRightPanel(t){
   drawNextPiece(t);
-  draw7SegScore(R.rHi,    'HIGH',  hi);
+  draw7SegScore(R.rHi,    'HIGH',  hi);  // default pink matches SCORE
   drawPauseBox(t);
   drawTBonusBox(t);
-  draw7SegScore(R.rHoles, 'HOLES', ui.holes, {litColor:'#ff4444', glowColor:'#ff4444', dimColor:'rgba(60,0,0,0.35)'});
+  draw7SegScore(R.rHoles, 'HOLES', ui.holes, {litColor:'#ff4444', glowColor:'#ff4444', dimColor:'rgba(60,0,0,0.35)', labelColor:'#ff4444'});
 }
 
 function drawNextPiece(t){
@@ -1115,13 +1239,25 @@ function drawAutoRow(t){
   CTX.font=F(FONT_LABEL, asz);
   CTX.textAlign='center'; CTX.textBaseline='middle';
   CTX.fillStyle = isOn ? C.green : C.purple;
-  if(isOn){CTX.shadowColor=C.green; CTX.shadowBlur=8;}
-  CTX.fillText('🤖 AUTO', r.x + AUTO_BTN_W/2, r.y + r.h/2);
-  CTX.shadowBlur=0;
+  if(isOn){CTX.shadowBlur=0;}
+  const autoLabelColor = isOn ? C.green : C.purple;
   if(isOn){
-    const dotR=3;
-    CTX.beginPath(); CTX.arc(r.x+AUTO_BTN_W-8, r.y+r.h/2, dotR, 0, Math.PI*2);
-    CTX.fillStyle=C.green; CTX.fill();
+    // Render "AUTO" | dot | "ON" with dot centered between the two words
+    const wordH = r.h * 0.58;
+    const wordY = r.y + r.h * 0.18;
+    const halfW = (AUTO_BTN_W - 8) * 0.45;
+    _dmWordLabel(CTX, 'AUTO', r.x + 4,           wordY, halfW,        wordH, C.green);
+    _dmWordLabel(CTX, 'ON',   r.x + 4 + halfW + 10, wordY, halfW - 6, wordH, C.green);
+    // Dot — centered in the gap between the two words
+    const dotX = r.x + 4 + halfW + 5;
+    const dotY = r.y + r.h * 0.50;
+    const dotR = Math.max(2, r.h * 0.06);
+    CTX.beginPath(); CTX.arc(dotX, dotY, dotR, 0, Math.PI*2);
+    CTX.fillStyle = C.green;
+    CTX.shadowColor = C.green; CTX.shadowBlur = 6;
+    CTX.fill(); CTX.shadowBlur = 0;
+  } else {
+    _dmWordLabel(CTX, 'AUTO', r.x + 4, r.y + r.h*0.15, AUTO_BTN_W - 8, r.h*0.70, C.purple);
   }
 
   // ── Speed control zone ───────────────────────────────────────────────
@@ -1238,102 +1374,60 @@ function drawAutoRow(t){
   // RECEIPT button
   const RX = r.x + r.w - RECEIPT_W;
   panel(RX, r.y, RECEIPT_W, r.h, '#aa6600');
-  CTX.font=F(FONT_SMALL, Math.max(7,r.h*0.32));
-  CTX.textAlign='center'; CTX.textBaseline='middle';
-  CTX.fillStyle='#ffcc44';
-  CTX.fillText('🧾 RECEIPT', RX+RECEIPT_W/2, r.y+r.h/2);
+  _dmWordLabel(CTX, 'RECEIPT', RX+2, r.y + r.h*0.12, RECEIPT_W-4, r.h*0.76, '#ffcc44');
 }
 
 // ── Tip bubble: hints player about faster placement controls ─────────
 function drawTipBubble(t){
   if(AUTO_PLAY || autoUsed || dead || paused || !ui.gameStarted) return;
   if(_tipChoiceUsed || _tipDismissed) return;
-  // Show after 12 movement-only inputs, auto-dismiss after 6 seconds
   if(_tipMoveCount < 12) return;
   if(_tipShownAt === 0) _tipShownAt = t;
   const age = t - _tipShownAt;
-  if(age > 6.0){ _tipDismissed = true; return; }
+  if(age > 7.0){ _tipDismissed = true; return; }
 
-  // Fade in 0→0.5s, hold, fade out last 1s
   let alpha = 1.0;
-  if(age < 0.5)       alpha = age / 0.5;
-  else if(age > 5.0)  alpha = (6.0 - age);
-  alpha = Math.max(0, Math.min(1, alpha));
+  if(age < 0.4)      alpha = age / 0.4;
+  else if(age > 6.0) alpha = Math.max(0, 7.0 - age);
   if(alpha <= 0) return;
 
-  // Anchor: point to the piece buttons area (top of right panel, below NEXT piece)
-  // Arrow tip points at the center-top of piece button row
-  const arrowTipX = R.gx + R.gw * 0.5;
-  const arrowTipY = R.gy + R.gh * 0.12; // upper play area
-
-  // Bubble dimensions
-  const bw = R.gw * 0.78;
-  const bh = R.gh * 0.20;
-  const bx = R.gx + (R.gw - bw) / 2;
-  const by = arrowTipY + R.gh * 0.06;
-  const br = 12;
-  const tailLen = 18;
+  // Fit entirely inside the lower portion of the playfield
+  // Playfield: R.gx, R.gy, R.gw, R.gh
+  const bw  = R.gw * 0.88;
+  const bh  = R.gh * 0.22;
+  const bx  = R.gx + (R.gw - bw) / 2;
+  const by  = R.gy + R.gh * 0.72;   // lower 28% of board — usually empty early on
+  const br  = 10;
 
   CTX.save();
-  CTX.globalAlpha = alpha;
-
-  // Shadow
-  CTX.shadowColor = 'rgba(0,0,0,0.6)';
-  CTX.shadowBlur  = 12;
-  CTX.shadowOffsetX = 3; CTX.shadowOffsetY = 3;
+  CTX.globalAlpha = alpha * 0.96;
 
   // Bubble body
-  CTX.fillStyle = 'rgba(10,10,30,0.92)';
-  roundRect(bx, by, bw, bh, br);
-  CTX.fill();
-  CTX.shadowBlur=0; CTX.shadowOffsetX=0; CTX.shadowOffsetY=0;
-
-  // Bubble border — pulsing cyan
-  const pulse = 0.6 + 0.4*Math.sin(t*4);
-  CTX.strokeStyle = `rgba(0,220,255,${pulse})`;
-  CTX.lineWidth = 2;
-  roundRect(bx, by, bw, bh, br);
-  CTX.stroke();
-
-  // Arrow tail — from bubble top-center to tip
-  const tailBaseX = bx + bw/2;
-  const tailBaseY = by;
-  CTX.beginPath();
-  CTX.moveTo(tailBaseX - 8, tailBaseY);
-  CTX.lineTo(tailBaseX + 8, tailBaseY);
-  CTX.lineTo(arrowTipX, arrowTipY + 4);
-  CTX.closePath();
-  CTX.fillStyle = 'rgba(10,10,30,0.92)';
-  CTX.fill();
-  CTX.strokeStyle = `rgba(0,220,255,${pulse})`;
-  CTX.lineWidth = 1.5;
-  CTX.stroke();
-
-  // Arrowhead dot
-  CTX.beginPath();
-  CTX.arc(arrowTipX, arrowTipY, 4, 0, Math.PI*2);
-  CTX.fillStyle = `rgba(0,220,255,${pulse})`;
-  CTX.fill();
-
-  // Text
+  CTX.shadowColor='rgba(0,0,0,0.7)'; CTX.shadowBlur=14;
+  CTX.fillStyle = 'rgba(8,6,24,0.94)';
+  roundRect(bx, by, bw, bh, br); CTX.fill();
   CTX.shadowBlur=0;
-  const lineH = bh * 0.28;
-  const fsz   = Math.max(8, lineH * 0.72);
-  CTX.textAlign = 'center'; CTX.textBaseline = 'middle';
 
-  CTX.font = `700 ${Math.round(fsz*1.05)}px monospace`;
-  CTX.fillStyle = '#00eeff';
-  CTX.shadowColor='#00eeff'; CTX.shadowBlur=5;
-  CTX.fillText('TAP A PIECE TO PLACE IT INSTANTLY!', bx+bw/2, by+bh*0.32);
+  // Pulsing border
+  const pulse = 0.55 + 0.45*Math.sin(t*3.5);
+  CTX.strokeStyle = `rgba(0,200,255,${pulse})`;
+  CTX.lineWidth = 1.8;
+  roundRect(bx, by, bw, bh, br); CTX.stroke();
 
-  CTX.font = `500 ${Math.round(fsz*0.88)}px monospace`;
-  CTX.fillStyle = 'rgba(200,200,255,0.9)';
-  CTX.shadowColor='transparent'; CTX.shadowBlur=0;
-  CTX.fillText('Touch choices above \u2b06  or tap ghost on board', bx+bw/2, by+bh*0.62);
+  // Upward arrow notch at top-center pointing toward choice buttons
+  const ax = bx + bw/2;
+  CTX.beginPath();
+  CTX.moveTo(ax-9, by);
+  CTX.lineTo(ax,   by-12);
+  CTX.lineTo(ax+9, by);
+  CTX.fillStyle='rgba(8,6,24,0.94)'; CTX.fill();
+  CTX.strokeStyle=`rgba(0,200,255,${pulse})`; CTX.lineWidth=1.5; CTX.stroke();
 
-  CTX.font = `400 ${Math.round(fsz*0.72)}px monospace`;
-  CTX.fillStyle = 'rgba(120,120,180,0.8)';
-  CTX.fillText('(this tip disappears automatically)', bx+bw/2, by+bh*0.88);
+  // Three lines of DM text inside bubble
+  const lh = bh / 3.4;
+  _dmWordLabel(CTX, 'TAP A PIECE ABOVE TO PLACE IT!', bx+bw*0.04, by+bh*0.06,       bw*0.92, lh, '#00eeff');
+  _dmWordLabel(CTX, 'OR TAP ITS GHOST ON THE BOARD', bx+bw*0.04, by+bh*0.06+lh*1.1, bw*0.92, lh*0.85, 'rgba(180,180,255,0.9)');
+  _dmWordLabel(CTX, 'MUCH FASTER THAN MOVE BUTTONS', bx+bw*0.04, by+bh*0.06+lh*2.1, bw*0.92, lh*0.72, 'rgba(100,100,160,0.8)');
 
   CTX.globalAlpha = 1.0;
   CTX.restore();
@@ -1356,37 +1450,36 @@ function drawGameOverOverlay(){
   roundRect(R.gx, R.gy, R.gw, R.gh, 6); CTX.fill();
 
   const mx=R.gx+R.gw/2, my=R.gy, bh=R.gh;
-  CTX.textAlign='center';
+  const gw=R.gw;
 
-  // GAME OVER title
-  CTX.font=F(FONT_TITLE, Math.max(13,R.gw*0.095));
-  CTX.fillStyle='#ff4444'; CTX.shadowColor='#ff4444'; CTX.shadowBlur=10;
-  CTX.fillText('GAME OVER', mx, my+bh*0.14);
+  // GAME OVER — DM font, red glow
+  const titleH = bh * 0.10;
+  CTX.shadowColor='#ff4444'; CTX.shadowBlur=10;
+  _dmWordLabel(CTX, 'GAME OVER', R.gx+gw*0.05, my+bh*0.06, gw*0.90, titleH, '#ff4444');
   CTX.shadowBlur=0;
 
-  // Score
-  const qualifier = autoUsed ? '· AUTO ·' : (score>=hi && score>0 ? '★ NEW HIGH ★':'');
-  CTX.font=F(FONT_LABEL, Math.max(9,R.gw*0.065));
-  CTX.fillStyle=C.cyan;
-  CTX.fillText('Score: '+score, mx, my+bh*0.25);
+  // Score line
+  const scoreStr = 'SCORE  ' + score;
+  _dmWordLabel(CTX, scoreStr, R.gx+gw*0.05, my+bh*0.20, gw*0.90, bh*0.065, C.cyan);
+
+  // Qualifier
+  const qualifier = autoUsed ? 'AUTO  NO HI SCORE' : (score>=hi && score>0 ? 'NEW HIGH SCORE':'');
   if(qualifier){
-    CTX.fillStyle=autoUsed ? C.orange : C.yellow;
-    CTX.shadowColor=CTX.fillStyle; CTX.shadowBlur=8;
-    CTX.fillText(qualifier, mx, my+bh*0.34);
+    const qColor = autoUsed ? C.orange : C.yellow;
+    CTX.shadowColor=qColor; CTX.shadowBlur=6;
+    _dmWordLabel(CTX, qualifier, R.gx+gw*0.05, my+bh*0.29, gw*0.90, bh*0.055, qColor);
     CTX.shadowBlur=0;
   }
   if(hfBest > 0){
-    CTX.font=F(FONT_LABEL, Math.max(7,R.gw*0.048));
-    CTX.fillStyle='#88ffcc';
-    CTX.fillText('Best Clean Run: '+hfBest+'CS', mx, my+bh*0.43);
+    _dmWordLabel(CTX, 'BEST CLEAN RUN  '+hfBest+'CS', R.gx+gw*0.05, my+bh*0.37, gw*0.90, bh*0.048, '#88ffcc');
   }
 
   // Three stacked buttons
-  const gap  = R.gw * 0.05;
+  const gap  = gw * 0.05;
   const bx   = R.gx + gap;
-  const btnW = R.gw - gap*2;
-  const btnH = bh  * 0.105;
-  const btn1Y = my + bh * 0.52;
+  const btnW = gw - gap*2;
+  const btnH = bh * 0.105;
+  const btn1Y = my + bh * 0.47;
   const btn2Y = btn1Y + btnH + gap*0.7;
   const btn3Y = btn2Y + btnH + gap*0.7;
 
@@ -1394,17 +1487,12 @@ function drawGameOverOverlay(){
     const grd = CTX.createLinearGradient(bx,0,bx+btnW,0);
     grd.addColorStop(0,g0); grd.addColorStop(1,g1);
     roundRect(bx,by,btnW,btnH,8); CTX.fillStyle=grd; CTX.fill();
-    let fsz = Math.max(7, btnH*0.40);
-    CTX.font=F(FONT_VAL, fsz);
-    while(CTX.measureText(txt).width > btnW*0.88 && fsz>7){ fsz--; CTX.font=F(FONT_VAL,fsz); }
-    CTX.fillStyle='#fff'; CTX.shadowColor='#fff'; CTX.shadowBlur=5;
-    CTX.fillText(txt, bx+btnW/2, by+btnH/2);
-    CTX.shadowBlur=0;
+    _dmWordLabel(CTX, txt, bx+btnW*0.04, by+btnH*0.08, btnW*0.92, btnH*0.84, '#ffffff');
   };
 
   drawBtn(btn1Y, '#005533','#00aa66', 'VIEW RECEIPT');
-  drawBtn(btn2Y, '#1a0066','#5500cc', 'PLAY AGAIN  [ HUMAN ]');
-  drawBtn(btn3Y, '#660022','#cc0055', 'PLAY AGAIN  [ AUTO ]');
+  drawBtn(btn2Y, '#1a0066','#5500cc', 'PLAY AGAIN  HUMAN');
+  drawBtn(btn3Y, '#660022','#cc0055', 'PLAY AGAIN  AUTO');
 
   // Hit rects
   ui._receiptBtnX=bx; ui._receiptBtnY=btn1Y; ui._receiptBtnW=btnW; ui._receiptBtnH=btnH;
@@ -1415,10 +1503,9 @@ function drawGameOverOverlay(){
 // ── Flash notification ───────────────────────────────────────────────
 function drawFlash(t){
   if(!ui.flash) return;
-  CTX.font=F(FONT_VAL, Math.max(12,SW*0.05));
-  CTX.textAlign='center'; CTX.textBaseline='middle';
-  CTX.fillStyle='#fff'; CTX.shadowColor='#ffff00'; CTX.shadowBlur=20;
-  CTX.fillText(ui.flash.text, SW/2, SH*0.5);
+  const fsz = Math.max(12, SW*0.05);
+  CTX.shadowColor='#ffff00'; CTX.shadowBlur=20;
+  _dmWordLabel(CTX, ui.flash.text, SW*0.05, SH*0.46, SW*0.90, fsz*1.6, '#ffffff');
   CTX.shadowBlur=0;
 }
 
@@ -1523,12 +1610,14 @@ function handleTap(tx, ty){
     }
     if(ui._playAgainW && tx>=ui._playAgainX && tx<=ui._playAgainX+ui._playAgainW &&
        ty>=ui._playAgainY && ty<=ui._playAgainY+ui._playAgainH){
-      restart(false); return;  // HUMAN game — AUTO_PLAY will be false
+      restart(false); return;
     }
     if(ui._playAutoW && tx>=ui._playAutoX && tx<=ui._playAutoX+ui._playAutoW &&
        ty>=ui._playAutoY && ty<=ui._playAutoY+ui._playAutoH){
-      restart(true); return;   // AUTO game — AUTO_PLAY will be true, autoUsed=true
+      restart(true); return;
     }
+    // Also allow the corner RECEIPT hit zone while dead
+    if(id === 'receipt'){ showReceipt(); return; }
     return;
   }
 
@@ -1548,6 +1637,7 @@ function handleTap(tx, ty){
     case 'ctrl_left': mhz(-1); break;
     case 'ctrl_right':mhz(1);  break;
     case 'auto_toggle': if(ui.gameStarted&&!dead) toggleAutoPlay(); break;
+    case 'marquee':     _mqUserPaused = !_mqUserPaused; break;
     case 'receipt':        showReceipt(); break;
     case 'receipt_close':  hideReceipt(); break;
     case 'speed_slider': break;
