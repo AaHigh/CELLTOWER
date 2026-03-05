@@ -130,10 +130,11 @@ var CELL = 20; // tetris cell size — also declared by game logic (var hoists s
 
 // ── Safe defaults for game globals (real values set by game logic) ────
 var score=0, level=1, lines=0, hi=0, dead=false, paused=false;
+var _gamePauseCount=0, _gamePauseStartT=0, _gameTotalPauseMs=0;
 var board=null, cur=null, cx=0, cy=0, nxt=null;
 var placements=null, particles=[], explodedCells=new Set();
 var piecePot=0, tetrisPot=0;
-var AUTO_PLAY=false, AUTO_SPEED=7.11, autoUsed=false;
+var AUTO_PLAY=false, AUTO_SPEED=8.99, autoUsed=false;
 var AT=0;
 var playerHasMoved=false, moveStartTime=0;
 var _tipMoveCount=0, _tipChoiceUsed=false, _tipShownAt=0, _tipDismissed=false;
@@ -555,89 +556,49 @@ function draw(ts){
 // ── Title ────────────────────────────────────────────────────────────
 // ── Scrolling LED marquee — full viewport width ───────────────────────
 const MARQUEE_MESSAGES = [
-  '  \x03 CELLTOWER  v'+VERSION+'  \x02  ',
-  '  THE HIGH \x02 TOWER \x03 DISTRICT  ',
-  '  TAP A PIECE OR ITS GHOST TO PLACE INSTANTLY  ',
-  '  \x01 FRESNO CA  559-485-9050  \x01  ',
-  '  NO HOLES = BIGGER BONUS  \x04  ',
-  '  TETRIS STREAKS MULTIPLY YOUR POT  \x02  ',
-  '  MADE WITH ANTHROPIC CLAUDE AI  \x04  ',
+  'TAP THIS SCROLLING MESSAGE TO PAUSE IT!',
+  ' CELLTOWER  v'+VERSION,
+  'THE HIGH  TOWER  DISTRICT',
+  'TAP A PIECE OR GHOST ON BOARD TO PLACE INSTANTLY',
+  ' FRESNO  559-485-9050  ',
+  'NO HOLES = BIGGER BONUS  ',
+  'TETRIS STREAKS MULTIPLY YOUR POT  ',
+  'MADE WITH ANTHROPIC CLAUDE AI  ',
 ];
-const MARQUEE_PX_PER_SEC = 320;  // 4× faster scroll
+const MARQUEE_PX_PER_SEC = 320;
 const MARQUEE_HUE_SPEED  = 0.5;
 const MARQUEE_SHEAR      = 0.22;
 
-let _mqOffset     = 0;      // current scroll pixel offset
-let _mqUserPaused = false;  // toggled by tapping the marquee
-let _mqHueOffset  = 0;      // advances continuously even when scroll is stopped
-let _mqLastT    = 0;
-let _mqText     = '';
-let _mqStopPts  = [];   // pixel offsets where scroll pauses (end of each message)
-let _mqStopped  = false;
-let _mqStopAt   = 0;    // timestamp when stop began
-let _mqBlinkVis = true; // blink state while stopped
-const MQ_STOP_ON  = 1.0;  // seconds on per blink cycle
-const MQ_STOP_OFF = 0.5;  // seconds off per blink cycle
-const MQ_STOP_DUR = 2.5;  // total stop duration before resuming
-
-function _mqInit(){
-  // Build full text and compute stop-pixel positions for each message boundary
-  const sep = '  ';  // gap between messages (2 spaces — tight, natural pause at end of message padding)
-  _mqText = MARQUEE_MESSAGES.join(sep);
-  _mqStopPts = [];
-  // Each message already has trailing spaces built in; stop point = end of that message in pixels
-  // We compute cumulative char width per message
-  let px = 0;
-  // dot-matrix char width: recomputed at draw time based on dotSz.
-  // Store as char counts instead, convert at draw time.
-  let charCount = 0;
-  for(let mi = 0; mi < MARQUEE_MESSAGES.length; mi++){
-    charCount += MARQUEE_MESSAGES[mi].length;
-    _mqStopPts.push(charCount); // char index, not px — converted at draw time
-    if(mi < MARQUEE_MESSAGES.length - 1) charCount += sep.length;
-  }
-}
+// Simple continuous scroll — no auto-stops
+let _mqOffset     = 0;      // pixels scrolled from start of current message
+let _mqUserPaused = false;  // toggled by tapping marquee
+let _mqPauseCount = 0;      // how many times player has paused via marquee tap
+let _mqPauseStartT = 0;     // performance.now() when current pause began
+let _mqTotalPauseMs = 0;    // cumulative pause milliseconds this session
+let _mqHueOffset  = 0;
+let _mqLastT      = 0;
+let _mqMsgIdx     = 0;
 
 function _mqAdvance(t, charW){
-  if(_mqLastT === 0){ _mqLastT = t; _mqInit(); }
+  if(_mqLastT === 0){
+    _mqLastT  = t;
+    _mqOffset = -(SW + charW);
+  }
   const dt = Math.min(t - _mqLastT, 0.05);
   _mqLastT = t;
 
-  // Hue always moves regardless of scroll state
   _mqHueOffset += MARQUEE_PX_PER_SEC * MARQUEE_HUE_SPEED * dt;
-
-  const totalW = _mqText.length * charW;
-
-  // User manually paused — freeze scroll, keep hue going
-  if(_mqUserPaused){ _mqBlinkVis = true; return; }
-
-  if(_mqStopped){
-    const elapsed = t - _mqStopAt;
-    if(elapsed >= MQ_STOP_DUR){
-      _mqStopped = false;
-      _mqBlinkVis = true;
-    } else {
-      const cycle = MQ_STOP_ON + MQ_STOP_OFF;
-      const phase = elapsed % cycle;
-      _mqBlinkVis = (phase < MQ_STOP_ON);
-    }
-    return;
-  }
+  // Freeze scroll during game-pause OR user-tap-pause
+  if(paused || _mqUserPaused) return;
 
   _mqOffset += MARQUEE_PX_PER_SEC * dt;
-  if(_mqOffset >= totalW) _mqOffset -= totalW;
 
-  // Check if we just crossed a stop point
-  for(const stopCharIdx of _mqStopPts){
-    const stopPx = stopCharIdx * charW;
-    const prevPx = _mqOffset - MARQUEE_PX_PER_SEC * dt;
-    if(prevPx < stopPx && _mqOffset >= stopPx){
-      _mqOffset  = stopPx;
-      _mqStopped = true;
-      _mqStopAt  = t;
-      _mqBlinkVis = true;
-      break;
-    }
+  const msg  = MARQUEE_MESSAGES[_mqMsgIdx].toUpperCase();
+  const msgW = msg.length * charW;
+
+  if(_mqOffset >= SW + msgW + SW){
+    _mqMsgIdx = (_mqMsgIdx + 1) % MARQUEE_MESSAGES.length;
+    _mqOffset = -(SW + charW);
   }
 }
 
@@ -652,99 +613,277 @@ function drawTitle(t){
 
   _mqAdvance(t, charW);
 
-  if(!_mqText) return;
-
-  const str    = _mqText.toUpperCase();
-  const totalW = str.length * charW;
-  const offset = _mqOffset % totalW;
-  const isScrolling = !_mqStopped && !_mqUserPaused;
-  const shear  = isScrolling ? MARQUEE_SHEAR : 0;
-
   CTX.save();
   CTX.beginPath();
   CTX.rect(0, r.y, SW, H);
   CTX.clip();
 
-  CTX.fillStyle = 'rgba(0,0,0,0.85)';
+  CTX.fillStyle = 'rgba(0,0,0,0.88)';
   CTX.fillRect(0, r.y, SW, H);
-  CTX.strokeStyle = 'rgba(80,0,160,0.6)';
+  CTX.strokeStyle = 'rgba(80,0,160,0.5)';
   CTX.lineWidth = 1;
-  CTX.beginPath(); CTX.moveTo(0, r.y);   CTX.lineTo(SW, r.y);   CTX.stroke();
-  CTX.beginPath(); CTX.moveTo(0, r.y+H); CTX.lineTo(SW, r.y+H); CTX.stroke();
+  CTX.beginPath(); CTX.moveTo(0,r.y);   CTX.lineTo(SW,r.y);   CTX.stroke();
+  CTX.beginPath(); CTX.moveTo(0,r.y+H); CTX.lineTo(SW,r.y+H); CTX.stroke();
 
-  // User-paused: always show (no blink). Auto-stopped: respect blink phase.
-  const visible = _mqUserPaused ? true : _mqBlinkVis;
-  if(!visible){ CTX.restore(); return; }
+  // ── GAME PAUSED — take over marquee with help carousel ───────────────
+  if(paused && ui.gameStarted && !dead){
+    // Help pages: each is a short string that fits the bar
+    // Cycles every 3s per page; resets to page 0 each new pause session
+    const helpPages = [
+      '⏸  GAME PAUSED  — TAP ⏸ OR HERE TO RESUME',
+      'CHOOSE A PIECE ABOVE  —  IT DROPS INSTANTLY',
+      'TAP THE GHOST ON BOARD  —  SAME INSTANT PLACE',
+      'SLIDER = SPEED  1.0 SLOW  TO  11 INSANE',
+      'NO HOLES = CLEAN STREAK = BIGGER BONUS POT',
+      'TETRIS = 4 LINES = STREAK MULTIPLIER GROWS',
+      'AUTO MODE = AI PLAYS  —  NO HIGH SCORE THOUGH',
+      'PIECE POT FILLS WITH CLEAN DROPS  NO HOLES',
+      'TETRIS POT MULTIPLIES ON CONSECUTIVE TETRIS',
+      'COLLECT YOUR POTS BY CLEARING LINES',
+      'LEVEL UP EVERY 10 LINES  —  SPEED INCREASES',
+      'RECEIPT SHOWS FULL SCORE BREAKDOWN AFTER GAME',
+      '⏸  TAP ANYWHERE HERE OR THE PAUSE BUTTON  ⏸',
+    ];
+    // Derive page from elapsed pause time — 3s per page
+    const elapsed = _gamePauseCount > 0
+      ? (performance.now() - _gamePauseStartT) / 1000
+      : 0;
+    const pageIdx = Math.floor(elapsed / 3.0) % helpPages.length;
+    const txt = helpPages[pageIdx].toUpperCase();
 
-  for(let pass = 0; pass < 2; pass++){
-    const baseX = -offset + pass * totalW;
-    for(let ci = 0; ci < str.length; ci++){
-      const ch    = str[ci];
-      const glyph = DM_FONT[ch] || DM_FONT[' '];
-      const cx0   = baseX + ci * charW;
-      if(cx0 + charW + shear * charH < 0)  continue;
-      if(cx0 > SW + shear * charH + 20)    continue;
+    // Hue cycles green→cyan for pause mode
+    const hue = (120 + Math.sin(t*1.5)*30 + t*8) % 360;
+    CTX.shadowColor = `hsl(${hue},100%,55%)`; CTX.shadowBlur = 8;
+    _dmWordLabel(CTX, txt, 2, r.y + H*0.08, SW-4, H*0.84, `hsl(${hue},100%,65%)`);
+    CTX.shadowBlur = 0;
+    CTX.restore();
+    return;
+  }
 
-      for(let col = 0; col < 5; col++){
-        const colBits = glyph[col] || 0;
-        for(let row = 0; row < 7; row++){
-          if(colBits & (1 << row)){
-            const lean = (3 - row) * step * shear;
-            const px   = Math.round(cx0 + col * step + lean);
-            const py   = topY + row * step;
-            const hue  = ((px + _mqHueOffset) * 0.8) % 360;
-            CTX.fillStyle   = `hsl(${hue},100%,65%)`;
-            CTX.shadowColor = `hsl(${hue},100%,65%)`;
-            CTX.shadowBlur  = dotSz * 1.8;
-            CTX.fillRect(px, py, dotSz, dotSz);
+  // ── USER TAP-PAUSED (sign freeze, game running) ───────────────────────
+  if(_mqUserPaused){
+    if(_mqPauseCount === 1){
+      // First freeze: explain the feature
+      const tips = [
+        'SIGN FROZEN  —  TAP HERE AGAIN TO RESUME SCROLL',
+        'TAP PIECES ABOVE  OR  GHOST ON BOARD TO PLACE',
+        'MOVE BUTTONS SHIFT PIECE  —  ARROWS OR SWIPE',
+        'SPEED SLIDER BOTTOM  —  DRAG TO SET TEMPO',
+        'PAUSE BUTTON  —  FREEZES GAME + SHOWS HELP',
+      ];
+      const tidx = Math.floor(t * 0.38) % tips.length;
+      CTX.shadowColor='#00ff88'; CTX.shadowBlur=6;
+      _dmWordLabel(CTX, tips[tidx], 2, r.y+H*0.08, SW-4, H*0.84, '#00ff88');
+      CTX.shadowBlur=0;
+    } else {
+      // Subsequent freezes: ghost the frozen message position, barely visible
+      const msg = MARQUEE_MESSAGES[_mqMsgIdx].toUpperCase();
+      const msgStartX = SW - _mqOffset;
+      for(let ci=0; ci<msg.length; ci++){
+        const glyph = DM_FONT[msg[ci]] || DM_FONT[' '];
+        const cx0   = msgStartX + ci*charW;
+        if(cx0+charW<0 || cx0>SW+20) continue;
+        for(let col=0;col<5;col++){
+          const colBits = glyph[col]||0;
+          for(let row=0;row<7;row++){
+            if(colBits&(1<<row)){
+              CTX.fillStyle='rgba(0,60,0,0.15)';
+              CTX.fillRect(Math.round(cx0+col*step), topY+row*step, dotSz, dotSz);
+            }
           }
         }
       }
     }
+    CTX.restore();
+    return;
   }
-  CTX.shadowBlur = 0;
+
+  // ── NORMAL SCROLLING ──────────────────────────────────────────────────
+  const msg       = MARQUEE_MESSAGES[_mqMsgIdx].toUpperCase();
+  const msgStartX = SW - _mqOffset;
+  const shear     = MARQUEE_SHEAR;
+
+  for(let ci=0; ci<msg.length; ci++){
+    const glyph = DM_FONT[msg[ci]] || DM_FONT[' '];
+    const cx0   = msgStartX + ci*charW;
+    if(cx0+charW+shear*charH<0) continue;
+    if(cx0>SW+shear*charH+20)   continue;
+
+    for(let col=0;col<5;col++){
+      const colBits=glyph[col]||0;
+      for(let row=0;row<7;row++){
+        if(colBits&(1<<row)){
+          const lean=(3-row)*step*shear;
+          const px  =Math.round(cx0+col*step+lean);
+          const py  =topY+row*step;
+          const hue =((px+_mqHueOffset)*0.8)%360;
+          CTX.fillStyle  =`hsl(${hue},100%,65%)`;
+          CTX.shadowColor=`hsl(${hue},100%,65%)`;
+          CTX.shadowBlur =dotSz*1.8;
+          CTX.fillRect(px,py,dotSz,dotSz);
+        }
+      }
+    }
+  }
+  CTX.shadowBlur=0;
   CTX.restore();
 }
 
+
 // ── Start screen ─────────────────────────────────────────────────────
 function drawStartScreen(t){
-  const bx = R.gx, by = R.gy, bw = R.gw, bh = R.gh;
-  const mx = bx + bw/2;
+  const bx=R.gx, by=R.gy, bw=R.gw, bh=R.gh;
 
-  // CELLTOWER rainbow title inside box
-  const tsz = Math.max(14, bw * 0.09);
-  CTX.font = F('900 {S}px monospace', tsz);
-  CTX.textAlign = 'center';
-  CTX.textBaseline = 'middle';
-  const grd = CTX.createLinearGradient(bx,0,bx+bw,0);
-  grd.addColorStop(0,'#ff00ff'); grd.addColorStop(0.5,'#00ffff'); grd.addColorStop(1,'#ffff00');
-  CTX.fillStyle = grd;
-  CTX.shadowColor='#ff00ff'; CTX.shadowBlur=12;
-  CTX.fillText('✦ CELLTOWER ✦', mx, by + bh*0.18);
+  // ── background ───────────────────────────────────────────────────────
+  CTX.fillStyle='rgba(0,0,0,0.92)';
+  CTX.fillRect(bx, by, bw, bh);
+
+  // ── seeded noise — deterministic per session so bars look the same ───
+  // We use sin-based hash to get stable pseudo-random bar heights
+  const barCount = 18;
+  const barW = bw / barCount;
+  const maxBarH = bh * 0.42;
+  const barBaseY = by + bh * 0.88;
+
+  // Each bar: a slow breathing sinusoid at different phase/speed
+  for(let i=0; i<barCount; i++){
+    const phase  = i * 1.3 + 0.7;
+    const speed  = 0.4 + (i%5)*0.15;
+    const frac   = 0.15 + 0.85 * Math.abs(Math.sin(t*speed + phase));
+    const barH   = maxBarH * frac;
+    const bBarX  = bx + i*barW + barW*0.08;
+    const bBarW  = barW * 0.78;
+
+    // LED segments — each segment is a small rect with gaps
+    const segH = Math.max(3, bh*0.018);
+    const segGap = Math.max(1, segH*0.35);
+    const segStep = segH + segGap;
+    const numSegs = Math.floor(barH / segStep);
+
+    for(let s=0; s<numSegs; s++){
+      const segFrac = s / Math.max(1, Math.floor(maxBarH/segStep));
+      // Color: green→yellow→red like classic VU meter
+      let r,g,b;
+      if(segFrac < 0.6){
+        r=0; g=200; b=40+(segFrac*80)|0;
+      } else if(segFrac < 0.82){
+        const f=(segFrac-0.6)/0.22;
+        r=(f*255)|0; g=200; b=0;
+      } else {
+        const f=(segFrac-0.82)/0.18;
+        r=255; g=(200*(1-f))|0; b=0;
+      }
+      const alpha = 0.7 + 0.3*frac;
+      CTX.fillStyle=`rgba(${r},${g},${b},${alpha})`;
+      CTX.shadowColor=`rgb(${r},${g},${b})`;
+      CTX.shadowBlur = segH*1.2;
+      const sy = barBaseY - (s+1)*segStep;
+      CTX.fillRect(bBarX, sy, bBarW, segH);
+    }
+    // Peak dot — lingers at top
+    const peakFrac = 0.2 + 0.78*Math.abs(Math.sin(t*speed*0.3 + phase + 1.1));
+    const peakH   = maxBarH * Math.max(frac, peakFrac);
+    const peakY   = barBaseY - peakH - segStep;
+    CTX.fillStyle='rgba(255,255,100,0.9)';
+    CTX.shadowColor='#ffff44'; CTX.shadowBlur=segH*2;
+    CTX.fillRect(bBarX, peakY, bBarW, segH);
+  }
   CTX.shadowBlur=0;
 
-  // by Aaron Hightower — DM font
-  _dmWordLabel(CTX, 'BY AARON HIGHTOWER', mx - bw*0.4, by + bh*0.27, bw*0.8, Math.max(6, bh*0.055), '#aa88ff');
+  // ── small random dancing side-bar clusters (stereo channel feel) ────
+  for(let side=0; side<2; side++){
+    const sx = side===0 ? bx+2 : bx+bw-barW*2.5;
+    const miniCount=4;
+    for(let i=0; i<miniCount; i++){
+      const ph=i*2.1+side*5.3+0.4;
+      const f=0.1+0.9*Math.abs(Math.sin(t*0.7+ph));
+      const mh=bh*0.25*f;
+      const mx2=sx+i*(barW*0.55);
+      const segH2=Math.max(2,bh*0.012);
+      const ns=Math.floor(mh/(segH2+1));
+      for(let s2=0;s2<ns;s2++){
+        const sf=s2/Math.max(1,ns);
+        const col=sf<0.5?`rgba(0,180,255,0.8)`:`rgba(180,0,255,0.8)`;
+        CTX.fillStyle=col; CTX.shadowColor=col; CTX.shadowBlur=4;
+        CTX.fillRect(mx2, barBaseY-(s2+1)*(segH2+1), barW*0.45, segH2);
+      }
+    }
+  }
+  CTX.shadowBlur=0;
 
-  // TAP TO PLAY button
-  const btnW = bw * 0.78, btnH = bh * 0.14;
-  const btnX = mx - btnW/2, btnY = by + bh*0.40;
-  const pulse = 0.7 + 0.3*Math.sin(t*2.5);
-  const grdBtn = CTX.createLinearGradient(btnX,0,btnX+btnW,0);
-  grdBtn.addColorStop(0,`rgba(170,0,255,${pulse})`);
-  grdBtn.addColorStop(1,`rgba(255,0,170,${pulse})`);
-  roundRect(btnX, btnY, btnW, btnH, 10);
-  CTX.fillStyle = grdBtn; CTX.fill();
-  CTX.strokeStyle=`rgba(255,255,255,${pulse*0.5})`; CTX.lineWidth=1; CTX.stroke();
-  _dmWordLabel(CTX, 'TAP TO PLAY', btnX + btnW*0.05, btnY + btnH*0.1, btnW*0.9, btnH*0.8, '#ffffff');
+  // ── CELLTOWER title — rainbow DM font across top of box ─────────────
+  const titleH = bh*0.10;
+  const titleY = by + bh*0.04;
+  // Draw each char with hue cycling
+  const titleStr = 'CELLTOWER';
+  const cw2 = bw*0.88/titleStr.length;
+  for(let i=0;i<titleStr.length;i++){
+    const hue=(i/titleStr.length*360 + t*60)%360;
+    CTX.shadowColor=`hsl(${hue},100%,60%)`; CTX.shadowBlur=10;
+    _dmWordLabel(CTX, titleStr[i], bx+bw*0.06+i*cw2, titleY, cw2*0.9, titleH, `hsl(${hue},100%,65%)`);
+  }
+  CTX.shadowBlur=0;
 
-  ui._startBtnX = btnX; ui._startBtnY = btnY;
-  ui._startBtnW = btnW; ui._startBtnH = btnH;
+  // ── byline ───────────────────────────────────────────────────────────
+  _dmWordLabel(CTX,'BY AARON HIGHTOWER',bx+bw*0.04,by+bh*0.16,bw*0.92,bh*0.042,'#7755aa');
 
-  // Hint text — DM font
-  _dmWordLabel(CTX, 'AUTO AVAILABLE AFTER START', bx+bw*0.05, by + bh*0.60, bw*0.9, Math.max(5, bh*0.045), '#664488');
-  _dmWordLabel(CTX, 'AUTO SCORES: NO HIGH SCORE',  bx+bw*0.05, by + bh*0.66, bw*0.9, Math.max(5, bh*0.045), '#664488');
+  // ── TAP TO PLAY button — LED panel style ─────────────────────────────
+  const btnW=bw*0.82, btnH=bh*0.13;
+  const btnX=bx+(bw-btnW)/2, btnY=by+bh*0.47;
+  const pulse=0.65+0.35*Math.sin(t*2.8);
+
+  // Button body — dark panel with gradient border glow
+  CTX.fillStyle='rgba(0,0,0,0.88)';
+  roundRect(btnX,btnY,btnW,btnH,10); CTX.fill();
+
+  // Animated border — two-tone cycling
+  const hB1=(t*40)%360, hB2=(hB1+180)%360;
+  CTX.strokeStyle=`hsla(${hB1},100%,60%,${pulse})`;
+  CTX.lineWidth=2.5;
+  roundRect(btnX,btnY,btnW,btnH,10); CTX.stroke();
+  CTX.strokeStyle=`hsla(${hB2},100%,60%,${pulse*0.5})`;
+  CTX.lineWidth=1;
+  roundRect(btnX+3,btnY+3,btnW-6,btnH-6,8); CTX.stroke();
+
+  // Button LED label — hue cycles
+  const hT=(t*50+120)%360;
+  CTX.shadowColor=`hsl(${hT},100%,65%)`; CTX.shadowBlur=12*pulse;
+  _dmWordLabel(CTX,'TAP TO PLAY',btnX+btnW*0.06,btnY+btnH*0.12,btnW*0.88,btnH*0.76,`hsl(${hT},100%,70%)`);
+  CTX.shadowBlur=0;
+
+  // Store hit zone
+  ui._startBtnX=btnX; ui._startBtnY=btnY;
+  ui._startBtnW=btnW; ui._startBtnH=btnH;
+
+  // ── hint lines ───────────────────────────────────────────────────────
+  _dmWordLabel(CTX,'AUTO AVAILABLE AFTER START',bx+bw*0.04,by+bh*0.63,bw*0.92,bh*0.038,'#442266');
+  _dmWordLabel(CTX,'AUTO SCORES: NO HIGH SCORE', bx+bw*0.04,by+bh*0.68,bw*0.92,bh*0.038,'#442266');
+
+  // ── small oscilloscope-style wave strip at bottom ─────────────────
+  const waveY = by+bh*0.76;
+  const waveH = bh*0.08;
+  CTX.strokeStyle='rgba(0,255,150,0.5)';
+  CTX.lineWidth=1.5;
+  CTX.beginPath();
+  for(let px2=0;px2<bw;px2+=2){
+    const phase2 = px2/bw*Math.PI*6;
+    const amp = waveH*0.4*(0.5+0.5*Math.sin(t*1.8+px2*0.04));
+    const wy = waveY + waveH/2 + amp*Math.sin(phase2+t*3.2);
+    px2===0 ? CTX.moveTo(bx+px2,wy) : CTX.lineTo(bx+px2,wy);
+  }
+  CTX.stroke();
+  // second wave, complementary color
+  CTX.strokeStyle='rgba(180,0,255,0.35)';
+  CTX.beginPath();
+  for(let px2=0;px2<bw;px2+=2){
+    const phase2=px2/bw*Math.PI*8+1.2;
+    const amp=waveH*0.3*(0.4+0.6*Math.abs(Math.sin(t*2.1+px2*0.03)));
+    const wy=waveY+waveH/2+amp*Math.sin(phase2-t*2.5);
+    px2===0?CTX.moveTo(bx+px2,wy):CTX.lineTo(bx+px2,wy);
+  }
+  CTX.stroke();
 }
+
 
 // ── Left panel ───────────────────────────────────────────────────────
 function drawLeftPanel(t){
@@ -1435,13 +1574,19 @@ function drawTipBubble(t){
 
 
 function drawPauseOverlay(){
-  CTX.fillStyle='rgba(0,0,0,0.6)';
+  // Near-blackout over the playfield — board barely visible at ~8% through
+  // No "PAUSED" text — board is a ghost, implying they know what they're doing
+  CTX.fillStyle='rgba(0,0,0,0.92)';
   CTX.fillRect(R.gx, R.gy, R.gw, R.gh);
-  CTX.font=F(FONT_TITLE, Math.max(16, R.gw*0.1));
-  CTX.textAlign='center'; CTX.textBaseline='middle';
-  CTX.fillStyle=C.cyan; CTX.shadowColor=C.cyan; CTX.shadowBlur=15;
-  CTX.fillText('⏸ PAUSED', R.gx+R.gw/2, R.gy+R.gh/2);
-  CTX.shadowBlur=0;
+  // Faint grid dots to hint the board structure
+  CTX.fillStyle='rgba(40,0,80,0.25)';
+  for(let row=0;row<ROWS;row++){
+    for(let col=0;col<COLS;col++){
+      const px=R.gx+col*CELL+CELL/2;
+      const py=R.gy+row*CELL+CELL/2;
+      CTX.fillRect(px-0.5,py-0.5,1.5,1.5);
+    }
+  }
 }
 
 // ── Game over overlay ────────────────────────────────────────────────
@@ -1575,6 +1720,20 @@ function hitTest(tx, ty){
 }
 
 function handleTap(tx, ty){
+  // Marquee is always tappable — check before any game-state gating
+  const idEarly = hitTest(tx, ty);
+  if(idEarly === 'marquee'){
+    if(paused && ui.gameStarted && !dead){
+      // Tap on paused marquee = resume game (marquee is the "tap here to resume" affordance)
+      togglePause();
+    } else {
+      _mqUserPaused = !_mqUserPaused;
+      if(_mqUserPaused){ _mqPauseCount++; _mqPauseStartT = performance.now(); }
+      else { _mqTotalPauseMs += performance.now() - _mqPauseStartT; }
+    }
+    return;
+  }
+
   // Start screen: only fire if game not yet started AND tap is on the button
   if(!ui.gameStarted){
     if(ui._startBtnW && tx>=ui._startBtnX && tx<=ui._startBtnX+ui._startBtnW &&
@@ -1637,7 +1796,6 @@ function handleTap(tx, ty){
     case 'ctrl_left': mhz(-1); break;
     case 'ctrl_right':mhz(1);  break;
     case 'auto_toggle': if(ui.gameStarted&&!dead) toggleAutoPlay(); break;
-    case 'marquee':     _mqUserPaused = !_mqUserPaused; break;
     case 'receipt':        showReceipt(); break;
     case 'receipt_close':  hideReceipt(); break;
     case 'speed_slider': break;
@@ -3749,7 +3907,7 @@ function choose(i){
 function _animatePlacement(p, bestIdx){
   if(!cur||dead||paused)return;
 
-  const pieceKey = cur.type||'S';
+  const pieceKey = cur.k||'I';
   const path = _bfsPath(cx, cur.rot||0, cy, p.x, p.rotation, pieceKey);
 
   // No path found or empty — teleport
@@ -3965,20 +4123,12 @@ function rot(d){
   if(dead||paused||clearAnimating||!cur)return;
   const next=rotNRS(cur,d);
   const r=next.c;
-  if(isOk(r,cx,cy)){
-    cur.c=r;cur.rot=next.rot;
-  } else if(isOk(r,cx-1,cy)){
-    cur.c=r;cur.rot=next.rot;cx--;
-  } else if(isOk(r,cx+1,cy)){
-    cur.c=r;cur.rot=next.rot;cx++;
-  } else if(isOk(r,cx-2,cy)){
-    cur.c=r;cur.rot=next.rot;cx-=2;
-  } else if(isOk(r,cx+2,cy)){
-    cur.c=r;cur.rot=next.rot;cx+=2;
-  } else return;
-  playerHasMoved=true;moveStartTime=AT;
+  // NES Tetris: no wall kicks. If rotation is blocked, do nothing.
+  if(!isOk(r,cx,cy)) return;
+  cur.c=r; cur.rot=next.rot;
+  playerHasMoved=true; moveStartTime=AT;
   if(!_tipChoiceUsed) _tipMoveCount++;
-  sndRotate();calcPlacements();scheduleDrop();
+  sndRotate(); calcPlacements(); scheduleDrop();
 }
 function mhz(d){
   if(dead||paused||clearAnimating||!cur)return;
@@ -4361,7 +4511,19 @@ function triggerDead(){
 }
 
 function togglePause(){
-  if(dead)return;paused=!paused;
+  if(dead)return;
+  paused=!paused;
+  if(paused){
+    _gamePauseCount++;
+    _gamePauseStartT = performance.now();
+    // Release sign-freeze so the game-pause help carousel shows cleanly
+    if(_mqUserPaused){
+      _mqTotalPauseMs += performance.now() - _mqPauseStartT;
+      _mqUserPaused = false;
+    }
+  } else {
+    _gameTotalPauseMs += performance.now() - _gamePauseStartT;
+  }
   document.getElementById('pov').style.display=paused?'flex':'none';
 }
 
@@ -4377,6 +4539,7 @@ function init(){
   hfRun=0;hfBest=0;
   _towerSeverity=0;
   autoUsed = AUTO_PLAY;
+  _gamePauseCount=0; _gamePauseStartT=0; _gameTotalPauseMs=0;
   _tipMoveCount=0; _tipChoiceUsed=false; _tipShownAt=0; _tipDismissed=false;
   _gamesPlayed++;
   _tickerInit();
@@ -4796,6 +4959,63 @@ function buildReceiptDOM() {
   SP(2);
   L(center('-- THC Magazine *'));
   SP(6);
+
+  // Scrolling-pause footnote
+  const totalMqPauseSec = Math.round(_mqTotalPauseMs / 1000);
+  if(_mqPauseCount >= 3 || totalMqPauseSec >= 10){
+    HR('-');
+    L('  ** SIGN READER REPORT **');
+    SP(1);
+    L('  SCROLLING PAUSES: '+_mqPauseCount);
+    L('  TOTAL SIGN TIME: ~'+totalMqPauseSec+'s');
+    SP(1);
+    if(totalMqPauseSec >= 30){
+      L('  VERDICT: AGGRESSIVELY PAUSED.');
+      L('  WE CANT PROVE ANYTHING.');
+      L('  BUT THE BOARD CAN SEE YOU.');
+      L('  THE PIECES KNOW.');
+    } else if(_mqPauseCount >= 5){
+      L('  VERDICT: FREQUENT PAUSER.');
+      L('  GREAT SIGN-READING SKILLS.');
+      L('  QUESTIONABLE HUSTLE.');
+    } else {
+      L('  VERDICT: MILDLY SUSPICIOUS.');
+      L('  PROBABLY JUST A SLOW READER.');
+    }
+    HR('-');
+    SP(2);
+  }
+
+  // Game-pause demerit
+  const gamePauseSec = Math.round((_gameTotalPauseMs +
+    (paused ? Math.max(0, performance.now()-_gamePauseStartT) : 0)) / 1000);
+  if(_gamePauseCount > 0){
+    HR('-');
+    L('  ** PAUSE DEMERIT REPORT **');
+    SP(1);
+    L('  IN-GAME PAUSES: '+_gamePauseCount);
+    L('  TOTAL DARK TIME: ~'+gamePauseSec+'s');
+    SP(1);
+    if(_gamePauseCount >= 5 || gamePauseSec >= 20){
+      L('  RATING: DEEPLY SUSPICIOUS.');
+      L('  WE SEE THE CAMERA ANGLE.');
+      L('  NICE TRY THOUGH.');
+      L('  BOARD FILED A COMPLAINT.');
+    } else if(_gamePauseCount >= 3){
+      L('  RATING: PAUSE-HAPPY.');
+      L('  THE GHOST PIECE MISSES YOU.');
+      L('  IT JUST SITS THERE. FADING.');
+      L('  IN THE DARK. ALONE.');
+    } else {
+      L('  RATING: MINOR INFRACTION.');
+      L('  PAUSED '+_gamePauseCount+'x.');
+      L('  THE PIECES NOTICED.');
+      L('  THEY DONT FORGET.');
+    }
+    HR('-');
+    SP(2);
+  }
+
   HR('-');
   L('  * THC MAGAZINE IS A WHOLLY');
   L('    FICTITIOUS PUBLICATION.');
