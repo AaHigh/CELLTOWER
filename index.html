@@ -3,6 +3,9 @@
 <html>
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>CELLTOWER</title>
 <style>
@@ -124,7 +127,7 @@ const cv = document.getElementById('cv');
 const CTX = cv.getContext('2d');
 
 // ── Screen dimensions ─────────────────────────────────────────────────
-const VERSION = '0.35B';
+const VERSION = '0.421b';
 let SW, SH;   // screen width/height
 var CELL = 20; // tetris cell size — also declared by game logic (var hoists safely)
 
@@ -1194,7 +1197,9 @@ function drawPieceRow(t){
   const PW  = Math.round((r.w - 3*GAP) / 4);
 
   // ── TETRIS MEGA-BUTTON — full width, single placement ─────────────────────
-  if(ui.showTetris && placements && placements[0]){
+  // Tetris state: derived from placements — slot 0 filled, rest null. No flag dependency.
+  const _isTetrisMode = !!(placements && placements[0] && !placements[1] && !placements[2] && !placements[3]);
+  if(_isTetrisMode){
     // Draw one giant glowing button covering all four slots
     const bx = r.x, by = r.y, bw = r.w, bh = r.h;
     const br = 12;
