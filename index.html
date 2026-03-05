@@ -133,6 +133,7 @@ var score=0, level=1, lines=0, hi=0, dead=false, paused=false;
 var _gamePauseCount=0, _gamePauseStartT=0, _gameTotalPauseMs=0;
 var board=null, cur=null, cx=0, cy=0, nxt=null;
 var placements=null, particles=[], explodedCells=new Set();
+var selectedPlacementIdx=null; // which slot is highlighted (null = none)
 var piecePot=0, tetrisPot=0;
 var AUTO_PLAY=false, AUTO_SPEED=8.99, autoUsed=false;
 var AT=0;
@@ -1188,41 +1189,108 @@ function drawPlayfieldStatus(t, gx, gy, gw, gh){
 
 // ── Piece row ────────────────────────────────────────────────────────
 function drawPieceRow(t){
-  const r = R.pieces;
+  const r   = R.pieces;
   const GAP = R.GAP;
-  const PW = Math.round((r.w - 3*GAP) / 4);
+  const PW  = Math.round((r.w - 3*GAP) / 4);
 
-  // Same colors as ghost pieces on playfield
-  const SLOT_COLORS = [
-    [180, 60, 255],
-    [255, 200, 0],
-    [0, 220, 180],
-    [255, 80, 120],
-  ];
+  // ── TETRIS MEGA-BUTTON — full width, single placement ─────────────────────
+  if(ui.showTetris && placements && placements[0]){
+    // Draw one giant glowing button covering all four slots
+    const bx = r.x, by = r.y, bw = r.w, bh = r.h;
+    const br = 12;
 
+    // Dark background
+    CTX.fillStyle='rgba(0,0,0,0.88)';
+    roundRect(bx,by,bw,bh,br); CTX.fill();
+
+    // Pulsing multi-layer border
+    const pulse = 0.55 + 0.45*Math.sin(t*3.5);
+    const pulse2= 0.55 + 0.45*Math.sin(t*3.5+Math.PI);
+    CTX.strokeStyle=`rgba(0,220,255,${pulse})`; CTX.lineWidth=3;
+    roundRect(bx,by,bw,bh,br); CTX.stroke();
+    CTX.strokeStyle=`rgba(255,0,200,${pulse2})`; CTX.lineWidth=1.2;
+    roundRect(bx+3,by+3,bw-6,bh-6,br-2); CTX.stroke();
+
+    // Inner glow wash
+    const grd=CTX.createLinearGradient(bx,by,bx+bw,by+bh);
+    grd.addColorStop(0,`rgba(0,100,180,${0.12*pulse})`);
+    grd.addColorStop(0.5,`rgba(180,0,180,${0.10*pulse2})`);
+    grd.addColorStop(1,`rgba(0,180,100,${0.12*pulse})`);
+    CTX.fillStyle=grd;
+    roundRect(bx,by,bw,bh,br); CTX.fill();
+
+    // TETRIS text — DM dot-matrix font with fast-moving hue wash
+    // Compute char layout
+    const dotSz = Math.max(2, Math.floor((bh*0.52) / (7+6)));
+    const step  = dotSz+1;
+    const charW = 5*step+2;
+    const charH = 7*step;
+    const word  = 'TETRIS';
+    const totalTxtW = word.length * charW;
+    const startX = bx + (bw-totalTxtW)/2;
+    const startY = by + (bh-charH)/2;
+
+    // Hue moves quickly left-to-right independent of text position
+    const HUE_SPEED = 200; // px/sec equivalent
+    const hueBase = (_mqHueOffset * 1.6 + t * HUE_SPEED * 0.5);
+
+    CTX.save();
+    CTX.beginPath(); CTX.rect(bx,by,bw,bh); CTX.clip();
+
+    for(let ci=0;ci<word.length;ci++){
+      const glyph = DM_FONT[word[ci]] || DM_FONT[' '];
+      const cx0   = startX + ci*charW;
+      for(let col=0;col<5;col++){
+        const colBits = glyph[col]||0;
+        for(let row=0;row<7;row++){
+          if(colBits&(1<<row)){
+            const px = Math.round(cx0 + col*step);
+            const py = startY + row*step;
+            const hue = ((px + hueBase)*1.2)%360;
+            const lum = 60+10*Math.sin(t*4+ci);
+            CTX.fillStyle  =`hsl(${hue},100%,${lum}%)`;
+            CTX.shadowColor=`hsl(${hue},100%,${lum}%)`;
+            CTX.shadowBlur = dotSz*2.5;
+            CTX.fillRect(px, py, dotSz, dotSz);
+          }
+        }
+      }
+    }
+    CTX.shadowBlur=0;
+    CTX.restore();
+
+    // Register hit zone over full row
+    hitZones = hitZones.filter(z=>z.id!=='tetris'&&z.id!=='piece0'&&z.id!=='piece1'&&z.id!=='piece2'&&z.id!=='piece3');
+    addHit('tetris', bx, by, bw, bh);
+    return;
+  }
+
+  // ── NORMAL FOUR SLOTS — re-register hit zones every frame ─────────────────
+  const GAP2 = R.GAP;
+  const PW2  = Math.round((r.w - 3*GAP2) / 4);
+  hitZones = hitZones.filter(z=>z.id!=='tetris'&&z.id!=='piece0'&&z.id!=='piece1'&&z.id!=='piece2'&&z.id!=='piece3');
   for(let i=0;i<4;i++){
-    const px = r.x + i*(PW+GAP);
+    addHit('piece'+i, r.x + i*(PW2+GAP2), r.y, PW2, r.h);
+  }
+  for(let i=0;i<4;i++){
+    const px = r.x + i*(PW2+GAP2);
     const py = r.y;
-    // Use the current piece color — all slots same hue, consistent with ghosts
     const [rc,gc,bc] = cur ? cur.rgb : [120,120,120];
     const isSelected = (placements && placements[i] && selectedPlacementIdx===i);
     const borderColor = isSelected ? `rgb(${rc},${gc},${bc})` : C.border;
-    panel(px, py, PW, r.h, borderColor);
+    panel(px, py, PW2, r.h, borderColor);
 
     const p = placements ? placements[i] : null;
     if(p && cur){
       const cc = p.c;
-      const s = Math.min(Math.floor(PW*0.65/Math.max(cc[0].length,4)), Math.floor(r.h*0.65/cc.length));
+      const s = Math.min(Math.floor(PW2*0.65/Math.max(cc[0].length,4)), Math.floor(r.h*0.65/cc.length));
       if(s < 2) continue;
 
-      // Center the piece in the button, leaving room for number at bottom
       const pieceW = cc[0].length * s;
       const pieceH = cc.length * s;
-      const ox = px + (PW - pieceW)/2;
-      const oy = py + (r.h - pieceH)/2 - s*0.3; // shift slightly up
+      const ox = px + (PW2 - pieceW)/2;
+      const oy = py + (r.h - pieceH)/2 - s*0.3;
 
-      // Match ghost rendering: transparent color fill + pure white outline
-      // Transparent fill — piece color hint
       CTX.fillStyle = `rgb(${rc},${gc},${bc})`;
       CTX.globalAlpha = 0.18;
       for(let row=0;row<cc.length;row++) for(let col=0;col<cc[row].length;col++){
@@ -1230,7 +1298,6 @@ function drawPieceRow(t){
         CTX.fillRect(ox+col*s+1, oy+row*s+1, s-2, s-2);
       }
 
-      // Outer silhouette: pure white exposed edges
       CTX.globalAlpha = 0.75;
       CTX.strokeStyle = '#ffffff';
       CTX.lineWidth = Math.max(1, s * 0.1);
@@ -1249,7 +1316,6 @@ function drawPieceRow(t){
         CTX.stroke();
       }
 
-      // Interior dividers: white at half alpha
       CTX.globalAlpha = 0.38;
       CTX.lineWidth = Math.max(0.5, s * 0.05);
       for(let row=0;row<cc.length;row++) for(let col=0;col<cc[row].length;col++){
@@ -1268,103 +1334,72 @@ function drawPieceRow(t){
       }
       CTX.globalAlpha = 1;
 
-      // Number — centered on piece, dark circle background
-      // Find bounding center
+      // Number label
       let minR=99,maxR=0,minC2=99,maxC2=0;
       for(let row=0;row<cc.length;row++) for(let col=0;col<cc[row].length;col++){
         if(cc[row][col]){minR=Math.min(minR,row);maxR=Math.max(maxR,row);minC2=Math.min(minC2,col);maxC2=Math.max(maxC2,col);}
       }
-      // True nearest-point snap for button
-      const rawBX = (minC2 + maxC2) / 2 + 0.5;
-      const rawBY = (minR  + maxR)  / 2 + 0.5;
-      const bfilled = [];
+      const rawBX=(minC2+maxC2)/2+0.5, rawBY=(minR+maxR)/2+0.5;
+      const bfilled=[];
       for(let row=0;row<cc.length;row++) for(let col=0;col<cc[row].length;col++){
         if(!cc[row][col]) continue;
-        const fx = col + 0.5, fy = row + 0.5;
-        const d = (fx-rawBX)**2 + (fy-rawBY)**2;
-        bfilled.push({fx, fy, d});
+        const fx=col+0.5, fy=row+0.5;
+        bfilled.push({fx,fy,d:(fx-rawBX)**2+(fy-rawBY)**2});
       }
-      const bminD = bfilled.reduce((m,f)=>Math.min(m,f.d), Infinity);
-      const btol = bminD * 0.01 + 0.0001;
-      const bnearest = bfilled.filter(f => f.d <= bminD + btol);
-      const bavgX = bnearest.reduce((s,f)=>s+f.fx,0) / bnearest.length;
-      const bavgY = bnearest.reduce((s,f)=>s+f.fy,0) / bnearest.length;
-      const numX = ox + bavgX * s;
-      const numY = oy + bavgY * s;
-      const numSz = Math.max(10, s*1.2);  // match ghost proportion
-
-      const btnDrop = Math.max(1, Math.round(numSz * 0.08));
-      CTX.font = `900 ${Math.round(numSz)}px "Arial Black","Impact",sans-serif`;
-      CTX.textAlign = 'center';
-      CTX.textBaseline = 'middle';
-      CTX.shadowBlur = 0;
-
-      // Drop shadow first
-      CTX.fillStyle = 'rgba(0,0,0,0.6)';
-      CTX.fillText(String(i+1), numX + btnDrop, numY + btnDrop);
-
-      // White number on top
-      CTX.fillStyle = '#ffffff';
+      const bminD=bfilled.reduce((m,f)=>Math.min(m,f.d),Infinity);
+      const btol=bminD*0.01+0.0001;
+      const bnearest=bfilled.filter(f=>f.d<=bminD+btol);
+      const bavgX=bnearest.reduce((s2,f)=>s2+f.fx,0)/bnearest.length;
+      const bavgY=bnearest.reduce((s2,f)=>s2+f.fy,0)/bnearest.length;
+      const numX=ox+bavgX*s, numY=oy+bavgY*s;
+      const numSz=Math.max(10, s*1.2);
+      const btnDrop=Math.max(1,Math.round(numSz*0.08));
+      CTX.font=`900 ${Math.round(numSz)}px "Arial Black","Impact",sans-serif`;
+      CTX.textAlign='center'; CTX.textBaseline='middle'; CTX.shadowBlur=0;
+      CTX.fillStyle='rgba(0,0,0,0.6)';
+      CTX.fillText(String(i+1), numX+btnDrop, numY+btnDrop);
+      CTX.fillStyle='#ffffff';
       CTX.fillText(String(i+1), numX, numY);
     } else {
-      // Empty slot — just show number in corner
-      CTX.font = F(FONT_SMALL, Math.max(8, PW*0.18));
-      CTX.textAlign = 'center'; CTX.textBaseline = 'middle';
-      CTX.fillStyle = C.dimText;
-      CTX.fillText(String(i+1), px+PW/2, py+r.h/2);
+      CTX.font=F(FONT_SMALL, Math.max(8,PW2*0.18));
+      CTX.textAlign='center'; CTX.textBaseline='middle';
+      CTX.fillStyle=C.dimText;
+      CTX.fillText(String(i+1), px+PW2/2, py+r.h/2);
     }
-  }
-
-  // TETRIS button — spans full width if active
-  if(ui.showTetris){
-    const TY = r.y - r.h*0.3 - R.GAP;
-    const TH = r.h*0.3;
-    const pulse3 = 0.6 + 0.4*Math.sin(t*4);
-    roundRect(r.x, TY, r.w, TH, 6);
-    CTX.fillStyle=`rgba(0,200,255,${pulse3*0.3})`; CTX.fill();
-    CTX.strokeStyle=`rgba(0,200,255,${pulse3})`; CTX.lineWidth=1.5; CTX.stroke();
-    CTX.font=F(FONT_LABEL, Math.max(8,TH*0.5));
-    CTX.textAlign='center'; CTX.textBaseline='middle';
-    CTX.fillStyle=`rgba(0,255,255,${pulse3})`;
-    CTX.fillText('TETRIS — tap to clear 4 lines', r.x+r.w/2, TY+TH/2);
-    hitZones = hitZones.filter(z=>z.id!=='tetris');
-    addHit('tetris', r.x, TY, r.w, TH);
   }
 }
 
 
-let selectedPlacementIdx = -1;
-
 // ── Control row ──────────────────────────────────────────────────────
 const CTRL_LABELS = ['↺','◀','▼','⬇','▶','↻'];
-const CTRL_IDS = ['rotl','left','soft','hard','right','rotr'];
-let ctrlPressed = {};  // id -> true while held
+const CTRL_IDS    = ['rotl','left','soft','hard','right','rotr'];
+let ctrlPressed   = {};
 
 function drawControlRow(t){
-  const r = R.ctrl;
+  const r   = R.ctrl;
   const GAP = R.GAP;
   const CBW = Math.round((r.w - 5*GAP) / 6);
   for(let i=0;i<6;i++){
-    const id = CTRL_IDS[i];
-    const bx = r.x + i*(CBW+GAP);
-    const by = r.y;
+    const id      = 'ctrl_'+CTRL_IDS[i];
+    const bx      = r.x + i*(CBW+GAP);
+    const by      = r.y;
     const pressed = ctrlPressed[id];
-    const rad = Math.min(CBW,r.h)/2;
+    const rad     = Math.min(CBW, r.h) / 2;
     CTX.beginPath();
     CTX.arc(bx+CBW/2, by+r.h/2, rad*0.9, 0, Math.PI*2);
-    CTX.fillStyle = pressed ? 'rgba(0,150,255,0.7)' : 'rgba(0,60,150,0.85)';
+    CTX.fillStyle   = pressed ? 'rgba(0,150,255,0.7)' : 'rgba(0,60,150,0.85)';
     CTX.fill();
     CTX.strokeStyle = pressed ? C.cyan : '#3366cc';
-    CTX.lineWidth = 1.5;
+    CTX.lineWidth   = 1.5;
     CTX.stroke();
-    CTX.font=F(FONT_LABEL, Math.max(10, rad*0.8));
-    CTX.textAlign='center'; CTX.textBaseline='middle';
-    CTX.fillStyle=C.white;
+    CTX.font         = F(FONT_LABEL, Math.max(10, rad*0.8));
+    CTX.textAlign    = 'center';
+    CTX.textBaseline = 'middle';
+    CTX.fillStyle    = C.white;
     CTX.fillText(CTRL_LABELS[i], bx+CBW/2, by+r.h/2);
   }
 }
 
-// ── Auto row ─────────────────────────────────────────────────────────
 function drawAutoRow(t){
   const r = R.auto;
   const GAP = R.GAP;
@@ -3845,16 +3880,6 @@ function applyNextOptions(){
   while(chosen.length<4)chosen.push(null);
   placements=chosen;
   for(let i=0;i<4;i++)drawPrevBtn(i,placements[i]);
-}
-
-// ── Tetris button show/hide ───────────────────────────────────────────────────
-function showTetrisButton(){
-  document.getElementById('prow').style.display='none';
-  document.getElementById('tetris-btn').style.display='block';
-}
-function hideTetrisButton(){
-  document.getElementById('prow').style.display='flex';
-  document.getElementById('tetris-btn').style.display='none';
 }
 
 // Called when the player taps the big TETRIS button
