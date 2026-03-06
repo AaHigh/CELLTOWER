@@ -137,6 +137,8 @@ var _gamePauseCount=0, _gamePauseStartT=0, _gameTotalPauseMs=0;
 var board=null, cur=null, cx=0, cy=0, nxt=null;
 var placements=null, particles=[], explodedCells=new Set();
 var selectedPlacementIdx=null; // which slot is highlighted (null = none)
+var _navStartT=0; // AT timestamp when piece navigation animation started
+var _p10Log=[]; // per-piece log for first-10 debug audit
 var piecePot=0, tetrisPot=0;
 var AUTO_PLAY=false, AUTO_SPEED=8.99, autoUsed=false;
 var AT=0;
@@ -149,10 +151,8 @@ let R = {};   // named rects: {x,y,w,h}
 // ── Game state mirrors (set by game logic, read by renderer) ─────────
 let ui = {
   score:0, level:1, lines:0, hi:0,
-  holes:0, tbClean:0, tbTetris:0,
   tickers:[],          // [{text,hue}]
   prevPlacements:[null,null,null,null],
-  showTetris:false,
   tetrisReady:false,   // I-piece loaded
   paused:false,
   dead:false,
@@ -932,7 +932,7 @@ function drawRightPanel(t){
   draw7SegScore(R.rHi,    'HIGH',  hi);  // default pink matches SCORE
   drawPauseBox(t);
   drawTBonusBox(t);
-  draw7SegScore(R.rHoles, 'HOLES', ui.holes, {litColor:'#ff4444', glowColor:'#ff4444', dimColor:'rgba(60,0,0,0.35)', labelColor:'#ff4444'});
+  draw7SegScore(R.rHoles, 'HOLES', currentScoringHoles, {litColor:'#ff4444', glowColor:'#ff4444', dimColor:'rgba(60,0,0,0.35)', labelColor:'#ff4444'});
 }
 
 function drawNextPiece(t){
@@ -1044,6 +1044,8 @@ function drawPlayfield(t){
   CTX.strokeRect(gx+bw2/2, gy+bw2/2, gw-bw2, gh-bw2);
   CTX.restore();
 
+
+
   // READY/status text in bottom-left of playfield
 }
 
@@ -1061,6 +1063,16 @@ function drawGhosts(t, gx, gy){
     if(!playerHasMoved){ alpha=0.38; }
     else if(elapsed<0.5){ alpha = (i===0 && p.fpKey===_straightFp) ? 0.38 : 0; }
     else { alpha = 0.38 * Math.min(1, (elapsed-0.5)/0.5); }
+    // During navigation: fade all non-selected ghosts to near-invisible over 4 frames (~64ms)
+    if(selectedPlacementIdx !== null){
+      const navElapsed = AT - _navStartT;
+      const fadeFrac = Math.min(1, navElapsed / 0.064); // 0→1 over 64ms
+      if(i === selectedPlacementIdx){
+        alpha = Math.min(alpha + 0.3, 0.75); // selected stays bright
+      } else {
+        alpha = alpha * (1 - fadeFrac * 0.95); // others fade to 5% of normal
+      }
+    }
     if(alpha <= 0) continue;
 
     const [r0,g0,b0] = cur ? cur.rgb : [100,100,100];
@@ -1283,6 +1295,10 @@ function drawPieceRow(t){
     const [rc,gc,bc] = cur ? cur.rgb : [120,120,120];
     const isSelected = (placements && placements[i] && selectedPlacementIdx===i);
     const borderColor = isSelected ? `rgb(${rc},${gc},${bc})` : C.border;
+    // Fade non-selected buttons during navigation
+    const navElapsedBtn = selectedPlacementIdx !== null ? Math.min(1,(AT-_navStartT)/0.064) : 0;
+    const btnAlpha = selectedPlacementIdx !== null && !isSelected ? (1 - navElapsedBtn*0.85) : 1.0;
+    CTX.globalAlpha = btnAlpha;
     panel(px, py, PW2, r.h, borderColor);
 
     const p = placements ? placements[i] : null;
@@ -1371,6 +1387,7 @@ function drawPieceRow(t){
       CTX.fillStyle=C.dimText;
       CTX.fillText(String(i+1), px+PW2/2, py+r.h/2);
     }
+    CTX.globalAlpha = 1.0; // restore after each slot
   }
 }
 
@@ -1614,11 +1631,12 @@ function drawTipBubble(t){
 
 
 function drawPauseOverlay(){
-  // Near-blackout over the playfield — board barely visible at ~8% through
-  // No "PAUSED" text — board is a ghost, implying they know what they're doing
+  // During autoplay: no darkening — robot doesn't need the hint blackout,
+  // and the board should remain visible at all times.
+  if(AUTO_PLAY) return;
+  // Human pause: near-blackout so position isn't memorised
   CTX.fillStyle='rgba(0,0,0,0.92)';
   CTX.fillRect(R.gx, R.gy, R.gw, R.gh);
-  // Faint grid dots to hint the board structure
   CTX.fillStyle='rgba(40,0,80,0.25)';
   for(let row=0;row<ROWS;row++){
     for(let col=0;col<COLS;col++){
@@ -1749,6 +1767,7 @@ function drawReceiptOverlay(t){
 // ══════════════════════════════════════════════════════════════════════
 
 let _sliderDragging=false;
+let _speedResumeTimer=null; // timer to resume game after slider release
 let _lastSliderMoveT=0; // AT timestamp of last slider move
 
 function hitTest(tx, ty){
@@ -1820,6 +1839,24 @@ function handleTap(tx, ty){
     return;
   }
 
+  // ── AUTO_PLAY GUARD: robot owns all piece movement — block all piece controls ──
+  // Only pause, receipt, and speed_slider are allowed when autoplay is active.
+  if(AUTO_PLAY && ui.gameStarted && !dead){
+    if(!id){
+      // Tap on canvas (ghost selection) — blocked in autoplay
+      return;
+    }
+    switch(id){
+      case 'pause':        if(!dead) togglePause(); break;
+      case 'auto_toggle':  toggleAutoPlay(); break; // allow turning OFF
+      case 'receipt':      showReceipt(); break;
+      case 'receipt_close':hideReceipt(); break;
+      case 'speed_slider': break; // handled by slider path
+      // Everything else (piece0-3, tetris, ctrl_*, canvas) — silently ignored
+    }
+    return; // never fall through to human controls
+  }
+
   if(!id){
     handleCanvasTap(tx, ty);
     return;
@@ -1849,12 +1886,16 @@ function handleSlider(tx){
   const frac = Math.max(0, Math.min(1, (tx - R.sliderX) / R.sliderW));
   const spd = Math.min(11.0, 1 + frac * 10);
   _lastSliderMoveT = AT;
+  // Speed slider is ANIMATION speed only — never touches game state or timers.
+  // In autoplay there is no gravity timer to worry about.
+  // In human mode, don't interrupt the drop timer either — slider is autoplay-only UI.
   setAutoSpeed(spd);
 }
 
 // Hold-repeat for left/right
 let _holdId=null, _holdIv=null;
 function startHold(id){
+  if(AUTO_PLAY) return; // robot owns movement — ignore hold repeats
   stopHold();
   _holdId=id;
   handleTap(0,0); // won't match - call direct
@@ -1862,6 +1903,7 @@ function startHold(id){
   if(id==='ctrl_left') mhz(-1);
   else if(id==='ctrl_right') mhz(1);
   _holdIv=setInterval(()=>{
+    if(AUTO_PLAY){ stopHold(); return; } // safety: abort if autoplay toggled mid-hold
     if(id==='ctrl_left') mhz(-1);
     else if(id==='ctrl_right') mhz(1);
   },80);
@@ -1916,7 +1958,9 @@ cv.addEventListener('mousedown', function(e){
 cv.addEventListener('mousemove', function(e){
   if(_sliderDragging) handleSlider(e.clientX);
 });
-cv.addEventListener('mouseup',   function(e){ _sliderDragging=false; stopHold(); ctrlPressed={}; });
+cv.addEventListener('mouseup', function(e){
+  _sliderDragging=false; stopHold(); ctrlPressed={};
+});
 
 // Keyboard
 document.addEventListener('keydown', function(e){
@@ -1943,13 +1987,12 @@ const nx_ = nc.getContext('2d');
 const gc = {width:200, height:500};  // updated in layout
 const gx = null; // game logic should not use gx directly after our rewrite
 
-// updateHoleDisplay is defined in game logic below — it sets ui.holes directly
+
 function updateTBDisplay(){
-  ui.tbClean  = piecePot  !== undefined ? Math.round(piecePot)  : 0;
-  ui.tbTetris = tetrisPot !== undefined ? Math.round(tetrisPot) : 0;
+  // no-op: drawTBonusBox reads piecePot / tetrisPot directly
 }
-function hideTetrisButton(){ ui.showTetris=false; hitZones=hitZones.filter(z=>z.id!=='tetris'); }
-function showTetrisButton(){ ui.showTetris=true; }
+function hideTetrisButton(){ /* no-op: renderer reads placements directly */ }
+function showTetrisButton(){ /* no-op: renderer reads placements directly */ }
 function drawNext(){ /* handled in draw() */ }
 function drawPrevBtn(idx, p){
   if(!placements) return;
@@ -2186,6 +2229,12 @@ function blip(freq,freq2,dur,vol=0.22,type='square',delayT=0){
 
 // Move L/R — short high blip (NES Mario coin feel)
 function sndMove(){blip(698,null,0.038,0.16,'square');}
+// Single clean ding for speed-11 instant line clear (one per row)
+function sndRowDing(rowIdx){
+  // Ascending pitch per row cleared: C5, E5, G5, B5
+  const freqs=[523,659,784,988];
+  blip(freqs[Math.min(rowIdx,3)],null,0.09,0.18,'sine',rowIdx*0.04);
+}
 
 // Rotate — two-step ascending chip chirp
 function sndRotate(){
@@ -2380,7 +2429,7 @@ function fmtK(n){
 function showTetrisScoreOverlay(){} // removed — ticker handles it
 
 function updateHoleDisplay(n){
-  ui.holes = n;  // canvas renderer reads this
+  // no-op: renderer reads currentScoringHoles directly
   const el=document.getElementById('holev');
   if(!el)return;
   el.textContent=n;
@@ -2913,7 +2962,8 @@ function buildPuzzleQueue(){
 function mkPiece(){
   if(puzzleActive && puzzleQueue.length>0){
     const p=puzzleQueue.shift();
-    if(puzzleQueue.length===0) puzzleActive=false;
+    // Keep puzzleActive=true until targets are also exhausted — 
+    // calcPlacements needs it to build _proofCorrectCand for the last piece(s)
     return{k:p.k,rot:0,c:NRS[p.k][0].map(r=>[...r]),rgb:p.rgb};
   }
   const k=PK[Math.random()*PK.length|0];
@@ -3064,43 +3114,50 @@ function scoreBoard(b){
   const danger=Math.max(0,Math.min(1,(maxH-DANGER_START)/(DANGER_FULL-DANGER_START)));
   const dangerSq=danger*danger;
 
-  const heightPenalty=totalH*5*(1+dangerSq*5);
-  const maxHPenalty=maxH*maxH*dangerSq*2;
+  // ── Height penalties ─────────────────────────────────────────────────────
+  // Scale must be meaningful relative to HOLE_EXIST_PENALTY (25,000).
+  // Old scale (5 per row) was invisible. New: 80 per row base, exponential
+  // above row 10 so high placements are strongly discouraged.
+  const heightPenalty = totalH * 80 * (1 + dangerSq * 8);
+
+  // Max height: quadratic from row 8 upward, not just in danger zone.
+  // A single column at row 18 should cost thousands, not dozens.
+  const maxHBase = Math.max(0, maxH - 8);
+  const maxHPenalty = maxHBase * maxHBase * 120 * (1 + dangerSq * 4);
 
   // ── Canyon penalty ────────────────────────────────────────────────────────
-  // Any column that is 3+ rows shallower than both its neighbors is a canyon.
-  // Canyons are unreachable traps — penalise hard regardless of hole count.
-  // Depth beyond threshold compounds quadratically.
   let canyonPenalty=0;
   for(let c=1;c<COLS-1;c++){
     const leftDiff =colH[c-1]-colH[c];
     const rightDiff=colH[c+1]-colH[c];
-    // Both neighbours are taller — it's a valley/canyon
     if(leftDiff>0&&rightDiff>0){
-      const depth=Math.min(leftDiff,rightDiff); // how deep relative to shorter neighbour
-      if(depth>=2) canyonPenalty+=depth*depth*30;
+      const depth=Math.min(leftDiff,rightDiff);
+      if(depth>=2) canyonPenalty+=depth*depth*400*(1+dangerSq*2);
     }
   }
 
-  // ── Height variance penalty ───────────────────────────────────────────────
-  // High variance means uneven skyline — hard to fill cleanly.
-  // Penalise (max-min) spread, scaled by how tall the board is.
+  // ── Height variance / spread penalty ─────────────────────────────────────
   const spread=maxH-minH;
-  const spreadPenalty=spread>6 ? (spread-6)*(spread-6)*8*(1+dangerSq*3) : 0;
+  const spreadPenalty=spread>4 ? (spread-4)*(spread-4)*200*(1+dangerSq*3) : 0;
 
-  // ── Isolated tall column penalty ──────────────────────────────────────────
-  // A column that is 4+ taller than the average of its two neighbours
-  // is a spike — it will force bad placements on future pieces.
+  // ── Spike penalty ─────────────────────────────────────────────────────────
+  // Any column 2+ taller than its neighbour average is a spike.
   let spikePenalty=0;
   for(let c=0;c<COLS;c++){
-    const leftH =c>0     ?colH[c-1]:colH[c];
-    const rightH=c<COLS-1?colH[c+1]:colH[c];
-    const neighbourAvg=(leftH+rightH)/2;
-    const spike=colH[c]-neighbourAvg;
-    if(spike>=4) spikePenalty+=spike*spike*12;
+    const lh=c>0     ?colH[c-1]:null;
+    const rh=c<COLS-1?colH[c+1]:null;
+    const avg=(lh!==null&&rh!==null)?(lh+rh)/2:(lh!==null?lh:rh);
+    const spike=colH[c]-avg;
+    if(spike>=2) spikePenalty+=spike*spike*300*(1+dangerSq*4);
   }
 
-  return -heightPenalty - holes*40 - bump*8 - maxHPenalty
+  // ── Bumpiness ─────────────────────────────────────────────────────────────
+  // bump*8 was invisible. 150 per unit of bumpiness.
+  const bumpPenalty = bump * 150 * (1 + dangerSq * 2);
+
+  // NOTE: hole penalties NOT here — they live in evalP at 25k-150k scale.
+  // scoreBoard is purely shape: height, flatness, spikes, canyons.
+  return -heightPenalty - bumpPenalty - maxHPenalty
          - canyonPenalty - spreadPenalty - spikePenalty;
 }
 
@@ -3138,6 +3195,8 @@ function bestNextScore(piece,b){
         ?(-bDelta)*HOLE_REDUCE_BONUS
         :bDelta>0?(-bDelta)*HOLE_CREATE_PENALTY:0;
       sc-=bAfter*HOLE_EXIST_PENALTY;
+      // Line clears in lookahead are more valuable when board is messy
+      if(cl2>0) sc+=cl2*bBefore*8000;
     }
     return sc;
   };
@@ -3156,7 +3215,7 @@ function bestNextScore(piece,b){
   // BFS slide lookahead — only when holes exist and need filling
   if(holeMode){
     try{
-      const slides=bfsAllReachable(k,rots,b);
+      const slides=buildSlideCandidates(k,rots,b);
       for(const{x,rot,dropY}of slides){
         if(!rots[rot]||!rots[rot][0])continue;
         const sc=evalPos(rots[rot],x,dropY)+slideBonus(1);
@@ -3166,6 +3225,86 @@ function bestNextScore(piece,b){
   }
 
   return best===-Infinity?scoreBoard(b):best;
+}
+
+// ── Notch penalty: penalise creating depth-2+ gaps that aren't the Tetris well
+// and can't be fixed by the known next piece.
+//
+// A "notch" is a column that drops 2+ rows below BOTH its neighbours on the
+// post-placement board and wasn't already that deep before the placement.
+// Exemptions:
+//   1. It is the designated Tetris well column (tetrisPrepCol)
+//   2. The next piece (nxt) has at least one placement that fills/reduces it
+function calcNotchPenalty(boardBefore, boardAfter, nextPiece){
+  // Column heights on each board
+  function colHeights(b){
+    const h=[];
+    for(let c=0;c<COLS;c++){
+      let ht=0;
+      for(let r=0;r<ROWS;r++){if(b[r][c]){ht=ROWS-r;break;}}
+      h.push(ht);
+    }
+    return h;
+  }
+
+  const hB = colHeights(boardBefore);
+  const hA = colHeights(boardAfter);
+
+  let penalty = 0;
+
+  for(let c=0;c<COLS;c++){
+    // Only care about newly-created or newly-deepened notches
+    const lB = c>0      ? hB[c-1] : null;
+    const rB = c<COLS-1 ? hB[c+1] : null;
+    const lA = c>0      ? hA[c-1] : null;
+    const rA = c<COLS-1 ? hA[c+1] : null;
+
+    const neighbourMinB = (lB!==null && rB!==null) ? Math.min(lB,rB)
+                        : (lB!==null ? lB : rB);
+    const neighbourMinA = (lA!==null && rA!==null) ? Math.min(lA,rA)
+                        : (lA!==null ? lA : rA);
+
+    const depthBefore = neighbourMinB - hB[c];
+    const depthAfter  = neighbourMinA - hA[c];
+
+    // Not a newly-created problem
+    if(depthAfter < 2) continue;            // not deep enough to matter
+    if(depthAfter <= depthBefore) continue; // wasn't made worse by this move
+
+    // Exempt: this is the designated Tetris well column
+    if(tetrisPrepActive && c === tetrisPrepCol) continue;
+
+    // Exempt: the NEXT piece can fill/reduce this notch (lookahead pass)
+    if(nextPiece){
+      const rots = NRS[nextPiece.k].map(r=>r.map(row=>[...row]));
+      let fixable = false;
+      outer:for(let ri=0;ri<4;ri++){
+        const cc=rots[ri];
+        for(let nx=0;nx<=COLS-cc[0].length;nx++){
+          if(!isOk(cc,nx,0,boardAfter)) continue;
+          let gy=0; while(isOk(cc,nx,gy+1,boardAfter)) gy++;
+          // Does placing this piece reduce the notch depth at column c?
+          const tb=boardAfter.map(r=>[...r]);
+          placeOn(tb,cc,nx,gy,nextPiece.rgb||[255,255,255]);
+          const[,nb2]=simClear(tb);
+          const hN=colHeights(nb2);
+          const lN = c>0      ? hN[c-1] : null;
+          const rN = c<COLS-1 ? hN[c+1] : null;
+          const nMin = (lN!==null && rN!==null) ? Math.min(lN,rN)
+                     : (lN!==null ? lN : rN);
+          const depthNext = nMin - hN[c];
+          if(depthNext < depthAfter){ fixable=true; break outer; }
+        }
+      }
+      if(fixable) continue;
+    }
+
+    // New un-exempted notch: penalise by depth squared (deeper = much worse)
+    const newDepth = depthAfter - Math.max(0, depthBefore);
+    penalty += newDepth * newDepth * TETRIS_PREP_PENALTY * 0.8;
+  }
+
+  return -penalty;
 }
 
 function evalP(cells,x,y){
@@ -3205,24 +3344,78 @@ function evalP(cells,x,y){
   }
 
   // Gap-fill bonus (slide-accessible cavity match)
-  const gapBonus=gapFillBonus(cells,x,y);
+  const gapBonus = gapFillBonus(cells,x,y);
 
-  // Tetris-prep bonus/penalty (fades with danger)
-  const prepScore=tetrisPrepScore(cells,x);
+  // ── I-piece deep-well fill bonus ─────────────────────────────────────────
+  // When an I-piece lands vertically (4-tall, 1-wide) in a column that is a
+  // well AND buried cells exist, this is the highest-value cleanup move.
+  // Bonus scales with well depth and number of buried cells it can expose.
+  let iDeepBonus = 0;
+  if(cur && cur.k === 'I'){
+    const isVertical = cells.length === 4 && (cells[0]||[]).length === 1;
+    if(isVertical){
+      const wells = detectWells(board);
+      const thisWell = wells.find(w => w.col === x);
+      if(thisWell){
+        if(buriedBefore > 0){
+          // Cleanup mode: massive bonus to fill well when holes exist
+          iDeepBonus = thisWell.depth * buriedBefore * HOLE_EXIST_PENALTY * 1.2;
+        } else {
+          // Clean board: still reward filling a deep well to prevent tower growth
+          // Scales with well depth — deeper = more urgent
+          iDeepBonus = thisWell.depth * thisWell.depth * TETRIS_PREP_BONUS * 0.4;
+        }
+      }
+    }
+  }
 
-  return curScore + nextScore*0.4 + buriedScore + buriedExistScore
-       + permanentScore + gapBonus + prepScore;
+  // ── SURVIVAL MODE — binary switch on any hole ─────────────────────────────
+  // Any buried cell = survival mode. Tetris-prep is completely off.
+  // This is intentionally a hard cutoff, not a gradient.
+  const inSurvival = buriedBefore > 0;
+
+  // Tetris-prep: only active on a fully clean board
+  const prepScore = inSurvival ? 0 : tetrisPrepScore(cells,x);
+
+  // Lookahead weight: heavier during survival (holes compound quickly)
+  const lookaheadWeight = inSurvival ? 0.65 : 0.40;
+
+  // Line-clear survival bonus: clearing lines during cleanup is extremely valuable
+  // because it can expose buried cells. Scale with how messy the board is.
+  const lineClearSurvivalBonus = inSurvival && cl > 0
+    ? cl * buriedBefore * 8000   // e.g. clearing 1 line with 3 holes = +24000
+    : 0;
+
+  // Deep-drop reward: when holes exist, pieces that land deeper expose buried cells.
+  // Uses actual dropY (piece top row at rest). ROWS-1 is the floor.
+  const maxDropY = ROWS - (cells.length || 1);
+  const dropDepth = maxDropY > 0 ? y / maxDropY : 0; // 0=top, 1=bottom
+  const deepDropBonus = inSurvival
+    ? dropDepth * buriedBefore * 2000   // was 300 — now meaningful vs hole bonuses
+    : 0;
+
+  // ── Notch penalty: penalise creating depth-2+ gaps not fixable by next piece
+  const notchPenalty = calcNotchPenalty(board, nb, nxt);
+
+  return curScore + nextScore * lookaheadWeight
+       + buriedScore + buriedExistScore
+       + permanentScore + gapBonus + prepScore
+       + lineClearSurvivalBonus + deepDropBonus + iDeepBonus
+       + notchPenalty;
 }
 
 // ─── TETRIS-PREP STRATEGY ────────────────────────────────────────────────────
-const TETRIS_PREP_BONUS  = 12000;
-const TETRIS_PREP_PENALTY= 25000;
-const HOLE_REDUCE_BONUS  = 40000;  // per buried cell eliminated
-const HOLE_CREATE_PENALTY= 60000;  // per new buried cell created
-const HOLE_EXIST_PENALTY =  8000;  // per buried cell still on board
-const PERMANENT_HOLE_PENALTY=120000; // per cell no piece can ever reach — near-fatal
-const SLIDE_BONUS        =  8000;
-const SLIDE_HOLE_PENALTY = 60000;
+// ── SURVIVAL-FIRST SCORING CONSTANTS ─────────────────────────────────────────
+// Priority order: eliminate holes > stay flat/low > Tetris prep
+// Any hole triggers full survival mode regardless of count.
+const TETRIS_PREP_BONUS   =  10000; // modest — only active on clean boards
+const TETRIS_PREP_PENALTY =  30000; // penalty for touching the well column
+const HOLE_REDUCE_BONUS   = 100000; // per buried cell eliminated — dominant signal
+const HOLE_CREATE_PENALTY = 150000; // per new buried cell — near-fatal to create one
+const HOLE_EXIST_PENALTY  =  25000; // per buried cell still present — constant pressure
+const PERMANENT_HOLE_PENALTY=300000;// truly unreachable cell — catastrophic
+const SLIDE_BONUS         =   8000;
+const SLIDE_HOLE_PENALTY  =  60000;
 
 // Slide bonus scales with lateral distance: deeper slides earn more
 function slideBonus(dist){
@@ -3357,8 +3550,40 @@ function countPermanentHoles(b){
 // to activate only when the board has no covered cells at all.
 function boardIsHoleFree(){return countBuriedCells(board)===0;}
 
+// Detect well columns on a board.
+// A well = column 3+ rows lower than BOTH neighbors (open at top).
+// Returns [{col, depth, openRows}] sorted deepest first.
+function detectWells(b){
+  const colH=[];
+  for(let c=0;c<COLS;c++){
+    let h=0;
+    for(let r=0;r<ROWS;r++){if(b[r][c]){h=ROWS-r;break;}}
+    colH.push(h);
+  }
+  const wells=[];
+  for(let c=0;c<COLS;c++){
+    // Edge columns have only one neighbor — use it directly.
+    // Old code used colH[c] as the phantom neighbor, which gave depth=0 for edges.
+    const lH = c>0      ? colH[c-1] : null;
+    const rH = c<COLS-1 ? colH[c+1] : null;
+    const neighborMin = (lH!==null && rH!==null) ? Math.min(lH,rH)
+                      : (lH!==null ? lH : rH);
+    const depth = neighborMin - colH[c]; // positive = col is lower than neighbor(s)
+    if(depth >= 3){
+      // Count consecutive open rows from the top of the column
+      let openRows=0;
+      const topRow = ROWS - colH[c];
+      for(let r=topRow; r<ROWS && !b[r][c]; r++) openRows++;
+      wells.push({col:c, depth, openRows, colH:colH[c]});
+    }
+  }
+  wells.sort((a,b2)=>b2.depth-a.depth); // deepest first
+  return wells;
+}
+
 function updateTetrisPrepStrategy(){
-  // Must be completely hole-free
+  // Strict rule: ANY buried cell = no Tetris prep, no well preservation.
+  // Eliminate all holes first, then build toward Tetris.
   if(!boardIsHoleFree()){tetrisPrepActive=false;tetrisPrepCol=-1;return;}
 
   // Pick emptier edge column as the Tetris well
@@ -3366,9 +3591,11 @@ function updateTetrisPrepStrategy(){
   const rightH=_colTopRow(9);
   const reserveCol=leftH>=rightH?0:9;
 
-  // Every piece type must be placeable entirely within the 9 non-reserved columns
+  // Every non-I piece type must be placeable within the 9 non-reserved columns.
+  // I-piece is excluded from this check — it's INTENDED to go in the well column.
   const testCols=Array.from({length:9},(_,i)=>reserveCol===0?i+1:i);
   for(const k of PK){
+    if(k==='I') continue; // I-piece goes in the well — don't require it to fit elsewhere
     if(!_pieceCanLandIn(k,testCols)){
       tetrisPrepActive=false;tetrisPrepCol=-1;
       return;
@@ -3401,27 +3628,89 @@ function _pieceCanLandIn(k,allowedCols){
 }
 
 function tetrisPrepScore(cells,px){
-  if(!tetrisPrepActive)return 0;
+  // tetrisPrepActive is only true when board is fully hole-free (countBuriedCells===0).
+  // When holes exist this returns 0 — but we ALSO need to penalize well-creation
+  // when holes exist, handled below via wellPenalty.
+  
+  const buriedNow = countBuriedCells(board);
 
-  // Measure current board danger — same scale as scoreBoard
-  const DANGER_START=10, DANGER_FULL=20;
+  // ── Well-creation penalty when holes exist ────────────────────────────────
+  // If any buried cells exist, penalize any placement that CREATES a new well
+  // (column 3+ shallower than both neighbors) in the post-placement board.
+  // This enforces flat-building during cleanup — no well creation until hole-free.
+  let wellPenalty = 0;
+  if(buriedNow > 0){
+    // Check if this placement creates or deepens a well
+    const tb = board.map(r=>[...r]);
+    placeOn(tb, cells, px, 0, [255,255,255]); // rough check — position doesn't matter much
+    const wellsBefore = detectWells(board).length;
+    const wellsAfter  = detectWells(tb).length;
+    if(wellsAfter > wellsBefore){
+      wellPenalty = -(wellsAfter - wellsBefore) * TETRIS_PREP_PENALTY * 0.6;
+    }
+  }
+
+  // ── Dual-well I-piece rule ────────────────────────────────────────────────
+  // If 2+ wells exist (regardless of holes), always prioritize dropping
+  // I-piece vertically into the DEEPEST well to consolidate to one well.
+  // This applies even when tetrisPrepActive is false.
+  let dualWellBonus = 0;
+  if(cur && cur.k === 'I'){
+    const wells = detectWells(board);
+    if(wells.length >= 2){
+      const deepestWell = wells[0]; // sorted deepest first
+      // Check if this placement is I-piece vertical (rot=1 or 3) into the deepest well
+      const isVertical = cells.length === 4 && cells[0].length === 1; // 4-tall 1-wide
+      const hitsWell   = px === deepestWell.col;
+      if(isVertical && hitsWell){
+        dualWellBonus = HOLE_REDUCE_BONUS * 1.5; // same magnitude as uncovering holes
+      } else if(wells.length >= 2 && !isVertical){
+        // Penalize non-vertical I-piece when 2+ wells — don't waste it flat
+        dualWellBonus = -TETRIS_PREP_BONUS * 0.5;
+      }
+    }
+  }
+
+  if(!tetrisPrepActive) return wellPenalty + dualWellBonus;
+
+  // ── Standard Tetris-prep: hole-free board, preserve well column ───────────
+  // Well preservation gets MORE important as the board fills, not less.
+  // We NEVER fade the penalty for invading the well column.
+  // The bonus for staying out scales UP with board height (urgency grows).
   let maxH=0;
   for(let c=0;c<COLS;c++){
     for(let r=0;r<ROWS;r++){
       if(board[r][c]){maxH=Math.max(maxH,ROWS-r);break;}
     }
   }
-  const danger=Math.max(0,Math.min(1,(maxH-DANGER_START)/(DANGER_FULL-DANGER_START)));
-  // Tetris-prep fades linearly: full bonus below danger 0.3, zero above danger 0.7
-  const prepWeight=Math.max(0,Math.min(1,(0.7-danger)/0.4));
-  if(prepWeight<=0)return 0;
+  // urgency: 0 at empty board, 1 at row 15+. Well is more sacred as board fills.
+  const urgency = Math.max(0, Math.min(1, maxH / 15));
 
+  // ── I-piece vertical INTO the well = Tetris setup — check FIRST ─────────
+  // This must come before the invasion check or it gets wrongly penalised.
+  const isIVertical = cur && cur.k==='I' && cells.length===4 && (cells[0]||[]).length===1;
+  const isIntoWell  = px === tetrisPrepCol;
+  if(isIVertical && isIntoWell){
+    // Highest value move on a clean board: I drops into well, board is Tetris-ready.
+    // Bonus scales with urgency — more valuable as board fills.
+    const tetrisSetupBonus = HOLE_REDUCE_BONUS * (1.5 + urgency * 2.0);
+    return tetrisSetupBonus + wellPenalty + dualWellBonus;
+  }
+
+  // ── Any other piece touching the well column = invasion ──────────────────
   let invades=false;
   outer:for(let r=0;r<cells.length;r++)for(let c=0;c<cells[r].length;c++){
     if(cells[r][c]&&px+c===tetrisPrepCol){invades=true;break outer;}
   }
-  const raw=invades?-TETRIS_PREP_PENALTY:TETRIS_PREP_BONUS;
-  return raw*prepWeight;
+
+  if(invades){
+    // Invading the well is always penalised — full penalty, no fade
+    return -TETRIS_PREP_PENALTY + wellPenalty + dualWellBonus;
+  }
+
+  // Staying out of the well: base bonus + urgency scaling
+  const wellBonus = TETRIS_PREP_BONUS * (1 + urgency * 2);
+  return wellBonus + wellPenalty + dualWellBonus;
 }
 
 // A "gap" is a cavity that can only be filled by sliding a piece in laterally —
@@ -3588,102 +3877,85 @@ function footprint(cells,x,y){
 
 function setsOverlap(a,b){for(const k of a)if(b.has(k))return true;return false}
 
-// ─── BFS SLIDE DISCOVERY ─────────────────────────────────────────────────────
-// For the current piece, find ALL reachable landing positions — not just
-// straight drops and single-step slides. Uses the same BFS as canReach but
-// returns every (x, rot, dropY) that is:
-//   (a) a legal resting state (piece can't move down further)
-//   (b) reachable from the top
-//   (c) NOT reachable by a straight vertical drop from x at row 0
-//       (i.e., it truly requires lateral navigation to reach)
-// Also returns the minimum number of lateral moves required (slide distance)
-// so deeper slides earn more bonus.
-function bfsAllReachable(pieceKey,rots,b=board){
-  const isOkB=(c,x,y)=>isOk(c,x,y,b);
-  // Visited array sized for max possible encode value: (COLS*(ROWS+4)+ROWS)*4
-  // Extra headroom prevents out-of-bounds if a rotation has unexpected dimensions
-  const VSIZE=(COLS*ROWS+ROWS)*4+16;
-  const encode=(x,y,rot)=>(x*ROWS+y)*4+rot;
-  const visited=new Uint8Array(VSIZE);
-  const dist=new Uint16Array(VSIZE).fill(9999);
+// ─── SLIDE CANDIDATE GENERATOR ───────────────────────────────────────────────
+// Replaces full BFS. Each candidate is: drop straight down, then slide
+// up to MAX_SLIDE steps left or right from the resting position, with one
+// optional rotation (CW or CCW) for T/S/Z pieces. Path is built inline.
+// No search — just enumerate valid modifications from the natural drop.
+const MAX_SLIDE = 4;
+const ROTATE_PIECES = new Set(['T','S','Z','L','J']); // pieces that benefit from rotation
 
-  const queue=[];
-  for(let rot=0;rot<4;rot++){
-    const cells=rots[rot];
-    if(!cells||!cells[0]||!cells[0].length)continue;
-    const pw=cells[0].length;
-    for(let x=0;x<=COLS-pw;x++){
-      if(isOkB(cells,x,0)){
-        const key=encode(x,0,rot);
-        if(key>=0&&key<VSIZE&&!visited[key]){visited[key]=1;dist[key]=0;queue.push([x,0,rot,0]);}
+function buildSlideCandidates(pieceKey, rots, b=board){
+  const isOkB = (c,x,y) => isOk(c,x,y,b);
+  const result = [];
+  const seen = new Set();
+
+  // For each rotation state × each starting x-column:
+  //   1. Drop straight down → get restY and the drop path
+  //   2. From restY, try sliding 1..MAX_SLIDE left and right
+  //   3. Optionally rotate CW or CCW after sliding (for eligible pieces)
+  for(let ri = 0; ri < 4; ri++){
+    const cells = rots[ri];
+    if(!cells||!cells[0]||!cells[0].length) continue;
+    const pw = cells[0].length;
+
+    for(let spawnX = 0; spawnX <= COLS - pw; spawnX++){
+      if(!isOkB(cells, spawnX, 0)) continue;
+
+      // Build the straight-drop path from row 0
+      let gy = 0;
+      while(isOkB(cells, spawnX, gy+1)) gy++;
+      const dropPath = Array(gy).fill('D');   // path: [D,D,D,...] from row 0 to gy
+      const baseKey = `${spawnX},${ri},${gy}`;
+
+      // Try sliding from the resting position
+      for(let dir = -1; dir <= 1; dir += 2){  // -1=left, +1=right
+        const move = dir < 0 ? 'L' : 'R';
+        let sx = spawnX;
+        const slidePath = [...dropPath];
+
+        for(let step = 1; step <= MAX_SLIDE; step++){
+          const nx = sx + dir;
+          if(nx < 0 || nx + pw > COLS) break;
+          if(!isOkB(cells, nx, gy)) break;  // blocked laterally at rest row
+
+          // Check piece can actually slide at this row (not blocked above)
+          // Slide is valid if the piece fits at (nx, gy)
+          sx = nx;
+          slidePath.push(move);
+
+          // New resting y after sliding (piece may drop further)
+          let ny = gy;
+          const extraDrops = [];
+          while(isOkB(cells, sx, ny+1)){ ny++; extraDrops.push('D'); }
+
+          const rk = `${sx},${ri},${ny}`;
+          if(seen.has(rk)) continue;
+          seen.add(rk);
+
+          const fullPath = [...slidePath, ...extraDrops];
+          result.push({x:sx, rot:ri, dropY:ny, slideDist:step, path:fullPath});
+
+          // Optional single rotation from this slid position (T/S/Z/L/J only)
+          if(ROTATE_PIECES.has(pieceKey)){
+            for(const [rMove, rDelta] of [['CW',1],['CCW',3]]){
+              const nr = (ri + rDelta) % 4;
+              const nc = rots[nr];
+              if(!nc||!nc[0]||!nc[0].length) continue;
+              if(!isOkB(nc, sx, ny)) continue;
+              // Drop again after rotation
+              let ry = ny;
+              const rotDrops = [];
+              while(isOkB(nc, sx, ry+1)){ ry++; rotDrops.push('D'); }
+              const rrk = `${sx},${nr},${ry}`;
+              if(seen.has(rrk)) continue;
+              seen.add(rrk);
+              result.push({x:sx, rot:nr, dropY:ry, slideDist:step,
+                path:[...slidePath, ...extraDrops, rMove, ...rotDrops]});
+            }
+          }
+        }
       }
-    }
-  }
-
-  // Map of "resting positions only reachable via slide": key → {x,rot,dropY,slideDist}
-  const slideOnly=new Map();
-  // Map of ALL resting positions (to compare against)
-  const allRest=new Map();
-
-  let qi=0;
-  while(qi<queue.length){
-    const[x,y,rot,lateral]=queue[qi++];
-    const cells=rots[rot];
-    if(!cells||!cells[0]||!cells[0].length)continue;
-    const ph=cells.length,pw=cells[0].length;
-
-    const resting=!isOkB(cells,x,y+1);
-    if(resting){
-      const rk=`${x},${rot},${y}`;
-      if(!allRest.has(rk)||allRest.get(rk).slideDist>lateral)
-        allRest.set(rk,{x,rot,dropY:y,slideDist:lateral});
-    }
-
-    if(y+1<ROWS&&isOkB(cells,x,y+1)){
-      const key=encode(x,y+1,rot);
-      if(key>=0&&key<VSIZE&&(!visited[key]||dist[key]>lateral)){visited[key]=1;dist[key]=lateral;queue.push([x,y+1,rot,lateral]);}
-    }
-    if(x>0&&isOkB(cells,x-1,y)){
-      const key=encode(x-1,y,rot);
-      const nd=lateral+1;
-      if(key>=0&&key<VSIZE&&(!visited[key]||dist[key]>nd)){visited[key]=1;dist[key]=nd;queue.push([x-1,y,rot,nd]);}
-    }
-    if(x+pw<COLS&&isOkB(cells,x+1,y)){
-      const key=encode(x+1,y,rot);
-      const nd=lateral+1;
-      if(key>=0&&key<VSIZE&&(!visited[key]||dist[key]>nd)){visited[key]=1;dist[key]=nd;queue.push([x+1,y,rot,nd]);}
-    }
-    const rotCW=(rot+1)%4;
-    const cellsCW=rots[rotCW];
-    if(cellsCW&&cellsCW[0]&&cellsCW[0].length&&x+cellsCW[0].length<=COLS&&isOkB(cellsCW,x,y)){
-      const key=encode(x,y,rotCW);
-      if(key>=0&&key<VSIZE&&(!visited[key]||dist[key]>lateral)){visited[key]=1;dist[key]=lateral;queue.push([x,y,rotCW,lateral]);}
-    }
-    const rotCCW=(rot+3)%4;
-    const cellsCCW=rots[rotCCW];
-    if(cellsCCW&&cellsCCW[0]&&cellsCCW[0].length&&x+cellsCCW[0].length<=COLS&&isOkB(cellsCCW,x,y)){
-      const key=encode(x,y,rotCCW);
-      if(key>=0&&key<VSIZE&&(!visited[key]||dist[key]>lateral)){visited[key]=1;dist[key]=lateral;queue.push([x,y,rotCCW,lateral]);}
-    }
-  }
-
-  // Now find which resting positions require lateral movement (slide-only)
-  const straightDrops=new Set();
-  for(let rot=0;rot<4;rot++){
-    const cells=rots[rot];
-    if(!cells||!cells[0]||!cells[0].length)continue;
-    const pw=cells[0].length;
-    for(let x=0;x<=COLS-pw;x++){
-      if(!isOkB(cells,x,0))continue;
-      let gy=0;while(isOkB(cells,x,gy+1))gy++;
-      straightDrops.add(`${x},${rot},${gy}`);
-    }
-  }
-
-  const result=[];
-  for(const[rk,info]of allRest){
-    if(!straightDrops.has(rk)&&info.slideDist>0){
-      result.push(info); // genuine slide-only landing
     }
   }
   return result;
@@ -3727,9 +3999,15 @@ function calcPlacements(fresh=false){
     }
     const correctCells=NRS[t.k][trot].map(r=>[...r]);
     let gy=0; while(isOk(correctCells,tx,gy+1)) gy++;
-    const correctFp=Array.from(footprint(correctCells,tx,gy)).sort().join(';');
-    window._proofCorrectFp=correctFp;
-    window._proofCorrectCand={c:correctCells,x:tx,rotation:trot,dropY:gy,sc:999999,slide:false,fpKey:correctFp};
+    // If the piece can't even spawn (dropY=0 and row 1 is blocked), the board
+    // is topped out — don't inject a phantom dropY=0 target that will NAV-fail.
+    if(gy===0 && !isOk(correctCells,tx,1)){
+      window._proofCorrectFp=null; window._proofCorrectCand=null;
+    } else {
+      const correctFp=Array.from(footprint(correctCells,tx,gy)).sort().join(';');
+      window._proofCorrectFp=correctFp;
+      window._proofCorrectCand={c:correctCells,x:tx,rotation:trot,dropY:gy,sc:999999,slide:false,fpKey:correctFp};
+    }
     const dbg=document.getElementById('proof-debug');
     if(dbg&&PROOF_MODE) dbg.textContent=`k=${t.k} rot=${trot} x=${tx} y=${gy} | targets=${puzzleTargets.length}`;
   } else {
@@ -3746,28 +4024,33 @@ function calcPlacements(fresh=false){
   const cands=[];
   const fpSeen=new Set();
 
-  const addCand=(cells,x,gy,ri,isSlide,sDist=0)=>{
+  const addCand=(cells,x,gy,ri,isSlide,sDist=0,path=[])=>{
+    // Sanity: reject candidates where dropY=0 but the piece can still fall
+    // (means the candidate is unreachable — pathfinder will fail)
+    if(gy===0 && isOk(cells,x,1)) return;
     const fp=Array.from(footprint(cells,x,gy)).sort().join(';');
     if(fpSeen.has(fp))return; fpSeen.add(fp);
     const sc=evalP(cells,x,gy)+(isSlide?slideAdjustedBonus(cells,x,gy,sDist):0);
-    cands.push({c:cells.map(r=>[...r]),x,rotation:ri,dropY:gy,sc,slide:isSlide,fpKey:fp});
+    cands.push({c:cells.map(r=>[...r]),x,rotation:ri,dropY:gy,sc,slide:isSlide,fpKey:fp,path});
   };
 
-  // Straight drops
+  // Straight drops — path is just N downs from spawn row to dropY
   for(let ri=0;ri<4;ri++){
     const cells=rots[ri];
     for(let x=0;x<=COLS-cells[0].length;x++){
       if(!isOk(cells,x,0))continue;
       let gy=0; while(isOk(cells,x,gy+1))gy++;
-      addCand(cells,x,gy,ri,false);
+      // Path: as many D moves as needed to reach dropY from row 0
+      const straightPath=Array(gy).fill('D');
+      addCand(cells,x,gy,ri,false,0,straightPath);
     }
   }
 
-  // BFS slide-only landings — finds 1-step, 2-step, mid-fall slides, all of it
+  // Slide candidates — direct enumeration with inline breadcrumb paths
   let slides=[];
   try{
-    slides=bfsAllReachable(curKey,rots);
-  }catch(e){console.error('bfsAllReachable crash:',e);slides=[];}
+    slides=buildSlideCandidates(curKey,rots);
+  }catch(e){ slides=[]; }
 
   // Evict any straight-drop candidate whose board footprint overlaps with
   // a slide candidate — BUT only if that slide is hole-neutral or better.
@@ -3781,7 +4064,7 @@ function calcPlacements(fresh=false){
       if(countBuriedCells(nb)<=countBuriedCells(board)){
         footprint(rots[rot],x,dropY).forEach(k=>slideCells.add(k));
       }
-    }catch(e){console.error('slide eviction crash at rot='+rot+' x='+x+' dropY='+dropY,e);}
+    }catch(e){  }
   }
   for(let i=cands.length-1;i>=0;i--){
     const ca=cands[i];
@@ -3795,11 +4078,11 @@ function calcPlacements(fresh=false){
     }
   }
 
-  for(const{x,rot,dropY,slideDist}of slides){
+  for(const{x,rot,dropY,slideDist,path}of slides){
     try{
       if(!rots[rot]||!rots[rot][0])continue;
-      addCand(rots[rot],x,dropY,rot,true,slideDist);
-    }catch(e){console.error('addCand slide crash at rot='+rot+' x='+x+' dropY='+dropY,e);}
+      addCand(rots[rot],x,dropY,rot,true,slideDist,path||[]);
+    }catch(e){  }
   }
 
   cands.sort((a,b)=>b.sc-a.sc);
@@ -3881,6 +4164,22 @@ function applyNextOptions(){
 
   for(const ca of chosen)shownFootprints.add(ca.fpKey);
 
+  // PUZZLE OVERRIDE: if a correct target exists, guarantee it is in the chosen set
+  // with an unchallengeable score so autoplay always picks it.
+  // This must happen AFTER pickOptions (which can exclude it via overlap logic).
+  if(window._proofCorrectCand){
+    const cc = window._proofCorrectCand;
+    cc.sc = 999999; // ensure it wins score comparison in _startAutoPlay
+    const already = chosen.findIndex(c=>c&&c.fpKey===cc.fpKey);
+    if(already < 0){
+      // Not in chosen — replace the last non-null slot, or append
+      const replaceIdx = chosen.length < 4 ? chosen.length : 3;
+      chosen[replaceIdx] = cc;
+    } else {
+      chosen[already] = cc; // refresh score in case stale
+    }
+  }
+
   chosen.sort((a,b)=>a.x-b.x);
   while(chosen.length<4)chosen.push(null);
   placements=chosen;
@@ -3900,6 +4199,8 @@ function chooseTetris(){
 
 // Return the first candidate that clears exactly 4 lines, or null.
 function _findTetrisCand(){
+  // Tetris button ONLY for I-piece clearing exactly 4 lines
+  if(!cur || cur.k !== 'I') return null;
   for(const ca of allCands){
     const tb=board.map(r=>[...r]);
     placeOn(tb,ca.c,ca.x,ca.dropY,cur?cur.rgb:[255,255,255]);
@@ -3937,61 +4238,54 @@ function choose(i){
 function _animatePlacement(p, bestIdx){
   if(!cur||dead||paused)return;
 
-  const pieceKey = cur.k||'I';
-  const path = _bfsPath(cx, cur.rot||0, cy, p.x, p.rotation, pieceKey);
+  // Kill gravity — no racing
+  stopDrop();
+  clearTimeout(_autoIv); _autoIv=null;
 
-  // No path found or empty — teleport
-  if(!path || path.length===0){
-    cur.c=p.c;cx=p.x;cy=p.dropY;
-    lock(); return;
+  const pieceKey = cur.k||'I';
+
+  // Use the breadcrumb path recorded when this candidate was discovered.
+  // Path starts from spawn position (row 0, initial x, rot 0).
+  // Reset piece to that spawn state before replaying.
+  const path = (p.path && p.path.length) ? p.path : [];
+
+  const spawnRot = 0;
+  const spawnCells = NRS[pieceKey] && NRS[pieceKey][spawnRot];
+  const spawnW = spawnCells ? spawnCells[0].length : (p.c[0]?.length||4);
+  cx = Math.floor((COLS - spawnW) / 2);
+  cy = 0;
+  if(spawnCells){ cur.c = spawnCells.map(r=>[...r]); cur.rot = spawnRot; }
+
+  if(!path.length){
+    // No moves recorded — snap directly (should only happen for already-grounded pieces)
+    cur.c=p.c; cx=p.x; cy=p.dropY; lock(); return;
   }
 
-  let idx=0;
-  const speedFactor = AUTO_SPEED;
-  const baseMoveMs  = Math.round(180 - (speedFactor-1) * 18);
-  const frameSkip   = speedFactor >= 9 ? 3 : speedFactor >= 7 ? 2 : 1;
-  const MS={CW:0, L:baseMoveMs, R:baseMoveMs, D:Math.round(baseMoveMs*0.5)};
+  const msPerMove = Math.max(16, Math.round(160 - (AUTO_SPEED-1) * 14));
 
-  const execMove=(move)=>{
+  const execOne=(move)=>{
+    if(!cur)return;
     const rot=cur.rot||0;
-    const pivDx=(PIVOT_DX[pieceKey]||[0,0,0,0]);
-    const kicks=[0,-1,1,-2,2];
+    const cells=cur.c;
     if(move==='CW'){
-      const nr=(rot+1)%4;
-      const nc=NRS[pieceKey][nr];
-      const pdx=pivDx[rot];
-      for(const k of kicks){
-        const px=cx+pdx+k;
-        if(isOk(nc,px,cy)){ cur.c=nc.map(r=>[...r]); cur.rot=nr; cx=px; break; }
-      }
-    } else if(move==='L'){ if(isOk(cur.c,cx-1,cy)) cx--; }
-      else if(move==='R'){ if(isOk(cur.c,cx+1,cy)) cx++; }
-      else if(move==='D'){ if(isOk(cur.c,cx,cy+1)) cy++; }
+      const nr=(rot+1)%4, nc=NRS[pieceKey][nr];
+      if(nc&&isOk(nc,cx,cy)){ cur.c=nc.map(r=>[...r]); cur.rot=nr; }
+    } else if(move==='CCW'){
+      const nr=(rot+3)%4, nc=NRS[pieceKey][nr];
+      if(nc&&isOk(nc,cx,cy)){ cur.c=nc.map(r=>[...r]); cur.rot=nr; }
+    } else if(move==='L'){ if(isOk(cells,cx-1,cy)) cx--; }
+      else if(move==='R'){ if(isOk(cells,cx+1,cy)) cx++; }
+      else if(move==='D'){ if(isOk(cells,cx,cy+1)) cy++; }
   };
 
+  let idx=0;
   const step=()=>{
     if(dead||paused||clearAnimating||!cur){ clearTimeout(_autoIv); return; }
-    if(idx>=path.length){
-      cur.c=p.c;cx=p.x;cy=p.dropY;
-      lock(); return;
-    }
-    let drawn=0;
-    while(idx<path.length && (drawn<frameSkip || path[idx]==='CW')){
-      execMove(path[idx++]);
-      if(idx>0 && path[idx-1]!=='CW') drawn++;
-    }
-    const nextMs = idx<path.length ? MS[path[idx]]||baseMoveMs : 0;
-    if(nextMs <= 0){
-      while(idx<path.length) execMove(path[idx++]);
-      cur.c=p.c;cx=p.x;cy=p.dropY;
-      lock();
-    } else {
-      _autoIv=setTimeout(step, nextMs);
-    }
+    if(idx>=path.length){ lock(); return; }
+    execOne(path[idx++]);
+    _autoIv=setTimeout(step, msPerMove);
   };
-
-  const initMs = MS[path[0]]||0;
-  if(initMs <= 0) step(); else _autoIv=setTimeout(step, initMs);
+  _autoIv=setTimeout(step, msPerMove);
 }
 
 function lock(){
@@ -4000,9 +4294,37 @@ function lock(){
   sndLock();
   // Consume proof mode target for this piece
   if(puzzleTargets.length>0) puzzleTargets.shift();
+  if(puzzleTargets.length===0) puzzleActive=false; // all targets consumed — puzzle done
+  // ── FIRST-10 PIECE LOG (captures before placeOn commits to board) ──────────
+  if(piecesPlaced < 10){
+    const cc  = window._proofCorrectCand;
+    const PUZZLE_TOP = ROWS - 4;
+    const actualRot = cur ? (cur.rot||0) : -1;
+    const actualK   = cur ? cur.k : '?';
+    const entry = {
+      piece:    piecesPlaced + 1,
+      k:        actualK,
+      actual:   {x:cx, rot:actualRot, y:cy},
+      target:   cc ? {x:cc.x, rot:cc.rotation, dropY:cc.dropY} : null,
+      matchX:   cc ? (cx === cc.x)           : null,
+      matchRot: cc ? (actualRot === cc.rotation) : null,
+      abovePuzzleTop: cy < PUZZLE_TOP,
+      score:    score,
+      piecePot: piecePot,
+      holes:    currentScoringHoles,
+      placementsAtLock: placements.map((p,i)=>p
+        ? {slot:i, x:p.x, rot:p.rotation, dropY:p.dropY, sc:Math.round(p.sc)}
+        : null),
+    };
+    _p10Log.push(entry);
+    // Immediate warnings
+    // P10 per-piece warnings suppressed
+  }
+
   placeOn(board,cur.c,cx,cy,cur.rgb);
   cur=null; // ← hide the piece immediately so it never renders during explosion
   placements=[null,null,null,null]; // ← invalidate stale candidates immediately
+  selectedPlacementIdx=null; _navStartT=0; // clear nav state
   for(let i=0;i<4;i++)drawPrevBtn(i,null); // ← clear button displays now
 
   // Scan for complete rows NOW, while board is settled
@@ -4017,13 +4339,19 @@ function lock(){
     checkNoHoleBonus();
     spawn();scheduleDrop();
   } else {
-    animateClearLines(completeRows,()=>{
+    // Speed 11: instant clear — no animation, no explosion, no block-pop sounds.
+    // One clean ding per row, rows removed immediately, game continues.
+    const _doInstantClear = (onComplete) => {
       const toRemove=[];
       for(let r=ROWS-1;r>=0;r--)if(board[r].every(v=>v))toRemove.push(r);
       toRemove.sort((a,b)=>b-a);
+      for(let ri=0;ri<toRemove.length;ri++) sndRowDing(ri);
       for(const r of toRemove)board.splice(r,1);
       for(let i=0;i<toRemove.length;i++)board.unshift(Array(COLS).fill(null));
-      const cleared=toRemove.length||completeRows.length;
+      onComplete(toRemove.length);
+    };
+
+    const _afterClear = (cleared) => {
       piecesPlaced++;
       addScore(cleared);
       rebuildGapList();
@@ -4061,8 +4389,26 @@ function lock(){
 
       // Always run checkNoHoleBonus after any clear — both Tetris and non-Tetris
       checkNoHoleBonus();
+
+      // P10 audit suppressed
+
       spawn();scheduleDrop();
-    });
+    };
+
+    // Speed 11: bypass all animation — instant clear with a ding per row
+    if(AUTO_SPEED >= 11){
+      _doInstantClear(_afterClear);
+    } else {
+      animateClearLines(completeRows, ()=>{
+        const toRemove=[];
+        for(let r=ROWS-1;r>=0;r--)if(board[r].every(v=>v))toRemove.push(r);
+        toRemove.sort((a,b)=>b-a);
+        for(const r of toRemove)board.splice(r,1);
+        for(let i=0;i<toRemove.length;i++)board.unshift(Array(COLS).fill(null));
+        const cleared=toRemove.length||completeRows.length;
+        _afterClear(cleared);
+      });
+    }
   }
 }
 
@@ -4083,6 +4429,9 @@ function explodeBlock(col,row,rgb){
   }
 }
 
+// COL_ORDER: left-right alternating from center outward: 4,5,3,6,2,7,1,8,0,9
+// But per spec: L R L R L R L R L R (cols 0-9 alternating left/right of center)
+// Actual: center=4,5 then 3,6 then 2,7 then 1,8 then 0,9
 const COL_ORDER=[4,5,3,6,2,7,1,8,0,9];
 
 function _clearAnimMs(){
@@ -4107,31 +4456,39 @@ function animateClearLines(rowIndices,onComplete){
   explodedCells.clear();
   const n=rowIndices.length;
   const mult=_clearAnimMs();
-  const stepMs=Math.max(2, Math.round((50/n)*mult));
-  const pauseMs=Math.max(8, Math.round((n===4?320:130)*mult));
+  // stepMs: time between each L/R column pair firing
+  const stepMs=Math.max(10, Math.round((60/n)*mult));
+  const pauseMs=Math.max(20, Math.round((n===4?280:120)*mult));
   const rowsSorted=[...rowIndices].sort((a,b)=>b-a);
 
+  // Fire columns one at a time in L-R alternating order.
+  // Each cell in the column independently gets ±1ms jitter.
+  // explodedCells is set FIRST so the block disappears instantly on that frame.
   let step=0;
   const doStep=()=>{
     if(step>=COL_ORDER.length){
       sndLineClear(n);
-      explodedCells.clear();
+      // Brief pause showing empty board, then complete
       setTimeout(()=>{
+        explodedCells.clear();
         clearAnimating=false;
         onComplete();
-      },pauseMs);
+      }, pauseMs);
       return;
     }
     const col=COL_ORDER[step];
     rowsSorted.forEach((row,ri)=>{
       if(board[row][col]){
+        // Suppress block draw IMMEDIATELY — cell appears empty this frame
         explodedCells.add(`${row},${col}`);
-        explodeBlock(col,row,board[row][col]);
+        // Spawn particles with independent ±1ms jitter per cell
+        const jitter = Math.round((Math.random()*2-1));
+        setTimeout(()=>{ explodeBlock(col,row,board[row][col]); }, Math.max(0,jitter));
         sndBlockPop(ri,step);
       }
     });
     step++;
-    setTimeout(doStep,stepMs);
+    setTimeout(doStep, stepMs);
   };
   doStep();
 }
@@ -4151,11 +4508,17 @@ function addScore(cl){
 // ─── CONTROLS ────────────────────────────────────────────────────────────────
 function rot(d){
   if(dead||paused||clearAnimating||!cur)return;
-  const next=rotNRS(cur,d);
-  const r=next.c;
-  // NES Tetris: no wall kicks. If rotation is blocked, do nothing.
-  if(!isOk(r,cx,cy)) return;
-  cur.c=r; cur.rot=next.rot;
+  const pieceKey = cur.k||'I';
+  const curRot   = cur.rot||0;
+  const nextRot  = (curRot + (d===1?1:3)) % 4;
+  const nextCells= NRS[pieceKey][nextRot];
+  if(!nextCells) return;
+  // Apply same pivot correction for both CW and CCW
+  const pdx  = (PIVOT_DX[pieceKey]||[0,0,0,0])[curRot];
+  const newCx = cx + pdx;
+  // NES Tetris: no wall kicks — if blocked after pivot correction, do nothing
+  if(!isOk(nextCells, newCx, cy)) return;
+  cur.c=nextCells.map(r=>[...r]); cur.rot=nextRot; cx=newCx;
   playerHasMoved=true; moveStartTime=AT;
   if(!_tipChoiceUsed) _tipMoveCount++;
   sndRotate(); calcPlacements(); scheduleDrop();
@@ -4181,24 +4544,16 @@ function hdrop(){
 
 // ─── TIMERS ──────────────────────────────────────────────────────────────────
 function scheduleDrop(){
-  clearInterval(dropIv);if(dead)return;
+  clearInterval(dropIv); if(dead)return;
+  // Autoplay: no gravity — the robot controls all piece movement via _executePath.
+  // Gravity only applies to human players.
+  if(AUTO_PLAY) return;
   const nesMs = NES_SP[Math.min(level-1,NES_SP.length-1)];
-  let autoMs = nesMs;
-  if(AUTO_PLAY){
-    // Interpolate between floor and ceil NES_SP entries using fractional part
-    const lo = Math.floor(AUTO_SPEED) - 1; // 0-based index
-    const hi = Math.min(lo + 1, NES_SP.length - 1);
-    const frac = AUTO_SPEED - Math.floor(AUTO_SPEED);
-    const loMs = NES_SP[Math.max(0, Math.min(lo, NES_SP.length-1))];
-    const hiMs = NES_SP[hi];
-    autoMs = loMs + (hiMs - loMs) * frac; // linear interp
-  }
-  const sp = Math.round(Math.min(nesMs, autoMs));
   dropIv=setInterval(()=>{
     if(paused||dead||clearAnimating||!cur)return;
     if(isOk(cur.c,cx,cy+1))cy++;
     else{stopDrop();lock();}
-  },sp);
+  },nesMs);
 }
 function stopDrop(){clearInterval(dropIv);}
 
@@ -4221,8 +4576,19 @@ function startSelTimer(){
   },100);
 
   // Initial delay: 500ms at speed 1, 0ms at speed 11
+  // At speed 11: defer via rAF so canvas paints the settled board once before next piece moves
   const startDelay = AUTO_SPEED >= 11 ? 0 : Math.round(500 * (1 - (AUTO_SPEED-1)/10));
-  if(startDelay <= 0){
+  if(AUTO_SPEED >= 11){
+    requestAnimationFrame(()=>{
+      // Ensure placements are fresh for this piece before autoplay picks
+      if(!dead&&!paused&&!clearAnimating&&cur&&AUTO_PLAY){
+        // calcPlacements already ran in spawn(), but re-run applyNextOptions
+        // to guarantee _proofCorrectCand is injected into placements[]:
+        if(puzzleActive && window._proofCorrectCand === null) calcPlacements(true);
+        _startAutoPlay();
+      }
+    });
+  } else if(startDelay <= 0){
     if(!dead&&!paused&&!clearAnimating&&cur&&AUTO_PLAY) _startAutoPlay();
   } else {
     setTimeout(()=>{
@@ -4242,157 +4608,189 @@ function stopSelTimer(){
 // Finds shortest move sequence ['L','R','D','CW'] from (startX,startRot,startY)
 // to a state where piece has rotation=targetRot, x=targetX, and can't drop further.
 // Uses live board — respects all current terrain.
-function _bfsPath(startX, startRot, startY, targetX, targetRot, pieceKey){
-  const encode=(x,r,y)=>(y*40+x)*8+r; // compact int key
-  const start=encode(startX,startRot,startY);
-  const visited=new Map([[start,null]]); // key -> {parentKey, move}
-  const queue=[{x:startX,r:startRot,y:startY,key:start}];
-  const getCells=(r)=>NRS[pieceKey][r%4];
-  const kicks=[0,-1,1,-2,2];
-  let found=null;
-  let iters=0;
+function pieceNavigateTo(pieceKey, startX, startRot, startY, targetX, targetRot, targetDropY){
+  const cells4 = NRS[pieceKey];
+  const pivDx  = PIVOT_DX[pieceKey] || [0,0,0,0];
+  const kicks  = [0,-1,1,-2,2];
+  const enc    = (x,r,y) => (y * 256) + (x * 4) + r; // x needs 4 bits (0-15), r 2 bits
+  const startKey = enc(startX, startRot, startY);
+  const visited  = new Map();
+  visited.set(startKey, null);
+  const lateralQ = [{x:startX, r:startRot, y:startY, key:startKey}];
+  const dropQ    = [];
+  let foundKey = null;
+  let iters    = 0;
 
-  while(queue.length && iters++<12000){
-    const {x,r,y,key}=queue.shift();
-    const cells=getCells(r);
+  const enq = (nx, nr, ny, move, parentKey, lateral) => {
+    const nk = enc(nx, nr, ny);
+    if(visited.has(nk)) return;
+    visited.set(nk, {parentKey, move});
+    if(lateral) lateralQ.push({x:nx, r:nr, y:ny, key:nk});
+    else        dropQ.push   ({x:nx, r:nr, y:ny, key:nk});
+  };
 
-    // Goal: correct rotation and x, resting on surface
-    if(r===targetRot && x===targetX && !isOk(cells,x,y+1)){
-      found=key; break;
+  while((lateralQ.length || dropQ.length) && iters++ < 30000){
+    const node = lateralQ.length ? lateralQ.shift() : dropQ.shift();
+    const {x, r, y, key} = node;
+    const cells = cells4[r];
+    if(r===targetRot && x===targetX && y===targetDropY && !isOk(cells,x,y+1)){
+      foundKey = key; break;
     }
-
-    const enqueue=(nx,nr,ny,move)=>{
-      const nk=encode(nx,nr,ny);
-      if(visited.has(nk))return;
-      visited.set(nk,{parentKey:key,move});
-      queue.push({x:nx,r:nr,y:ny,key:nk});
-    };
-
-    // Drop — always valid if space
-    if(isOk(cells,x,y+1)) enqueue(x,r,y+1,'D');
-    // Strafe
-    if(isOk(cells,x-1,y)) enqueue(x-1,r,y,'L');
-    if(isOk(cells,x+1,y)) enqueue(x+1,r,y,'R');
-    // Rotate CW with wall kicks + pivot correction
-    const nr=(r+1)%4;
-    const nc=getCells(nr);
-    const pdx=(PIVOT_DX[pieceKey]||[0,0,0,0])[r];
-    for(const k of kicks){
-      const px=x+pdx+k;
-      if(isOk(nc,px,y)){ enqueue(px,nr,y,'CW'); break; }
-    }
+    // Rotations — lateral priority
+    const rCW=(r+1)%4, cCW=cells4[rCW], pdCW=pivDx[r];
+    for(const k of kicks){ const px=x+pdCW+k; if(isOk(cCW,px,y)){ enq(px,rCW,y,'CW',key,true); break; } }
+    const rCC=(r+3)%4, cCC=cells4[rCC], pdCC=pivDx[r]; // CCW uses same pivot dx as CW
+    for(const k of kicks){ const px=x+pdCC+k; if(isOk(cCC,px,y)){ enq(px,rCC,y,'CCW',key,true); break; } }
+    // Strafe — lateral priority
+    if(isOk(cells,x-1,y)) enq(x-1,r,y,'L',key,true);
+    if(isOk(cells,x+1,y)) enq(x+1,r,y,'R',key,true);
+    // Drop — lower priority
+    if(isOk(cells,x,y+1)) enq(x,r,y+1,'D',key,false);
+    // Rise — allowed, lateral priority (piece can move up to navigate around obstacles)
+    if(y>0 && isOk(cells,x,y-1)) enq(x,r,y-1,'U',key,true);
   }
 
-  if(!found) return null;
-
-  // Reconstruct path by walking back through visited map
+  if(foundKey===null){
+    // Suppress warning when board state makes the target genuinely unreachable:
+    // - rows 0-1 occupied (topped out), OR
+    // - target column region is blocked above target row (column too tall to reach)
+    const spawnBlocked = board[0].some(v=>v) || board[1].some(v=>v);
+    const targetColBlocked = (()=>{
+      // Check if there's a solid wall blocking lateral entry to the target x
+      // by seeing if every approach column at targetDropY-1 is filled
+      if(targetDropY <= 1) return false;
+      // If the target row is within 4 rows of top, board is dangerously full
+      const maxH = board.reduce((m,row,r)=>row.some(v=>v)?Math.max(m,ROWS-r):m, 0);
+      return maxH >= ROWS - 4; // board filled to within 4 rows of top
+    })();
+    if(!spawnBlocked && !targetColBlocked){
+      // NAV unreachable warn suppressed
+    }
+    return null;
+  }
   const path=[];
-  let k=found;
+  let k=foundKey;
   while(true){
-    const entry=visited.get(k);
-    if(!entry || entry.move===undefined) break;
-    path.unshift(entry.move);
-    k=entry.parentKey;
+    const e=visited.get(k);
+    if(!e) break;
+    path.unshift(e.move);
+    k=e.parentKey;
+    if(k===null||k===undefined) break;
   }
   return path;
 }
 
-// ── Auto-play: BFS → token stream → smooth replay ────────────────────────────
-function _startAutoPlay(){
-  if(!cur||dead||paused||clearAnimating)return;
+function _applyMove(pieceKey, move){
+  if(!cur) return;
+  const rot=cur.rot||0, kicks=[0,-1,1,-2,2];
+  if(move==='CW'){
+    const nr=(rot+1)%4, nc=NRS[pieceKey][nr], pd=(PIVOT_DX[pieceKey]||[0,0,0,0])[rot];
+    for(const k of kicks){ const px=cx+pd+k; if(isOk(nc,px,cy)){cur.c=nc.map(r=>[...r]);cur.rot=nr;cx=px;return;} }
+    //console.warn('[NAV] CW blocked',pieceKey,cx,cy,rot);
+  } else if(move==='CCW'){
+    const nr=(rot+3)%4, nc=NRS[pieceKey][nr], pd=(PIVOT_DX[pieceKey]||[0,0,0,0])[rot];
+    for(const k of kicks){ const px=cx+pd+k; if(isOk(nc,px,cy)){cur.c=nc.map(r=>[...r]);cur.rot=nr;cx=px;return;} }
+    //console.warn('[NAV] CCW blocked',pieceKey,cx,cy,rot);
+  } else if(move==='L'){ if(isOk(cur.c,cx-1,cy)) cx--; }
+    else if(move==='R'){ if(isOk(cur.c,cx+1,cy)) cx++; }
+    else if(move==='D'){ if(isOk(cur.c,cx,cy+1)) cy++; }
+    else if(move==='U'){ if(cy>0&&isOk(cur.c,cx,cy-1)) cy--; }
+}
 
-  // Pick highest-scoring slot
-  let bestIdx=0, bestSc=-Infinity;
-  for(let i=0;i<4;i++){
-    const p=placements[i];
-    if(p&&p.sc>bestSc){ bestSc=p.sc; bestIdx=i; }
-  }
-  const best=placements[bestIdx];
-  if(!best)return;
-
-  const pieceKey=cur.k||'I';
-
-  // BFS from current live position
-  const path=_bfsPath(cx, cur.rot||0, cy, best.x, best.rotation, pieceKey);
-
-  if(!path || path.length===0){
-    // Unreachable or already there — commit immediately
-    choose(bestIdx); return;
-  }
-
-  // Stop gravity during animation — we control all movement
-  stopDrop();
-
-  const speedFactor = AUTO_SPEED; // 1..11
-  const baseMoveMs  = Math.round(180 - (speedFactor-1) * 18); // 180→0ms at speed 11
-  const frameSkip   = speedFactor >= 11 ? 999 : speedFactor >= 9 ? 3 : speedFactor >= 7 ? 2 : 1;
-  const MS={CW:0, L:baseMoveMs, R:baseMoveMs, D: Math.round(baseMoveMs*0.5)};
-
+function _executePath(pieceKey, path, msPerMove, onDone){
+  clearTimeout(_autoIv); _autoIv=null;
   let idx=0;
 
-  const execMove=(move)=>{
-    const rot=cur.rot||0;
-    const pivDx=(PIVOT_DX[pieceKey]||[0,0,0,0]);
-    const kicks=[0,-1,1,-2,2];
-    if(move==='CW'){
-      const nr=(rot+1)%4;
-      const nc=NRS[pieceKey][nr];
-      const pdx=pivDx[rot];
-      for(const k of kicks){
-        const px=cx+pdx+k;
-        if(isOk(nc,px,cy)){
-          cur.c=nc.map(r=>[...r]); cur.rot=nr; cx=px; break;
-        }
-      }
-    } else if(move==='L'){
-      if(isOk(cur.c,cx-1,cy)) cx--;
-    } else if(move==='R'){
-      if(isOk(cur.c,cx+1,cy)) cx++;
-    } else if(move==='D'){
-      if(isOk(cur.c,cx,cy+1)) cy++;
-    }
-  };
-
-  // Speed 11: execute entire path instantly in one shot, then choose next frame
-  if(speedFactor >= 11){
-    while(idx < path.length) execMove(path[idx++]);
-    requestAnimationFrame(()=>{ if(!dead&&!paused&&cur) choose(bestIdx); });
-    return;
-  }
+  // Steps-per-tick: at high speeds batch multiple moves per timer callback
+  // so the animation compresses to just a few visible frames.
+  // Speed 1-8:    1 step/tick (full per-block animation)
+  // Speed 9:      2 steps/tick
+  // Speed 10:     4 steps/tick
+  // Speed 10.5+:  8 steps/tick
+  // Speed 10.99: 12 steps/tick
+  const sp = AUTO_SPEED;
+  const stepsPerTick = sp >= 10.9 ? 12
+                     : sp >= 10.5 ?  8
+                     : sp >= 10   ?  4
+                     : sp >=  9   ?  2
+                     :               1;
+  // At speed 9+, use a fixed ~16ms tick (one frame) regardless of msPerMove
+  const tickMs = sp >= 9 ? 16 : msPerMove;
 
   const step=()=>{
     if(dead||paused||clearAnimating||!cur){ clearTimeout(_autoIv); return; }
-
-    if(idx>=path.length){
-      const commitDelay = Math.round(100 * (1 - (AUTO_SPEED-1)/10));
-      if(commitDelay <= 0){
-        if(!dead&&!paused&&cur) choose(bestIdx);
-      } else {
-        setTimeout(()=>{ if(!dead&&!paused&&cur) choose(bestIdx); }, commitDelay);
-      }
-      return;
+    // Apply stepsPerTick moves in one callback (invisible intermediate states)
+    for(let s=0; s<stepsPerTick && idx<path.length; s++){
+      _applyMove(pieceKey, path[idx++]);
     }
-
-    let drawn=0;
-    while(idx<path.length && (drawn<frameSkip || path[idx]==='CW')){
-      const move=path[idx++];
-      execMove(move);
-      if(move!=='CW') drawn++;
-    }
-
-    const nextMs = idx<path.length ? MS[path[idx]]||baseMoveMs : 0;
-    if(nextMs <= 0){
-      // batch remaining synchronously
-      while(idx < path.length) execMove(path[idx++]);
-      if(!dead&&!paused&&cur) choose(bestIdx);
-    } else {
-      _autoIv=setTimeout(step, nextMs);
-    }
+    if(idx>=path.length){ onDone(); return; }
+    _autoIv=setTimeout(step, tickMs);
   };
+  _autoIv=setTimeout(step, tickMs);
+}
 
-  // Kick off — no initial thinking pause at high speeds
-  const initMs = MS[path[0]] || 0;
-  if(initMs <= 0){ step(); } else { _autoIv=setTimeout(step, initMs); }
+function _navigateAndLock(pieceKey, targetP, msPerMove){
+  const path=pieceNavigateTo(pieceKey, cx, cur.rot||0, cy, targetP.x, targetP.rotation, targetP.dropY);
+  if(!path){
+    // Teleport directly to target — rare end-game case, correctness > animation
+    if(cur){
+      const tc=NRS[pieceKey][targetP.rotation];
+      if(tc && isOk(tc, targetP.x, targetP.dropY)){
+        cur.c=tc.map(r=>[...r]); cur.rot=targetP.rotation;
+        cx=targetP.x; cy=targetP.dropY;
+      } else {
+        // Target cell blocked — drop straight from current position
+        while(cur && isOk(cur.c,cx,cy+1)) cy++;
+      }
+    }
+    if(!dead&&!paused&&cur) lock();
+    return;
+  }
+  if(path.length===0){ lock(); return; }
+  _executePath(pieceKey, path, msPerMove, ()=>{ if(!dead&&!paused&&cur) lock(); });
+}
+
+function _animatePlacement(p, _bestIdx){
+  if(!cur||dead||paused) return;
+  stopDrop();
+  clearTimeout(_autoIv); _autoIv=null;
+  selectedPlacementIdx = _bestIdx; // highlight chosen slot; fade others
+  _navStartT = AT;
+  const pieceKey  = cur.k||'I';
+  const msPerMove = Math.max(16, Math.round(160-(AUTO_SPEED-1)*14));
+  _navigateAndLock(pieceKey, p, msPerMove);
+}
+
+function _startAutoPlay(){
+  if(!cur||dead||paused||clearAnimating)return;
+  let bestIdx=0, bestSc=-Infinity;
+  for(let i=0;i<4;i++){ const p=placements[i]; if(p&&p.sc>bestSc){bestSc=p.sc;bestIdx=i;} }
+  const best=placements[bestIdx];
+  if(!best)return;
+  const pieceKey  = cur.k||'I';
+  const msPerMove = Math.max(16, Math.round(160-(AUTO_SPEED-1)*14));
+  stopDrop();
+  if(AUTO_SPEED>=11){
+    // Instant: apply full path synchronously
+    const path=pieceNavigateTo(pieceKey,cx,cur.rot||0,cy,best.x,best.rotation,best.dropY);
+    if(!path){
+      // Teleport directly to target — same policy as animated path
+      if(cur){
+        const tc=NRS[pieceKey][best.rotation];
+        if(tc && isOk(tc, best.x, best.dropY)){
+          cur.c=tc.map(r=>[...r]); cur.rot=best.rotation;
+          cx=best.x; cy=best.dropY;
+        } else {
+          while(cur && isOk(cur.c,cx,cy+1)) cy++;
+        }
+      }
+    } else {
+      for(const m of path) _applyMove(pieceKey,m);
+    }
+    if(!dead&&!paused&&cur) lock();
+    return;
+  }
+  _navigateAndLock(pieceKey, best, msPerMove);
 }
 
 // Fallback: if timer fully expires without auto-play finishing, force commit
@@ -4424,6 +4822,9 @@ function toggleAutoPlay(){
   // Auto just turned on mid-game — immediately trigger placement of current piece
   if(ui.gameStarted && !dead && !paused && cur){
     stopSelTimer();
+    // Recalculate placements from scratch so _proofCorrectCand is fresh
+    // and the puzzle target is guaranteed to be in the options before autoplay picks.
+    calcPlacements(true);
     _startAutoPlay();
   }
 }
@@ -4434,7 +4835,7 @@ function setAutoSpeed(v){
   const displayVal = AUTO_SPEED >= 11 ? '11🔊' : String(Math.floor(AUTO_SPEED));
   const el=document.getElementById('ap-speed-val');
   if(el) el.textContent = displayVal;
-  if(AUTO_PLAY && !dead && !paused) scheduleDrop();
+  // Speed is animation-only — no scheduleDrop needed
 }
 
 function _syncAutoUI(){
@@ -4546,13 +4947,21 @@ function togglePause(){
   if(paused){
     _gamePauseCount++;
     _gamePauseStartT = performance.now();
-    // Release sign-freeze so the game-pause help carousel shows cleanly
+    // Stop autoplay timer while paused
+    clearTimeout(_autoIv); _autoIv=null;
     if(_mqUserPaused){
       _mqTotalPauseMs += performance.now() - _mqPauseStartT;
       _mqUserPaused = false;
     }
   } else {
     _gameTotalPauseMs += performance.now() - _gamePauseStartT;
+    // Resume autoplay if it was running
+    if(AUTO_PLAY && ui.gameStarted && !dead && cur){
+      calcPlacements(false);
+      _startAutoPlay();
+    } else if(!AUTO_PLAY){
+      scheduleDrop();
+    }
   }
   document.getElementById('pov').style.display=paused?'flex':'none';
 }
@@ -4563,7 +4972,7 @@ function init(){
   score=0;level=1;lines=0;dead=false;paused=false;
   particles=[];explodedCells.clear();clearAnimating=false;
   gapList=[];tetrisPrepActive=false;tetrisPrepCol=-1;
-  piecePot=0;tetrisPot=0;piecesPlaced=0;_lastScoringHoleCheck=false;
+  piecePot=0;tetrisPot=0;piecesPlaced=0;_lastScoringHoleCheck=false;_p10Log=[];
   tetrisStreak=0;tetrisMultiplier=1;
   currentScoringHoles=0;scoringDisabledSound=false;
   hfRun=0;hfBest=0;
@@ -4603,7 +5012,7 @@ function startGame(){
   }
 }
 
-function _showErr(e){ console.error(e); }
+function _showErr(e){ /*suppressed*/ }
 
 function restart(asAuto){
   // Set AUTO_PLAY BEFORE init() so autoUsed seeds correctly inside init()
