@@ -1082,7 +1082,7 @@ function drawGhosts(t, gx, gy){
 
     // Alternating fill brightness: pieces 1&3 brighter, 2&4 dimmer
     const fillA = (i % 2 === 0) ? (alpha * 0.50) : (alpha * 0.18);
-    const outA  = 0.4; // outline always 40%
+    const outA  = alpha * 0.9; // outline tracks ghost alpha
 
     // ── LAYER 1: Color fill ───────────────────────────────────────────────
     CTX.fillStyle = `rgba(${r0},${g0},${b0},${fillA.toFixed(3)})`;
@@ -1109,7 +1109,7 @@ function drawGhosts(t, gx, gy){
         if(!((above && !below) || (!above && below))) continue;
         const topEdge = (!above && below);
         const y = gy+(p.dropY+r)*CELL + (topEdge ? ins : -ins);
-        CTX.globalAlpha = (c % 2 === 0) ? 0.60 : 0.40;
+        CTX.globalAlpha = alpha * ((c % 2 === 0) ? 0.90 : 0.65);
         CTX.beginPath();
         CTX.moveTo(gx+(p.x+c)*CELL,      y);
         CTX.lineTo(gx+(p.x+c+1)*CELL,    y);
@@ -1125,7 +1125,7 @@ function drawGhosts(t, gx, gy){
         if(!((left && !right) || (!left && right))) continue;
         const leftEdge = (!left && right);
         const x = gx+(p.x+c)*CELL + (leftEdge ? ins : -ins);
-        CTX.globalAlpha = (r % 2 === 0) ? 0.60 : 0.40;
+        CTX.globalAlpha = alpha * ((r % 2 === 0) ? 0.90 : 0.65);
         CTX.beginPath();
         CTX.moveTo(x, gy+(p.dropY+r)*CELL);
         CTX.lineTo(x, gy+(p.dropY+r+1)*CELL);
@@ -2796,7 +2796,7 @@ function checkTowers(){
 let hfRun=0, hfBest=0, hfAllTime=0, _gamesPlayed=0;
 // cur,cx,cy,nxt declared at top
 var dropIv,selIv,timerMax,timerLeft; // placements declared at top
-let allCands=[],shownFootprints=new Set();
+let allCands=[],shownFootprints=new Set(),_candCursor=0;
 // playerHasMoved declared at top
 // moveStartTime declared at top
 let labelPositions=[];
@@ -3982,7 +3982,7 @@ function slideAdjustedBonus(cells,x,gy,dist){
 // fresh=true resets the "already shown" set (called on new piece spawn).
 function calcPlacements(fresh=false){
   if(!cur)return;
-  if(fresh){shownFootprints=new Set();playerHasMoved=false;moveStartTime=0;}
+  if(fresh){shownFootprints=new Set();_candCursor=0;playerHasMoved=false;moveStartTime=0;}
 
   // PROOF MODE: show normal AI options but mark the correct one yellow
   // Always compute the correct puzzle target so debug mode can be toggled
@@ -4107,23 +4107,33 @@ function calcPlacements(fresh=false){
 // Pick up to 4 non-overlapping options from allCands, skipping shownFootprints.
 // If sdCand is provided it is reserved as the first slot (straight-drop guarantee).
 function pickOptions(sdCand, sdFp){
+  // Build a non-overlapping set of up to 4 candidates.
+  // Uses _candCursor to advance through allCands across cycles — no stale state.
   const chosen=[];
   const usedCells=new Set();
 
+  // sdCand (straight-drop after manual move) always goes in slot 0
   if(sdCand){
     chosen.push(sdCand);
     footprint(sdCand.c,sdCand.x,sdCand.dropY).forEach(k=>usedCells.add(k));
   }
 
-  for(const ca of allCands){
-    if(chosen.length>=4)break;
-    if(ca.fpKey===sdFp)continue;          // already have this one
-    if(shownFootprints.has(ca.fpKey))continue;
+  // Walk allCands starting at cursor, wrapping once if needed
+  const n=allCands.length;
+  if(n===0) return chosen;
+
+  let checked=0;
+  let i=_candCursor % n;
+  while(chosen.length<4 && checked<n){
+    const ca=allCands[i];
+    i=(i+1)%n;
+    checked++;
+    if(!ca) continue;
+    if(ca.fpKey===sdFp) continue;              // same as straight-drop
     const fp=footprint(ca.c,ca.x,ca.dropY);
-    if(!setsOverlap(fp,usedCells)){
-      chosen.push(ca);
-      fp.forEach(k=>usedCells.add(k));
-    }
+    if(setsOverlap(fp,usedCells)) continue;    // overlaps an already-chosen ghost
+    chosen.push(ca);
+    fp.forEach(k=>usedCells.add(k));
   }
   return chosen;
 }
@@ -4154,15 +4164,15 @@ function applyNextOptions(){
     }
   }
 
-  // ── Fill up to 4 slots, wrapping the shown-set if needed ──────────────────
-  let chosen=pickOptions(sdCand,sdFp);
+  // ── Fill up to 4 slots using cursor-based window ─────────────────────────
+  const chosen=pickOptions(sdCand,sdFp);
+  // Advance cursor by number of non-sdCand candidates chosen, so next cycle
+  // starts right after this batch
+  const batchSize = sdCand ? chosen.length-1 : chosen.length;
+  _candCursor = (_candCursor + Math.max(1,batchSize)) % Math.max(1,allCands.length);
 
-  if(chosen.length<(sdCand?2:1)){
-    shownFootprints=new Set();
-    chosen=pickOptions(sdCand,sdFp);
-  }
-
-  for(const ca of chosen)shownFootprints.add(ca.fpKey);
+  // Keep shownFootprints in sync for the puzzle override check below
+  shownFootprints=new Set(chosen.filter(Boolean).map(c=>c.fpKey));
 
   // PUZZLE OVERRIDE: if a correct target exists, guarantee it is in the chosen set
   // with an unchallengeable score so autoplay always picks it.
