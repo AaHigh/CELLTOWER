@@ -140,7 +140,7 @@ var selectedPlacementIdx=null; // which slot is highlighted (null = none)
 var _navStartT=0; // AT timestamp when piece navigation animation started
 var _p10Log=[]; // per-piece log for first-10 debug audit
 var piecePot=0, tetrisPot=0;
-var AUTO_PLAY=false, AUTO_SPEED=8.99, autoUsed=false;
+var AUTO_PLAY=false, AUTO_SPEED=10.66, autoUsed=false;
 var AT=0;
 var playerHasMoved=false, moveStartTime=0;
 var _tipMoveCount=0, _tipChoiceUsed=false, _tipShownAt=0, _tipDismissed=false;
@@ -902,28 +902,83 @@ function drawTicker(t){
   panel(r.x, r.y, r.w, r.h);
   const n = ui.tickers.length;
   if(n===0) return;
-  // Fixed compact line height — fit as many rows as possible
   const lineH = Math.max(9, Math.min(18, r.h / 12));
   const fontSize = Math.max(6, lineH * 0.72);
   CTX.font = F(FONT_SMALL, fontSize);
-  CTX.textAlign = 'right';
   CTX.textBaseline = 'middle';
-  // Show as many rows as fit, newest at bottom
   const maxVisible = Math.floor(r.h / lineH);
   const start = Math.max(0, n - maxVisible);
+
+  // Semantic tokenizer — same logic as _txDraw but runs on main CTX
+  function _tickerWordCol(w, ageFrac){
+    const lum = Math.max(45, 85 - ageFrac * 40);
+    if(/^BLOCKED$/i.test(w))  return '#ff4444';
+    if(/^(READY)$/i.test(w))  return '#ffee00';
+    if(/^(LVL)$/i.test(w))    return '#ffdd00';
+    if(/^(CS|CS★)$/i.test(w)) return '#00ffff';
+    if(/^(PERFECT|ATARI|TRIBUTE|TOWERS|CLEARED|OG)$/i.test(w)) return '#ffd700';
+    if(/^[LT]$/.test(w))      return '#44ff88';
+    if(/^H$/.test(w))         return '#ff7733';
+    if(/^[🔥🥶🧊❄️★🏆✨👾⛰️✅]/.test(w)) return `hsl(${(ageFrac*180)%360},100%,${lum}%)`;
+    return `hsl(${(ageFrac*120+60)%360},70%,${lum}%)`;
+  }
+  function _tickerSegs(text, ageFrac){
+    const segs=[];
+    const words=text.split(/\s+/);
+    for(let wi=0;wi<words.length;wi++){
+      if(wi>0) segs.push({t:' ', col:'#666666'});
+      const w=words[wi]; if(!w) continue;
+      let cm;
+      if((cm=w.match(/^([+\-]?[0-9][0-9.,]*)(k?)$/i))){
+        segs.push({t:w, col:'#ffffff'});
+      } else if((cm=w.match(/^([+\-]?[0-9][0-9.,]*)(CS[★]?)$/i))){
+        segs.push({t:cm[1],col:'#ffffff'});
+        segs.push({t:cm[2],col:'#00ffff'});
+      } else if((cm=w.match(/^([+\-]?[0-9][0-9.,]*)([LT])$/i))){
+        segs.push({t:cm[1],col:'#ffffff'});
+        segs.push({t:cm[2],col:'#44ff88'});
+      } else if((cm=w.match(/^([+\-]?[0-9][0-9.,]*)(H)$/i))){
+        segs.push({t:cm[1],col:'#ffffff'});
+        segs.push({t:cm[2],col:'#ff7733'});
+      } else {
+        const wCol=_tickerWordCol(w,ageFrac);
+        let run='',runIsDigit=false;
+        for(const ch of w){
+          const isD=/[0-9+\-.,]/.test(ch);
+          if(run===''){run=ch;runIsDigit=isD;}
+          else if(isD===runIsDigit){run+=ch;}
+          else{segs.push({t:run,col:runIsDigit?'#ffffff':wCol});run=ch;runIsDigit=isD;}
+        }
+        if(run) segs.push({t:run,col:runIsDigit?'#ffffff':wCol});
+      }
+    }
+    return segs;
+  }
+
   for(let i=start; i<n; i++){
     const item = ui.tickers[i];
-    const age = n - 1 - i;  // 0=newest, increases for older
-    // Luminance only: newest=full white, fades to dim for older entries
-    const lum = Math.max(35, 95 - age * 8);
-    CTX.fillStyle = `hsl(0,0%,${lum}%)`;
-    CTX.shadowColor = 'rgba(0,0,0,0.5)';
-    CTX.shadowBlur = 2;
+    const age = n - 1 - i;
+    const ageFrac = n > 1 ? age / (n - 1) : 0;
     const iy = r.y + r.h - (n - i) * lineH + lineH / 2;
-    if(iy > r.y && iy < r.y + r.h)
-      CTX.fillText(item.text, r.x + r.w - 3, iy);
+    if(iy <= r.y || iy >= r.y + r.h) continue;
+
+    CTX.shadowColor = 'rgba(0,0,0,0.7)';
+    CTX.shadowBlur = 2;
+
+    // Draw segments right-to-left
+    const segs = _tickerSegs(item.text, ageFrac);
+    let xRight = r.x + r.w - 3;
+    CTX.textAlign = 'right';
+    for(let s=segs.length-1; s>=0; s--){
+      const seg = segs[s];
+      CTX.fillStyle = seg.col;
+      CTX.globalAlpha = 1 - ageFrac * 0.55; // older rows fade slightly
+      CTX.fillText(seg.t, xRight, iy);
+      xRight -= CTX.measureText(seg.t).width;
+    }
   }
   CTX.shadowBlur = 0;
+  CTX.globalAlpha = 1;
 }
 
 // ── Right panel ──────────────────────────────────────────────────────
@@ -2601,27 +2656,88 @@ function _txDraw(){
     ctx.shadowColor=`hsl(${comp},100%,52%)`;
     ctx.shadowBlur=6;
 
-    // Split text into segments: numeric-with-sign/K parts get bright,
-    // letter-only labels get normal lum.
-    // Strategy: measure full string right-aligned, then walk segments right-to-left.
+    // Semantic color coding for fast visual parsing:
+    //   Numbers / +values  → WHITE        (score, instant read)
+    //   xCS / xCS★         → CYAN         (clean streak = performance)
+    //   xL / xT (outcome)  → GREEN        (line clear type)
+    //   xH (holes)         → ORANGE-RED   (danger)
+    //   BLOCKED            → RED
+    //   READY / LVL x      → YELLOW       (system status)
+    //   Emoji rows         → hue drift    (decorative)
+    //   PERFECT / ATARI    → GOLD
     const text=_txBuf[i].text;
-    // Segment: sequences of [+\-0-9\.k🔥🧊❄️🥶★] are "value" segments, rest are "label"
-    const segs=[];
-    const re=/([+\-]?[0-9][0-9.,]*k?)|([^+\-0-9][\S]*)/gu;
-    let m;
-    while((m=re.exec(text))!==null){
-      if(m[1]!==undefined) segs.push({t:m[1],bright:true});
-      else segs.push({t:m[2],bright:false});
-    }
-    if(segs.length===0){ segs.push({t:text,bright:false}); }
 
-    // Draw right-to-left, accumulating x offset
+    // Tokenize: digit-runs → WHITE, everything else → semantic color.
+    // Rule: if a character is 0-9 or + - . , → it's part of a number segment.
+    // Anything else (letters, symbols, emoji, k suffix after digits) → label segment.
+    // This guarantees: numbers are ALWAYS white, letters are ALWAYS colored.
+    const segs=[];
+    // Split into words first so we can apply per-word semantic colors to letter tokens
+    const words = text.split(/\s+/);
+    // Per-word semantic color for letter segments
+    function _wordCol(w){
+      if(/^[+\-]?[0-9][0-9.,]*$/.test(w)) return '#ffffff'; // pure number fallback
+      if(/^BLOCKED$/i.test(w))              return '#ff3333';
+      if(/^(READY)$/i.test(w))              return '#ffee00';
+      if(/^(LVL)$/i.test(w))               return '#ffee00';
+      if(/^(CS|CS★)$/i.test(w))            return '#00ffff'; // bare "CS" label
+      if(/^(PERFECT|ATARI|TRIBUTE|TOWERS|CLEARED|OG)$/i.test(w)) return '#ffd700';
+      if(/^[LT]$/.test(w))                 return '#44ff88'; // lone L or T
+      if(/^H$/.test(w))                    return '#ff6622'; // lone H
+      // Emoji / special chars
+      if(/^[🔥🥶🧊❄️★🏆✨👾⛰️✅]/.test(w)) return `hsl(${hue},100%,${lum}%)`;
+      return `hsl(${hue},80%,${lum}%)`;
+    }
+    // For each word, split into digit-runs and non-digit-runs
+    // then assign colors accordingly. Digit-runs → white. Non-digit-runs → _wordCol.
+    // Special compound tokens:
+    //   digits + CS[★]  → digits white, CS★ cyan
+    //   digits + [LT]   → digits white, L/T green
+    //   digits + H      → digits white, H orange
+    //   digits + k      → treat the k as part of the number (formatted), keep white
+    for(let wi=0;wi<words.length;wi++){
+      if(wi>0) segs.push({t:' ', col:'#888888'});
+      const w=words[wi];
+      if(!w) continue;
+      // Match compound patterns explicitly first
+      let cm;
+      if((cm=w.match(/^([+\-]?[0-9][0-9.,]*)(k?)$/i)) && cm){
+        // pure number, optional k suffix → all white
+        segs.push({t:w, col:'#ffffff'});
+      } else if((cm=w.match(/^([+\-]?[0-9][0-9.,]*)(CS[★]?)$/i))){
+        segs.push({t:cm[1], col:'#ffffff'});   // digits white
+        segs.push({t:cm[2], col:'#00ffff'});   // CS cyan
+      } else if((cm=w.match(/^([+\-]?[0-9][0-9.,]*)([LT])$/i))){
+        segs.push({t:cm[1], col:'#ffffff'});   // digits white
+        segs.push({t:cm[2], col:'#44ff88'});   // L/T green
+      } else if((cm=w.match(/^([+\-]?[0-9][0-9.,]*)(H)$/i))){
+        segs.push({t:cm[1], col:'#ffffff'});   // digits white
+        segs.push({t:cm[2], col:'#ff6622'});   // H orange
+      } else {
+        // General: scan char by char, grouping digit-runs vs non-digit-runs
+        const wCol = _wordCol(w);
+        let run='', runIsDigit=false;
+        for(const ch of w){
+          const isD=/[0-9+\-.,]/.test(ch);
+          if(run===''){ run=ch; runIsDigit=isD; }
+          else if(isD===runIsDigit){ run+=ch; }
+          else {
+            segs.push({t:run, col: runIsDigit ? '#ffffff' : wCol});
+            run=ch; runIsDigit=isD;
+          }
+        }
+        if(run) segs.push({t:run, col: runIsDigit ? '#ffffff' : wCol});
+      }
+    }
+    if(segs.length===0){ segs.push({t:text, col:`hsl(${hue},100%,${lum}%)`}); }
+
+    // Draw right-to-left
     ctx.textAlign='right';
     ctx.textBaseline='top';
     let xRight=W-2;
     for(let s=segs.length-1;s>=0;s--){
       const seg=segs[s];
-      ctx.fillStyle=`hsl(${hue},100%,${seg.bright?lumBright:lum}%)`;
+      ctx.fillStyle=seg.col;
       ctx.fillText(seg.t, xRight, y);
       xRight-=ctx.measureText(seg.t).width;
     }
@@ -3982,7 +4098,8 @@ function slideAdjustedBonus(cells,x,gy,dist){
 // fresh=true resets the "already shown" set (called on new piece spawn).
 function calcPlacements(fresh=false){
   if(!cur)return;
-  if(fresh){shownFootprints=new Set();_candCursor=0;playerHasMoved=false;moveStartTime=0;}
+  if(fresh){shownFootprints=new Set();_candCursor=0;playerHasMoved=false;moveStartTime=0;_softDropRows=0;}
+  else{_candCursor=0;shownFootprints=new Set();}  // also reset cursor on re-calc after move
 
   // PROOF MODE: show normal AI options but mark the correct one yellow
   // Always compute the correct puzzle target so debug mode can be toggled
@@ -4342,6 +4459,10 @@ function lock(){
   for(let r=ROWS-1;r>=0;r--)if(board[r].every(v=>v))completeRows.push(r);
 
   if(completeRows.length===0){
+    if(_softDropRows>0){
+      txScore('soft-drop',_softDropRows,[{label:'Soft drop rows',value:_softDropRows}]);
+      _softDropRows=0;
+    }
     piecesPlaced++;
     addScore(0);
     rebuildGapList();
@@ -4362,6 +4483,10 @@ function lock(){
     };
 
     const _afterClear = (cleared) => {
+      if(_softDropRows>0){
+        txScore('soft-drop',_softDropRows,[{label:'Soft drop rows',value:_softDropRows}]);
+        _softDropRows=0;
+      }
       piecesPlaced++;
       addScore(cleared);
       rebuildGapList();
@@ -4540,9 +4665,10 @@ function mhz(d){
   if(!_tipChoiceUsed) _tipMoveCount++;
   sndMove();calcPlacements();scheduleDrop();
 }
+let _softDropRows=0; // rows soft-dropped this piece — logged at lock
 function sdrop(){
   if(dead||paused||clearAnimating||!cur)return;
-  if(isOk(cur.c,cx,cy+1)){cy++;score++;sndSoftDrop();document.getElementById('sv').textContent=score;scheduleDrop();}
+  if(isOk(cur.c,cx,cy+1)){cy++;score++;_softDropRows++;sndSoftDrop();document.getElementById('sv').textContent=score;scheduleDrop();}
 }
 function hdrop(){
   if(dead||paused||clearAnimating||!cur)return;
@@ -5282,6 +5408,7 @@ function _txSection(evType) {
   if (evType === 'super-clear')        return 'SUPER BONUS';
   if (evType.startsWith('line-'))      return 'LINE CLEAR AWARDS';
   if (evType === 'tetris')             return 'TETRIS BONUS';
+  if (evType === 'soft-drop')          return 'MISC';
   return 'MISC';
 }
 
@@ -5393,7 +5520,13 @@ function buildReceiptDOM() {
   L(dmRow('  BEST CLEAN RUN',  hfBest > 0 ? hfBest+'CS' : '0CS'));
   L(dmRow('  HOLE FREE RUN',   currentScoringHoles===0 ? 'YES' : 'NO'));
   HR('-');
-  L(dmRow('  SUBTOTAL',        score.toLocaleString()));
+  const untracked = score - txRunningTotal;
+  if(untracked > 0){
+    L(dmRow('  SUBTOTAL (LOGGED)', fmtAmt(txRunningTotal)));
+    L(dmRow('  SOFT DROP BONUS',   '+'+untracked));
+  } else {
+    L(dmRow('  SUBTOTAL', score.toLocaleString()));
+  }
   L(dmRow('  TAX / FEES',      'N/A'));
   HR('=');
   SP(2);
@@ -5509,6 +5642,7 @@ function _txDesc(tx) {
   if (e === 'line-3-blocked') return '3-LINE BLOCKED';
   if (e === 'tetris')       return 'TETRIS! 4-LINE BONUS';
   if (e === 'super-clear')  return 'PERFECT CLEAR: 20,490';
+  if (e === 'soft-drop')    return 'SOFT DROP (' + (tx.breakdown&&tx.breakdown[0]?tx.breakdown[0].value:tx.amount) + ' ROWS)';
   return tx.desc || e.toUpperCase();
 }
 
