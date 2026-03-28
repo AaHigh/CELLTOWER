@@ -4831,6 +4831,8 @@ function stopDrop(){
 // Player can interrupt at any time by tapping a button (stopSelTimer cancels).
 let _autoIv=null;
 let _animStep=null;  // reference to current animation step fn — cleared when done
+let _animArmT=0;    // performance.now() when current _autoIv was armed
+let _animArmMs=0;   // interval duration that was used to arm it
 let _autoPhase=null; // {targetIdx, targetX, targetRot, isSlide, steps:[]}
 
 function startSelTimer(){
@@ -4996,9 +4998,11 @@ function _executePath(pieceKey, path, _msPerMoveIgnored, onDone){
       _applyMove(pieceKey, path[idx++]);
     }
     if(idx>=path.length){ _animStep=null; onDone(); return; }
-    _autoIv = setTimeout(_animStep, _execTickMs());
+    _animArmT=performance.now(); _animArmMs=_execTickMs();
+    _autoIv = setTimeout(_animStep, _animArmMs);
   };
-  _autoIv = setTimeout(_animStep, _execTickMs());
+  _animArmT = performance.now(); _animArmMs = _execTickMs();
+  _autoIv = setTimeout(_animStep, _animArmMs);
 }
 
 function _navigateAndLock(pieceKey, targetP, msPerMove){
@@ -5134,12 +5138,22 @@ function setAutoSpeed(v){
   const el=document.getElementById('ap-speed-val');
   if(el) el.textContent = displayVal;
 
-  // If an animation step is currently sleeping, cancel it and rearm NOW
-  // so the new speed takes effect on the very next move, not after the old
-  // timer would have fired.
+  // Only rearm the sleeping animation timer if the new speed would fire SOONER
+  // than the currently-scheduled wake time. This prevents continuous slider drag
+  // from repeatedly cancelling the timer before it ever fires (which froze the piece).
   if(_animStep && _autoIv !== null){
-    clearTimeout(_autoIv);
-    _autoIv = setTimeout(_animStep, _execTickMs());
+    const newMs = _execTickMs();
+    const elapsed = performance.now() - _animArmT;
+    const remaining = _animArmMs - elapsed;
+    if(newMs < remaining){
+      // New speed is faster — worth interrupting
+      clearTimeout(_autoIv);
+      _animArmT = performance.now();
+      _animArmMs = newMs;
+      _autoIv = setTimeout(_animStep, newMs);
+    }
+    // If new speed is slower or equal, let the current timer fire naturally —
+    // _animStep will read _execTickMs() live and use the new speed from that point.
   }
 }
 
