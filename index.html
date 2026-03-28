@@ -127,7 +127,7 @@ const cv = document.getElementById('cv');
 const CTX = cv.getContext('2d');
 
 // ── Screen dimensions ─────────────────────────────────────────────────
-const VERSION = '0.421b';
+const VERSION = '0.422';
 let SW, SH;   // screen width/height
 var CELL = 20; // tetris cell size — also declared by game logic (var hoists safely)
 
@@ -141,6 +141,11 @@ var _navStartT=0; // AT timestamp when piece navigation animation started
 var _p10Log=[]; // per-piece log for first-10 debug audit
 var piecePot=0, tetrisPot=0;
 var AUTO_PLAY=false, AUTO_SPEED=10.66, autoUsed=false;
+// Screen shake — 4 independent sinusoidal channels, normalized so total energy=1
+// Each channel: {phx, phy, fx, fy, mx, my} — random phase & freq per axis per layer
+var _shakeT=0, _shakeDur=0, _shakeAmp=0;
+var _shakeField={phx:0,phy:0,fx:0,fy:0,mx:0,my:0};
+var _shakeHUD  ={phx:0,phy:0,fx:0,fy:0,mx:0,my:0};
 var AT=0;
 var playerHasMoved=false, moveStartTime=0;
 var _tipMoveCount=0, _tipChoiceUsed=false, _tipShownAt=0, _tipDismissed=false;
@@ -508,6 +513,34 @@ function drawDebug(){
   });
 }
 
+function triggerShake(amp, dur){
+  _shakeAmp = amp;
+  _shakeDur = dur;
+  _shakeT   = performance.now();
+
+  // Generate 4 independent random magnitudes for playfield x/y and HUD x/y.
+  // Normalize so sum-of-squares = 1 (energy conserved on unit circle, not square).
+  function rndChan(){ return 0.3 + Math.random() * 0.7; } // non-zero [0.3,1.0]
+  const raw = [rndChan(), rndChan(), rndChan(), rndChan()];
+  const norm = Math.sqrt(raw.reduce((s,v)=>s+v*v, 0));
+  const [fmx, fmy, hmx, hmy] = raw.map(v=>v/norm);
+
+  // Random frequencies 18–55 Hz and random phases 0–2π per axis
+  function rndFreq(){ return 18 + Math.random() * 37; }
+  function rndPh(){   return Math.random() * Math.PI * 2; }
+
+  _shakeField = { phx:rndPh(), phy:rndPh(), fx:rndFreq(), fy:rndFreq(), mx:fmx, my:fmy };
+  _shakeHUD   = { phx:rndPh(), phy:rndPh(), fx:rndFreq(), fy:rndFreq(), mx:hmx, my:hmy };
+}
+
+// Returns {dx,dy} for a shake layer at elapsed seconds with trauma-squared decay
+function _shakeOffset(layer, elapsedMs, amp, decay){
+  const s = elapsedMs * 0.001;
+  const dx = amp * decay * layer.mx * Math.sin(s * layer.fx * Math.PI * 2 + layer.phx);
+  const dy = amp * decay * layer.my * Math.cos(s * layer.fy * Math.PI * 2 + layer.phy);
+  return {dx, dy};
+}
+
 function draw(ts){
   if(!SW||!SH||!R.gw) return; // layout not ready yet
   const t = ts * 0.001;
@@ -523,12 +556,39 @@ function draw(ts){
   if(!ui.gameStarted){
     drawStartScreen(t);
   } else {
-    drawLeftPanel(t);
-    drawRightPanel(t);
-    drawPlayfield(t);
-    drawPieceRow(t);
-    drawAutoRow(t);
-    drawControlRow(t);
+    // Shake: compute decay once, derive independent offsets for HUD vs playfield
+    const _shakeElapsed = ts - _shakeT;
+    const _shakeFrac = _shakeDur > 0 ? Math.max(0, 1 - _shakeElapsed / _shakeDur) : 0;
+    const _decay = _shakeFrac * _shakeFrac; // trauma-squared
+
+    if(_decay > 0){
+      // HUD panels shake on their own layer
+      const hud = _shakeOffset(_shakeHUD, _shakeElapsed, _shakeAmp, _decay);
+      CTX.save(); CTX.translate(hud.dx, hud.dy);
+      drawLeftPanel(t);
+      drawRightPanel(t);
+      CTX.restore();
+
+      // Playfield shakes on independent layer
+      const pf = _shakeOffset(_shakeField, _shakeElapsed, _shakeAmp, _decay);
+      CTX.save(); CTX.translate(pf.dx, pf.dy);
+      drawPlayfield(t);
+      CTX.restore();
+
+      // Control rows shake with HUD layer (they're part of the glass)
+      CTX.save(); CTX.translate(hud.dx, hud.dy);
+      drawPieceRow(t);
+      drawAutoRow(t);
+      drawControlRow(t);
+      CTX.restore();
+    } else {
+      drawLeftPanel(t);
+      drawRightPanel(t);
+      drawPlayfield(t);
+      drawPieceRow(t);
+      drawAutoRow(t);
+      drawControlRow(t);
+    }
     if(paused) drawPauseOverlay();
     if(dead)   drawGameOverOverlay();
   }
@@ -1109,9 +1169,18 @@ function drawGhosts(t, gx, gy){
   labelPositions = []; // reset each frame so positions stay current
   const elapsed = AT - moveStartTime;
 
+  // Hard render guard: build usedCells set as we draw — if any ghost's cells
+  // overlap with an already-drawn ghost, skip it entirely. Prevents visual
+  // overlap regardless of how placements[] was constructed.
+  const _drawnCells = new Set();
+
   for(let i=0;i<placements.length;i++){
     const p = placements[i];
     if(!p) continue;
+    // Overlap guard
+    const _pfp = footprint(p.c, p.x, p.dropY);
+    if(setsOverlap(_pfp, _drawnCells)) continue; // would overlap — skip
+    _pfp.forEach(k=>_drawnCells.add(k));
 
     // Fade logic
     let alpha;
@@ -1941,10 +2010,18 @@ function handleSlider(tx){
   const frac = Math.max(0, Math.min(1, (tx - R.sliderX) / R.sliderW));
   const spd = Math.min(11.0, 1 + frac * 10);
   _lastSliderMoveT = AT;
-  // Speed slider is ANIMATION speed only — never touches game state or timers.
-  // In autoplay there is no gravity timer to worry about.
-  // In human mode, don't interrupt the drop timer either — slider is autoplay-only UI.
   setAutoSpeed(spd);
+  // In human mode: if slider increases speed, restart the drop timer so the
+  // new speed takes effect immediately on the current piece.
+  if(!AUTO_PLAY && ui.gameStarted && !dead && !paused && cur){
+    // Only reschedule if the new interval is shorter than remaining deadline
+    const gravMs = NES_SP[Math.min(level-1, NES_SP.length-1)];
+    const remaining = _dropDeadline - performance.now();
+    if(remaining > gravMs){
+      // Slider moved to faster speed — snap deadline forward
+      _dropDeadline = performance.now() + gravMs;
+    }
+  }
 }
 
 // Hold-repeat for left/right
@@ -4276,7 +4353,9 @@ function applyNextOptions(){
     sdFp=Array.from(footprint(cur.c,cx,sy)).sort().join(';');
     sdCand=allCands.find(c=>c.fpKey===sdFp);
     if(!sdCand){
-      sdCand={c:cur.c.map(r=>[...r]),x:cx,rotation:0,dropY:sy,
+      // Synthesize — use current rotation index if available
+      const curRot = cur.rot||0;
+      sdCand={c:cur.c.map(r=>[...r]),x:cx,rotation:curRot,dropY:sy,
               sc:evalP(cur.c,cx,sy),slide:false,fpKey:sdFp};
     }
   }
@@ -4307,7 +4386,29 @@ function applyNextOptions(){
     }
   }
 
-  chosen.sort((a,b)=>a.x-b.x);
+  // ── Final overlap audit: guarantee no two placements share any board cell ──
+  // This is the last line of defense before placements go to the renderer.
+  {
+    const auditCells = new Set();
+    for(let ai=0;ai<chosen.length;ai++){
+      const ca = chosen[ai];
+      if(!ca) continue;
+      const fp = footprint(ca.c, ca.x, ca.dropY);
+      if(setsOverlap(fp, auditCells)){
+        chosen[ai] = null; // overlap detected — drop this ghost
+      } else {
+        fp.forEach(k=>auditCells.add(k));
+      }
+    }
+  }
+
+  chosen.sort((a,b)=>{
+    // nulls go to end; non-null sort by x position
+    if(a===null&&b===null)return 0;
+    if(a===null)return 1;
+    if(b===null)return -1;
+    return a.x-b.x;
+  });
   while(chosen.length<4)chosen.push(null);
   placements=chosen;
   for(let i=0;i<4;i++)drawPrevBtn(i,placements[i]);
@@ -4388,8 +4489,8 @@ function _animatePlacement(p, bestIdx){
     cur.c=p.c; cx=p.x; cy=p.dropY; lock(); return;
   }
 
-  const msPerMove = Math.max(16, Math.round(160 - (AUTO_SPEED-1) * 14));
-
+  // msPerMove is NOT captured here — read live each step so slider takes effect immediately.
+  // _msPerMove() also enforces the floor: can't animate slower than level gravity.
   const execOne=(move)=>{
     if(!cur)return;
     const rot=cur.rot||0;
@@ -4406,13 +4507,15 @@ function _animatePlacement(p, bestIdx){
   };
 
   let idx=0;
-  const step=()=>{
-    if(dead||paused||clearAnimating||!cur){ clearTimeout(_autoIv); return; }
-    if(idx>=path.length){ lock(); return; }
+  // Expose step globally so setAutoSpeed can kill the sleeping timer and
+  // rearm immediately at the new speed — this is what makes live drag work.
+  _animStep = ()=>{
+    if(dead||paused||clearAnimating||!cur){ clearTimeout(_autoIv); _animStep=null; return; }
+    if(idx>=path.length){ _animStep=null; lock(); return; }
     execOne(path[idx++]);
-    _autoIv=setTimeout(step, msPerMove);
+    _autoIv = setTimeout(_animStep, _execTickMs());
   };
-  _autoIv=setTimeout(step, msPerMove);
+  _autoIv = setTimeout(_animStep, _execTickMs());
 }
 
 function lock(){
@@ -4656,19 +4759,24 @@ function rot(d){
   cur.c=nextCells.map(r=>[...r]); cur.rot=nextRot; cx=newCx;
   playerHasMoved=true; moveStartTime=AT;
   if(!_tipChoiceUsed) _tipMoveCount++;
-  sndRotate(); calcPlacements(); scheduleDrop();
+  sndRotate(); calcPlacements(); // gravity deadline unchanged by rotation
 }
 function mhz(d){
   if(dead||paused||clearAnimating||!cur)return;
   if(!isOk(cur.c,cx+d,cy))return;
   cx+=d;playerHasMoved=true;moveStartTime=AT;
   if(!_tipChoiceUsed) _tipMoveCount++;
-  sndMove();calcPlacements();scheduleDrop();
+  sndMove();calcPlacements(); // gravity deadline unchanged by lateral move
 }
 let _softDropRows=0; // rows soft-dropped this piece — logged at lock
 function sdrop(){
   if(dead||paused||clearAnimating||!cur)return;
-  if(isOk(cur.c,cx,cy+1)){cy++;score++;_softDropRows++;sndSoftDrop();document.getElementById('sv').textContent=score;scheduleDrop();}
+  if(isOk(cur.c,cx,cy+1)){
+    cy++;score++;_softDropRows++;sndSoftDrop();document.getElementById('sv').textContent=score;
+    // Soft drop: extend deadline by one gravity interval so piece doesn't double-drop
+    const nesMs=NES_SP[Math.min(level-1,NES_SP.length-1)];
+    _dropDeadline=performance.now()+nesMs;
+  }
 }
 function hdrop(){
   if(dead||paused||clearAnimating||!cur)return;
@@ -4679,24 +4787,50 @@ function hdrop(){
 }
 
 // ─── TIMERS ──────────────────────────────────────────────────────────────────
-function scheduleDrop(){
-  clearInterval(dropIv); if(dead)return;
-  // Autoplay: no gravity — the robot controls all piece movement via _executePath.
-  // Gravity only applies to human players.
-  if(AUTO_PLAY) return;
-  const nesMs = NES_SP[Math.min(level-1,NES_SP.length-1)];
-  dropIv=setInterval(()=>{
-    if(paused||dead||clearAnimating||!cur)return;
-    if(isOk(cur.c,cx,cy+1))cy++;
-    else{stopDrop();lock();}
-  },nesMs);
+// Deadline-based gravity — movement never resets the drop clock.
+// _dropDeadline: absolute ms when next gravity step fires (performance.now() based).
+let _dropDeadline = 0;
+let _dropRafId = null;
+
+function _gravStep(){
+  _dropRafId = null;
+  if(paused||dead||clearAnimating||!cur||AUTO_PLAY) return;
+  const now = performance.now();
+  if(now < _dropDeadline){
+    // Not yet — rearm for exact deadline
+    const wait = _dropDeadline - now;
+    _dropRafId = setTimeout(_gravStep, wait);
+    return;
+  }
+  // Fire gravity
+  if(isOk(cur.c, cx, cy+1)){
+    cy++;
+    const nesMs = NES_SP[Math.min(level-1, NES_SP.length-1)];
+    _dropDeadline = now + nesMs;
+    _dropRafId = setTimeout(_gravStep, nesMs);
+  } else {
+    stopDrop();
+    lock();
+  }
 }
-function stopDrop(){clearInterval(dropIv);}
+
+function scheduleDrop(){
+  stopDrop();
+  if(dead||AUTO_PLAY) return;
+  const nesMs = NES_SP[Math.min(level-1, NES_SP.length-1)];
+  _dropDeadline = performance.now() + nesMs;
+  _dropRafId = setTimeout(_gravStep, nesMs);
+}
+
+function stopDrop(){
+  if(_dropRafId !== null){ clearTimeout(_dropRafId); _dropRafId = null; }
+}
 
 // ── Auto-play animation ───────────────────────────────────────────────────────
 // Starts immediately on spawn. Executes: rotate → strafe → drop.
 // Player can interrupt at any time by tapping a button (stopSelTimer cancels).
 let _autoIv=null;
+let _animStep=null;  // reference to current animation step fn — cleared when done
 let _autoPhase=null; // {targetIdx, targetX, targetRot, isSlide, steps:[]}
 
 function startSelTimer(){
@@ -4735,8 +4869,9 @@ function startSelTimer(){
 
 function stopSelTimer(){
   clearInterval(selIv);
-  clearInterval(_autoIv);
+  clearTimeout(_autoIv);
   _autoIv=null;
+  _animStep=null;
   _autoPhase=null;
 }
 
@@ -4833,36 +4968,37 @@ function _applyMove(pieceKey, move){
     else if(move==='U'){ if(cy>0&&isOk(cur.c,cx,cy-1)) cy--; }
 }
 
-function _executePath(pieceKey, path, msPerMove, onDone){
+function _execTickMs(){
+  // Live read — called every step so slider drag takes immediate effect.
+  const sp = AUTO_SPEED;
+  return sp >= 9 ? 16 : Math.max(16, Math.round(160-(sp-1)*14));
+}
+
+function _execStepsPerTick(){
+  const sp = AUTO_SPEED;
+  return sp >= 10.9 ? 12
+       : sp >= 10.5 ?  8
+       : sp >= 10   ?  4
+       : sp >=  9   ?  2
+       :               1;
+}
+
+function _executePath(pieceKey, path, _msPerMoveIgnored, onDone){
+  // _msPerMoveIgnored: old callers pass a captured value — we ignore it.
+  // Speed is read live from AUTO_SPEED every tick via _execTickMs().
   clearTimeout(_autoIv); _autoIv=null;
   let idx=0;
 
-  // Steps-per-tick: at high speeds batch multiple moves per timer callback
-  // so the animation compresses to just a few visible frames.
-  // Speed 1-8:    1 step/tick (full per-block animation)
-  // Speed 9:      2 steps/tick
-  // Speed 10:     4 steps/tick
-  // Speed 10.5+:  8 steps/tick
-  // Speed 10.99: 12 steps/tick
-  const sp = AUTO_SPEED;
-  const stepsPerTick = sp >= 10.9 ? 12
-                     : sp >= 10.5 ?  8
-                     : sp >= 10   ?  4
-                     : sp >=  9   ?  2
-                     :               1;
-  // At speed 9+, use a fixed ~16ms tick (one frame) regardless of msPerMove
-  const tickMs = sp >= 9 ? 16 : msPerMove;
-
-  const step=()=>{
-    if(dead||paused||clearAnimating||!cur){ clearTimeout(_autoIv); return; }
-    // Apply stepsPerTick moves in one callback (invisible intermediate states)
-    for(let s=0; s<stepsPerTick && idx<path.length; s++){
+  _animStep = ()=>{
+    if(dead||paused||clearAnimating||!cur){ clearTimeout(_autoIv); _animStep=null; return; }
+    const spt = _execStepsPerTick();
+    for(let s=0; s<spt && idx<path.length; s++){
       _applyMove(pieceKey, path[idx++]);
     }
-    if(idx>=path.length){ onDone(); return; }
-    _autoIv=setTimeout(step, tickMs);
+    if(idx>=path.length){ _animStep=null; onDone(); return; }
+    _autoIv = setTimeout(_animStep, _execTickMs());
   };
-  _autoIv=setTimeout(step, tickMs);
+  _autoIv = setTimeout(_animStep, _execTickMs());
 }
 
 function _navigateAndLock(pieceKey, targetP, msPerMove){
@@ -4892,9 +5028,8 @@ function _animatePlacement(p, _bestIdx){
   clearTimeout(_autoIv); _autoIv=null;
   selectedPlacementIdx = _bestIdx; // highlight chosen slot; fade others
   _navStartT = AT;
-  const pieceKey  = cur.k||'I';
-  const msPerMove = Math.max(16, Math.round(160-(AUTO_SPEED-1)*14));
-  _navigateAndLock(pieceKey, p, msPerMove);
+  const pieceKey = cur.k||'I';
+  _navigateAndLock(pieceKey, p, 0); // speed ignored — _executePath reads live
 }
 
 function _startAutoPlay(){
@@ -4965,13 +5100,47 @@ function toggleAutoPlay(){
   }
 }
 
+// Returns the current animation ms-per-move, clamped so it never exceeds
+// the level's gravity interval (can't animate slower than the piece would fall).
+// This is the single source of truth — read live every step.
+function _msPerMove(){
+  const sliderMs = Math.max(16, Math.round(160 - (AUTO_SPEED - 1) * 14));
+  // Level gravity interval — one row per this many ms
+  const gravMs   = NES_SP[Math.min(level - 1, NES_SP.length - 1)];
+  // Animation per-move can't be slower than gravity — enforces anti-cheat floor
+  return Math.min(sliderMs, gravMs);
+}
+
 function setAutoSpeed(v){
+  const prev = AUTO_SPEED;
   AUTO_SPEED = Math.min(11.0, Math.max(1.0, parseFloat(v)));
+
+  // Anti-cheat: if new slider value would animate slower than gravity,
+  // nudge AUTO_SPEED up until _msPerMove() would be at or below gravMs.
+  const gravMs = NES_SP[Math.min(level - 1, NES_SP.length - 1)];
+  if(_msPerMove() > gravMs){
+    // Binary-search the minimum AUTO_SPEED that satisfies the floor
+    let lo = AUTO_SPEED, hi = 11.0;
+    for(let i=0;i<20;i++){
+      const mid=(lo+hi)/2;
+      AUTO_SPEED=mid;
+      if(_msPerMove()<=gravMs) hi=mid; else lo=mid;
+    }
+    AUTO_SPEED = hi; // safe side
+  }
+
   // Display: floor so "2" only shows once fully in that band; 11.0 shows as "11"
-  const displayVal = AUTO_SPEED >= 11 ? '11🔊' : String(Math.floor(AUTO_SPEED));
+  const displayVal = AUTO_SPEED >= 11 ? '11🔊' : AUTO_SPEED.toFixed(2);
   const el=document.getElementById('ap-speed-val');
   if(el) el.textContent = displayVal;
-  // Speed is animation-only — no scheduleDrop needed
+
+  // If an animation step is currently sleeping, cancel it and rearm NOW
+  // so the new speed takes effect on the very next move, not after the old
+  // timer would have fired.
+  if(_animStep && _autoIv !== null){
+    clearTimeout(_autoIv);
+    _autoIv = setTimeout(_animStep, _execTickMs());
+  }
 }
 
 function _syncAutoUI(){
@@ -5016,10 +5185,7 @@ function updateTBDisplay(){
 }
 
 function fanfare(tetrisPoints){
-  // board shake only
-  const sw=document.getElementById('sw');
-  // (shake animation removed — canvas handles visual feedback)
-
+  triggerShake(11, 420); // Tetris shake: 11px amplitude, 420ms duration
   tetrisStreak++;
 
   // Collect both pots into score NOW (before adding next virtual credit)
