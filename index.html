@@ -622,7 +622,7 @@ function draw(ts){
 const MARQUEE_MESSAGES = [
   'TAP THIS SCROLLING MESSAGE TO PAUSE IT!',
   ' CELLTOWER  v'+VERSION,
-  'THE HIGH  TOWER  DISTRICT',
+  'THE  CELLTOWER  DISTRICT',
   'TAP A PIECE OR GHOST ON BOARD TO PLACE INSTANTLY',
   ' FRESNO  559-485-9050  ',
   'NO HOLES = BIGGER BONUS  ',
@@ -2859,6 +2859,10 @@ function checkNoHoleBonus(){
   const newScoringHoles=countScoringHoles(board);
   const prevScoringHoles=currentScoringHoles;
 
+  // Track longest run WITH holes (dirty run) and perfect-game flag
+  if(newScoringHoles>0){ _dirtyRun++; if(_dirtyRun>_dirtyBest) _dirtyBest=_dirtyRun; _neverHoled=false; }
+  else { _dirtyRun=0; }
+
   if(newScoringHoles>prevScoringHoles){
     // Scoring holes increased — reset piecePot and hole-free run
     if(piecePot>0||wasHoleFree) sndBonusReset();
@@ -3001,6 +3005,9 @@ function checkTowers(){
 // hfBest  : longest hfRun achieved in current game
 // hfAllTime: longest run ever across all games (persists like hi)
 let hfRun=0, hfBest=0, hfAllTime=0, _gamesPlayed=0;
+let _tetrisLines=0;
+let _dirtyRun=0, _dirtyBest=0;
+let _neverHoled=true; // stayed hole-free the entire game so far // longest run of pieces placed WITH holes present // lines cleared in 4-at-a-time Tetrises
 // cur,cx,cy,nxt declared at top
 var dropIv,selIv,timerMax,timerLeft; // placements declared at top
 let allCands=[],shownFootprints=new Set(),_candCursor=0;
@@ -4189,7 +4196,7 @@ function slideAdjustedBonus(cells,x,gy,dist){
 // fresh=true resets the "already shown" set (called on new piece spawn).
 function calcPlacements(fresh=false){
   if(!cur)return;
-  if(fresh){shownFootprints=new Set();_candCursor=0;playerHasMoved=false;moveStartTime=0;_softDropRows=0;}
+  if(fresh){shownFootprints=new Set();_candCursor=0;playerHasMoved=false;moveStartTime=0}
   else{_candCursor=0;shownFootprints=new Set();}  // also reset cursor on re-calc after move
 
   // PROOF MODE: show normal AI options but mark the correct one yellow
@@ -4576,10 +4583,6 @@ function lock(){
   for(let r=ROWS-1;r>=0;r--)if(board[r].every(v=>v))completeRows.push(r);
 
   if(completeRows.length===0){
-    if(_softDropRows>0){
-      txScore('soft-drop',_softDropRows,[{label:'Soft drop rows',value:_softDropRows}]);
-      _softDropRows=0;
-    }
     piecesPlaced++;
     addScore(0);
     rebuildGapList();
@@ -4600,10 +4603,6 @@ function lock(){
     };
 
     const _afterClear = (cleared) => {
-      if(_softDropRows>0){
-        txScore('soft-drop',_softDropRows,[{label:'Soft drop rows',value:_softDropRows}]);
-        _softDropRows=0;
-      }
       piecesPlaced++;
       addScore(cleared);
       rebuildGapList();
@@ -4784,11 +4783,10 @@ function mhz(d){
   if(!_tipChoiceUsed) _tipMoveCount++;
   sndMove();calcPlacements(); // gravity deadline unchanged by lateral move
 }
-let _softDropRows=0; // rows soft-dropped this piece — logged at lock
 function sdrop(){
   if(dead||paused||clearAnimating||!cur)return;
   if(isOk(cur.c,cx,cy+1)){
-    cy++;score++;_softDropRows++;sndSoftDrop();document.getElementById('sv').textContent=score;
+    cy++;sndSoftDrop();
     // Soft drop: extend deadline by one gravity interval so piece doesn't double-drop
     const nesMs=NES_SP[Math.min(level-1,NES_SP.length-1)];
     _dropDeadline=performance.now()+nesMs;
@@ -4860,7 +4858,9 @@ function startSelTimer(){
   selIv=setInterval(()=>{
     if(paused||dead||clearAnimating)return;
     timerLeft-=100;
-    if(timerLeft<=0){ stopSelTimer(); if(!dead&&!clearAnimating) autoChooseBest(); }
+    // Only auto-place on timeout during AUTO_PLAY — in human mode just let the
+    // gravity timer handle piece movement, never force-drop on selection timeout.
+    if(timerLeft<=0){ stopSelTimer(); if(!dead&&!clearAnimating&&AUTO_PLAY) autoChooseBest(); }
   },100);
 
   // Initial delay: 500ms at speed 1, 0ms at speed 11
@@ -5217,6 +5217,7 @@ function updateTBDisplay(){
 function fanfare(tetrisPoints){
   triggerShake(11, 420); // Tetris shake: 11px amplitude, 420ms duration
   tetrisStreak++;
+  _tetrisLines += 4; // track lines cleared via Tetris for receipt %
 
   // Collect both pots into score NOW (before adding next virtual credit)
   const collected = piecePot + tetrisPot;
@@ -5263,6 +5264,8 @@ function fanfare(tetrisPoints){
 function triggerDead(){
   dead=true;stopDrop();stopSelTimer();
   sndGameOver();
+  // Finalize hole-free run — if player died still hole-free, that run counts
+  if(hfRun > hfBest) hfBest = hfRun;
   // Only update high score on human games (no auto used)
   if(!autoUsed && score>hi){
     hi=score;
@@ -5307,7 +5310,7 @@ function init(){
   piecePot=0;tetrisPot=0;piecesPlaced=0;_lastScoringHoleCheck=false;_p10Log=[];
   tetrisStreak=0;tetrisMultiplier=1;
   currentScoringHoles=0;scoringDisabledSound=false;
-  hfRun=0;hfBest=0;
+  hfRun=0;hfBest=0;_tetrisLines=0;_dirtyRun=0;_dirtyBest=0;_neverHoled=true;
   _towerSeverity=0;
   autoUsed = AUTO_PLAY;
   _gamePauseCount=0; _gamePauseStartT=0; _gameTotalPauseMs=0;
@@ -5604,7 +5607,6 @@ function _txSection(evType) {
   if (evType === 'super-clear')        return 'SUPER BONUS';
   if (evType.startsWith('line-'))      return 'LINE CLEAR AWARDS';
   if (evType === 'tetris')             return 'TETRIS BONUS';
-  if (evType === 'soft-drop')          return 'MISC';
   return 'MISC';
 }
 
@@ -5625,7 +5627,7 @@ function buildReceiptDOM() {
 
   // \u2500\u2500 HEADER \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
   SP(10);
-  L(center('\x01 THE HIGH \x02 TOWER \x03 DISTRICT \x01'), {inv:true, bold:true});
+  L(center('\x01 THE \x02 CELLTOWER \x03 DISTRICT \x01'), {inv:true, bold:true});
   SP(2);
   L(center('777 OLIVE AVE'));
   L(center('FRESNO  CA  93728'));
@@ -5713,16 +5715,20 @@ function buildReceiptDOM() {
   L(dmRow('  LINES CLEARED',   String(lines)));
   L(dmRow('  LEVEL REACHED',   String(level)));
   L(dmRow('  PIECES PLACED',   String(piecesPlaced)));
-  L(dmRow('  BEST CLEAN RUN',  hfBest > 0 ? hfBest+'CS' : '0CS'));
-  L(dmRow('  HOLE FREE RUN',   currentScoringHoles===0 ? 'YES' : 'NO'));
-  HR('-');
-  const untracked = score - txRunningTotal;
-  if(untracked > 0){
-    L(dmRow('  SUBTOTAL (LOGGED)', fmtAmt(txRunningTotal)));
-    L(dmRow('  SOFT DROP BONUS',   '+'+untracked));
+  // Hole-free run display — optimistic framing
+  if(_neverHoled && piecesPlaced > 0){
+    // Perfect game — never created a hole
+    L(dmRow('  HOLE-FREE STREAK', 'PERFECT GAME! '+piecesPlaced+'CS'), {bold:true});
+  } else if(hfBest >= piecesPlaced && piecesPlaced > 0 && currentScoringHoles===0){
+    // Died hole-free (crash-out while clean — last hole was before final lines)
+    L(dmRow('  HOLE-FREE STREAK', piecesPlaced+'CS  CLEAN EXIT!'));
   } else {
-    L(dmRow('  SUBTOTAL', score.toLocaleString()));
+    L(dmRow('  HOLE-FREE STREAK', hfBest > 0 ? hfBest+'CS' : '0'));
   }
+  const _tetrisPct = lines > 0 ? Math.round(_tetrisLines / lines * 100) : 0;
+  L(dmRow('  TETRIS %',        _tetrisPct+'%  ('+_tetrisLines+' of '+lines+' lines)'));
+  HR('-');
+  L(dmRow('  SUBTOTAL', score.toLocaleString()));
   L(dmRow('  TAX / FEES',      'N/A'));
   HR('=');
   SP(2);
@@ -5733,9 +5739,9 @@ function buildReceiptDOM() {
   SP(6);
 
   // \u2500\u2500 FOOTER \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-  L(center('"Get high at the Tower"'));
+  L(center('"Building CellTowers in the Tower District"'));
   SP(2);
-  L(center('-- THC Magazine *'));
+  L(center('-- Tower District Design Review Board *'));
   SP(6);
 
   // Scrolling-pause footnote
@@ -5795,11 +5801,11 @@ function buildReceiptDOM() {
   }
 
   HR('-');
-  L('  * THC MAGAZINE IS A WHOLLY');
-  L('    FICTITIOUS PUBLICATION.');
-  L('    ANY RESEMBLANCE TO ACTUAL');
-  L('    PERIODICALS IS COINCIDENTAL');
-  L('    AND PROBABLY DOPE.');
+  L('  * TOWER DISTRICT DESIGN REVIEW');
+  L('    BOARD DISCLAIMER: THIS CELL');
+  L('    TOWER IS CLAD IN STUCCO-OVER-');
+  L('    FOAM AND WE ARE NOT OK WITH IT.');
+  L('    VENICE & OLIVE. YOU KNOW WHY.');
   HR('-');
   SP(4);
   L(center('PRODUCED BY'));
@@ -5838,7 +5844,6 @@ function _txDesc(tx) {
   if (e === 'line-3-blocked') return '3-LINE BLOCKED';
   if (e === 'tetris')       return 'TETRIS! 4-LINE BONUS';
   if (e === 'super-clear')  return 'PERFECT CLEAR: 20,490';
-  if (e === 'soft-drop')    return 'SOFT DROP (' + (tx.breakdown&&tx.breakdown[0]?tx.breakdown[0].value:tx.amount) + ' ROWS)';
   return tx.desc || e.toUpperCase();
 }
 
