@@ -2433,8 +2433,12 @@ let _chainPromise = Promise.resolve(); // serial update queue
 let _seedBytes    = null;            // Uint8Array(16), fixed per game
 let _stripeBytes  = null;            // Uint8Array(50): seed+hash+count, render cache
 let _spawnT       = 0;               // performance.now() when current piece spawned
+let _gameHistory  = [];              // [{k}] one entry per locked piece, oldest first
 
 const _BASE40 = '0123456789ABCDEFGHJKLMNPQRSTUVWXYZ!?+@#%';
+const _PIECE_STRIPE_COLORS = {
+  'I':'#00ffff','O':'#ffee00','T':'#cc44ff','S':'#00ee44','Z':'#ff3333','J':'#4466ff','L':'#ff8800'
+};
 
 function _bytesToBase40(b) {
   let v = (((b[0]<<24)|(b[1]<<16)|(b[2]<<8)|b[3])>>>0) % 102400000; // Uint32 → mod 40^5
@@ -2444,6 +2448,7 @@ function _bytesToBase40(b) {
 }
 
 async function _advanceHashChain(k, rot, x, spawnT) {
+  _gameHistory.push({k});
   const PIECE_ORDER = ['I','O','T','S','Z','J','L'];
   const ms = Math.min(65535, Math.round(performance.now() - spawnT));
   const rec = new Uint8Array([
@@ -2469,17 +2474,46 @@ async function _advanceHashChain(k, rot, x, spawnT) {
 }
 
 function drawVerificationStripe(gx, gy, gw, gh) {
-  if (!_stripeBytes) return;
-  const W = 3;
-  const sx = gx + gw + 1;
-  const blockH = gh / _stripeBytes.length;
-  CTX.save();
-  for (let i = 0; i < _stripeBytes.length; i++) {
-    const hue = Math.round(_stripeBytes[i] * 360 / 256);
-    const lit  = i < 16 ? 45 : i < 48 ? 52 : 62;
-    CTX.fillStyle = `hsl(${hue},88%,${lit}%)`;
-    CTX.fillRect(sx, gy + i * blockH, W, Math.ceil(blockH));
+  // History tape: fills bottom-to-top, one bar per piece placed.
+  // Three phases as space is consumed — readable → medium → compact.
+  // Phase 1: 8px wide, 4px/record (NES piece colors, clearly legible)
+  // Phase 2: 5px wide, 2px/record (same colors, denser — same data, compressed)
+  // Phase 3: 4px wide, 1px/record (compact — ~500 more records)
+  const cols = [{w:8,rh:4},{w:5,rh:2},{w:4,rh:1}];
+  const colX = [];
+  let cx = gx + gw + 1;
+  for(let c = 0; c < cols.length; c++){
+    colX.push(cx);
+    cx += cols[c].w + 1;
   }
+
+  const hist = _gameHistory;
+  const n = hist.length;
+
+  CTX.save();
+
+  // Black background across all columns
+  for(let c = 0; c < cols.length; c++){
+    CTX.fillStyle = '#000000';
+    CTX.fillRect(colX[c], gy, cols[c].w, gh);
+  }
+
+  // Distribute records across columns, oldest at bottom
+  let idx = 0;
+  for(let c = 0; c < cols.length; c++){
+    const {w, rh} = cols[c];
+    const cap = Math.floor(gh / rh);
+    const count = Math.min(cap, n - idx);
+    if(count <= 0) break;
+    for(let j = 0; j < count; j++){
+      const color = _PIECE_STRIPE_COLORS[hist[idx + j].k] || '#888888';
+      CTX.fillStyle = color;
+      CTX.fillRect(colX[c], gy + gh - (j + 1) * rh, w, rh);
+    }
+    idx += count;
+    if(idx >= n) break;
+  }
+
   CTX.restore();
 }
 
@@ -5560,7 +5594,7 @@ function init(){
   const _sv = crypto.getRandomValues(new Uint8Array(16));
   _seedBytes = _sv;
   G.gameSeed = Array.from(_sv).map(b=>b.toString(16).padStart(2,'0')).join('');
-  G.hashChain = ''; G.receiptCode = '-----'; _stripeBytes = null; _spawnT = performance.now();
+  G.hashChain = ''; G.receiptCode = '-----'; _stripeBytes = null; _spawnT = performance.now(); _gameHistory = [];
   _chainPromise = crypto.subtle.digest('SHA-256', _sv).then(buf => {
     _hashChainBuf = buf;
     const hb = new Uint8Array(buf);
