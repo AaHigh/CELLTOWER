@@ -2458,8 +2458,8 @@ function _bytesToBase40(b) {
   return s;
 }
 
-async function _advanceHashChain(k, rot, x, spawnT) {
-  _gameHistory.push({k});
+async function _advanceHashChain(k, rot, x, spawnT, slot) {
+  _gameHistory.push({k, slot: slot||0});
   const PIECE_ORDER = ['I','O','T','S','Z','J','L'];
   const ms = Math.min(65535, Math.round(performance.now() - spawnT));
   const rec = new Uint8Array([
@@ -2484,12 +2484,19 @@ async function _advanceHashChain(k, rot, x, spawnT) {
   _stripeBytes = sb;
 }
 
+// Horizontal x-offsets for 1–4 dots spread evenly within a block of given width.
+function _dotXOffsets(n, w) {
+  if(n === 1) return [Math.floor((w - 1) / 2)];
+  const offsets = [];
+  for(let i = 0; i < n; i++) offsets.push(Math.round(i * (w - 1) / (n - 1)));
+  return offsets;
+}
+
 function drawVerificationStripe(gx, gy, gw, gh) {
   // History tape: fills bottom-to-top, one bar per piece placed.
-  // Three phases as space is consumed — readable → medium → compact.
-  // Phase 1: 8px wide, 4px/record (NES piece colors, clearly legible)
-  // Phase 2: 5px wide, 2px/record (same colors, denser — same data, compressed)
-  // Phase 3: 4px wide, 1px/record (compact — ~500 more records)
+  // Phase 1 (8×4): piece-type color + white dot cluster (1–4 dots = choice 1–4)
+  // Phase 2 (5×2): same color + single dot at encoded x position
+  // Phase 3 (4×1): color only — density change signals compression
   const cols = [{w:8,rh:4},{w:5,rh:2},{w:4,rh:1}];
   const colX = [];
   let cx = gx + gw + 1;
@@ -2516,11 +2523,29 @@ function drawVerificationStripe(gx, gy, gw, gh) {
     const cap = Math.floor(gh / rh);
     const count = Math.min(cap, n - idx);
     if(count <= 0) break;
+
     for(let j = 0; j < count; j++){
-      const color = _PIECE_STRIPE_COLORS[hist[idx + j].k] || '#888888';
+      const rec   = hist[idx + j];
+      const color = _PIECE_STRIPE_COLORS[rec.k] || '#888888';
+      const blockY = gy + gh - (j + 1) * rh;
+
+      // Colored background block
       CTX.fillStyle = color;
-      CTX.fillRect(colX[c], gy + gh - (j + 1) * rh, w, rh);
+      CTX.fillRect(colX[c], blockY, w, rh);
+
+      // Choice encoding — dots in phases 1 and 2 only
+      if(rh >= 2){
+        const slot   = rec.slot || 0;     // 0–3
+        const nDots  = slot + 1;          // 1–4 dots
+        const dotY   = blockY + Math.floor(rh / 2); // vertically centered
+        const xOff   = _dotXOffsets(nDots, w);
+        CTX.fillStyle = 'rgba(255,255,255,0.88)';
+        for(const dx of xOff){
+          CTX.fillRect(colX[c] + dx, dotY, 1, 1);
+        }
+      }
     }
+
     idx += count;
     if(idx >= n) break;
   }
@@ -4906,9 +4931,9 @@ function lock(){
     // P10 per-piece warnings suppressed
   }
 
-  const _lk=cur.k, _lr=cur.rot||0, _lx=cx, _lt=_spawnT;
+  const _lk=cur.k, _lr=cur.rot||0, _lx=cx, _lt=_spawnT, _lslot=selectedPlacementIdx!==null?selectedPlacementIdx:0;
   placeOn(board,cur.c,cx,cy,cur.rgb);
-  _chainPromise=_chainPromise.then(()=>_advanceHashChain(_lk,_lr,_lx,_lt));
+  _chainPromise=_chainPromise.then(()=>_advanceHashChain(_lk,_lr,_lx,_lt,_lslot));
   cur=null; // ← hide the piece immediately so it never renders during explosion
   placements=[null,null,null,null]; // ← invalidate stale candidates immediately
   selectedPlacementIdx=null; _navStartT=0; // clear nav state
