@@ -590,7 +590,8 @@ function draw(ts){
       drawControlRow(t);
     }
     if(paused) drawPauseOverlay();
-    if(dead)   drawGameOverOverlay();
+    if(_killScreenActive) drawKillScreen(performance.now());
+    else if(dead) drawGameOverOverlay();
   }
 
   if(_receiptOpen) drawReceiptOverlay(t);
@@ -1803,11 +1804,18 @@ function drawGameOverOverlay(){
   const mx=R.gx+R.gw/2, my=R.gy, bh=R.gh;
   const gw=R.gw;
 
-  // GAME OVER — DM font, red glow
+  // Header — KILL SCREEN or GAME OVER
   const titleH = bh * 0.10;
-  CTX.shadowColor='#ff4444'; CTX.shadowBlur=10;
-  _dmWordLabel(CTX, 'GAME OVER', R.gx+gw*0.05, my+bh*0.06, gw*0.90, titleH, '#ff4444');
-  CTX.shadowBlur=0;
+  if(_wasKillScreen){
+    CTX.shadowColor='#ff0000'; CTX.shadowBlur=14;
+    _dmWordLabel(CTX,'KILL SCREEN',R.gx+gw*0.05,my+bh*0.02,gw*0.90,titleH*0.65,'#ff4444');
+    CTX.shadowBlur=0;
+    _dmWordLabel(CTX,'LVL 20',R.gx+gw*0.05,my+bh*0.085,gw*0.90,titleH*0.55,'#ff8800');
+  } else {
+    CTX.shadowColor='#ff4444'; CTX.shadowBlur=10;
+    _dmWordLabel(CTX, 'GAME OVER', R.gx+gw*0.05, my+bh*0.06, gw*0.90, titleH, '#ff4444');
+    CTX.shadowBlur=0;
+  }
 
   // Score line
   const scoreStr = 'SCORE  ' + score;
@@ -2432,8 +2440,11 @@ let _hashChainBuf = null;            // current Hₙ as ArrayBuffer (32 bytes)
 let _chainPromise = Promise.resolve(); // serial update queue
 let _seedBytes    = null;            // Uint8Array(16), fixed per game
 let _stripeBytes  = null;            // Uint8Array(50): seed+hash+count, render cache
-let _spawnT       = 0;               // performance.now() when current piece spawned
-let _gameHistory  = [];              // [{k}] one entry per locked piece, oldest first
+let _spawnT           = 0;     // performance.now() when current piece spawned
+let _gameHistory      = [];    // [{k}] one entry per locked piece, oldest first
+let _killScreenActive = false; // true during the 2.5s kill screen animation
+let _killScreenT      = 0;     // performance.now() when kill screen started
+let _wasKillScreen    = false; // true if this game ended via kill screen
 
 const _BASE40 = '0123456789ABCDEFGHJKLMNPQRSTUVWXYZ!?+@#%';
 const _PIECE_STRIPE_COLORS = {
@@ -2515,6 +2526,53 @@ function drawVerificationStripe(gx, gy, gw, gh) {
   }
 
   CTX.restore();
+}
+
+function drawKillScreen(ts) {
+  const elapsed = (performance.now() - _killScreenT) / 1000;
+  const gx = R.gx, gy = R.gy, gw = R.gw, gh = R.gh;
+  CTX.save();
+
+  // Board corruption: every cell cycles through rapid rainbow
+  for(let r = 0; r < ROWS; r++){
+    for(let c = 0; c < COLS; c++){
+      const hue  = (r * 37 + c * 71 + elapsed * 220) % 360;
+      const flip = Math.sin(elapsed * 18 + r * 0.9 + c * 1.4) > 0;
+      CTX.fillStyle = `hsl(${hue.toFixed(0)},100%,${flip ? 58 : 38}%)`;
+      CTX.fillRect(gx + c * CELL, gy + r * CELL, CELL, CELL);
+    }
+  }
+
+  // KILL SCREEN text — white, hard red shadow, flash
+  const flash = 0.75 + 0.25 * Math.abs(Math.sin(elapsed * 9));
+  CTX.globalAlpha = Math.min(1, elapsed * 4) * flash;
+  CTX.shadowColor = '#ff0000';
+  CTX.shadowBlur  = CELL * 1.5;
+  CTX.fillStyle   = '#ffffff';
+  CTX.font        = `900 ${Math.round(CELL * 1.35)}px "Arial Black",sans-serif`;
+  CTX.textAlign   = 'center';
+  CTX.textBaseline= 'middle';
+  CTX.fillText('KILL',   gx + gw/2, gy + gh/2 - CELL);
+  CTX.fillText('SCREEN', gx + gw/2, gy + gh/2 + CELL);
+
+  CTX.globalAlpha = 1;
+  CTX.shadowBlur  = 0;
+  CTX.restore();
+}
+
+function _startKillScreen() {
+  if(_killScreenActive || dead) return;
+  _wasKillScreen    = true;
+  _killScreenActive = true;
+  _killScreenT      = performance.now();
+  triggerDead();
+  // Suppress the DOM game-over overlay during animation
+  const gov = document.getElementById('gov');
+  if(gov) gov.style.display = 'none';
+  setTimeout(() => {
+    _killScreenActive = false;
+    if(gov) gov.style.display = 'flex';
+  }, 2500);
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -5027,6 +5085,7 @@ function addScore(cl){
   // NES base line-clear points removed — scoring handled by T-bonus pot fractions
   lines+=cl;
   const nl=Math.floor(lines/10)+1;if(nl>level)level=nl;
+  if(level>=20 && !_killScreenActive && !dead) _startKillScreen();
   document.getElementById('sv').textContent=score;
   document.getElementById('lv').textContent=level;
   document.getElementById('lnv').textContent=lines;
@@ -5595,6 +5654,7 @@ function init(){
   _seedBytes = _sv;
   G.gameSeed = Array.from(_sv).map(b=>b.toString(16).padStart(2,'0')).join('');
   G.hashChain = ''; G.receiptCode = '-----'; _stripeBytes = null; _spawnT = performance.now(); _gameHistory = [];
+  _killScreenActive = false; _wasKillScreen = false;
   _chainPromise = crypto.subtle.digest('SHA-256', _sv).then(buf => {
     _hashChainBuf = buf;
     const hb = new Uint8Array(buf);
