@@ -2499,63 +2499,97 @@ function drawVerificationStripe(gx, gy, gw, gh) {
   if(n === 0) return;
   CTX.save();
 
-  // S is locked to the predicted kill-screen size (90% of ~300 pieces = 270).
-  // Only starts shrinking once n exceeds that, and only over the last ~50 pieces
-  // (one full board fill) — so it's stable for 90% of the game.
-  const perim  = 2 * (gw + gh);
-  const TARGET = 270;  // predicted piece count at 90% of kill screen
-  const S      = Math.max(1, Math.floor(perim / Math.max(n, TARGET)));
-  const dotSz  = Math.max(1, Math.floor(S / 3));
+  // Fixed block size — never changes during a game.
+  // Sized so ~270 pieces fill one lap at kill screen.
+  const perim = 2 * (gw + gh);
+  const S     = Math.max(4, Math.floor(perim / 270));
+  const GAP   = 1;   // 1px black gap between parallel lanes
+  const dotSz = Math.max(1, Math.floor(S / 3));
 
-  // Counter-clockwise routing: right↑ → top← → left↓ → bottom→
-  // nR/nT/nL/nB recomputed from current S so all n pieces fit.
+  // Slots per side for the first lap
   const nR = Math.floor(gh / S);
   const nT = Math.floor(gw / S);
-  const nL = Math.floor(gh / S);
-  const nB = Math.floor(gw / S);
+  const nL = nR;
+  const nB = nT;
+  const firstLap  = nR + nT + nL + nB;
+  const pairSize  = nR + nL;   // one extra right column + one extra left column
 
-  // Black background strips on all four sides
-  CTX.fillStyle = '#000000';
-  CTX.fillRect(gx + gw + 1, gy,      S,  gh);
+  // How many right/left lane columns are needed?
+  let maxRLane = 0, maxLLane = 0;
+  if(n > firstLap) {
+    const rem = n - firstLap;
+    const cp  = Math.floor(rem / pairSize);
+    const wp  = rem % pairSize;
+    if(wp === 0) { maxRLane = cp;     maxLLane = cp; }
+    else if(wp <= nR) { maxRLane = cp + 1; maxLLane = cp; }
+    else              { maxRLane = cp + 1; maxLLane = cp + 1; }
+  }
+
+  // Background strips: right and left expand outward per lane; top/bottom stay 1 lane
+  const rW = (maxRLane + 1) * S + maxRLane * GAP;
+  const lW = (maxLLane + 1) * S + maxLLane * GAP;
+  CTX.fillStyle = '#000';
+  CTX.fillRect(gx + gw + 1, gy,      rW, gh);
   CTX.fillRect(gx,          gy - S,  gw, S);
-  CTX.fillRect(gx - S,      gy,      S,  gh);
+  CTX.fillRect(gx - lW,     gy,      lW, gh);
   CTX.fillRect(gx,          gy + gh, gw, S);
 
   for(let i = 0; i < n; i++){
     const rec   = hist[i];
     const color = _PIECE_STRIPE_COLORS[rec.k] || '#888';
     const slot  = rec.slot || 0;
-    const j     = i;  // no wrapping — all n pieces drawn in one revolution
     let bx, by, dotDx, dotDy;
 
-    if(j < nR){
+    if(i < nR) {
+      // Right lane 0, bottom→top
       bx = gx + gw + 1;
-      by = gy + gh - (j + 1) * S;
+      by = gy + gh - (i + 1) * S;
       dotDx = _dotX(slot, S);
       dotDy = Math.floor((S - dotSz) / 2);
-    } else if(j < nR + nT){
-      const jj = j - nR;
+    } else if(i < nR + nT) {
+      // Top lane 0, right→left
+      const jj = i - nR;
       bx = gx + gw - (jj + 1) * S;
       by = gy - S;
       dotDx = Math.floor((S - dotSz) / 2);
       dotDy = _dotX(slot, S);
-    } else if(j < nR + nT + nL){
-      const jj = j - nR - nT;
+    } else if(i < nR + nT + nL) {
+      // Left lane 0, top→bottom
+      const jj = i - nR - nT;
       bx = gx - S;
       by = gy + jj * S;
       dotDx = _dotX(3 - slot, S);
       dotDy = Math.floor((S - dotSz) / 2);
-    } else {
-      const jj = j - nR - nT - nL;
+    } else if(i < firstLap) {
+      // Bottom lane 0, left→right
+      const jj = i - nR - nT - nL;
       bx = gx + jj * S;
       by = gy + gh;
       dotDx = Math.floor((S - dotSz) / 2);
       dotDy = _dotX(3 - slot, S);
+    } else {
+      // Extra lanes: right col then left col, expanding outward, skipping top/bottom
+      const ei   = i - firstLap;
+      const lane = Math.floor(ei / pairSize) + 1;
+      const wp   = ei % pairSize;
+      const off  = lane * (S + GAP);
+      if(wp < nR) {
+        bx = gx + gw + 1 + off;
+        by = gy + gh - (wp + 1) * S;
+        dotDx = _dotX(slot, S);
+        dotDy = Math.floor((S - dotSz) / 2);
+      } else {
+        const jj = wp - nR;
+        bx = gx - S - off;
+        by = gy + jj * S;
+        dotDx = _dotX(3 - slot, S);
+        dotDy = Math.floor((S - dotSz) / 2);
+      }
     }
 
     CTX.fillStyle = color;
     CTX.fillRect(bx, by, S, S);
-    if(S >= 3){
+    if(S >= 3) {
       CTX.fillStyle = 'rgba(0,0,0,0.85)';
       CTX.fillRect(bx + dotDx, by + dotDy, dotSz, dotSz);
     }
