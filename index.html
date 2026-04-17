@@ -2460,6 +2460,8 @@ function _bytesToBase40(b) {
 
 async function _advanceHashChain(k, rot, x, spawnT, slot) {
   _gameHistory.push({k, slot: slot||0});
+  // AI games have no verifiable input — skip hash chain and leave receipt invalid.
+  if(autoUsed) return;
   const PIECE_ORDER = ['I','O','T','S','Z','J','L'];
   const ms = Math.min(65535, Math.round(performance.now() - spawnT));
   const rec = new Uint8Array([
@@ -2484,9 +2486,9 @@ async function _advanceHashChain(k, rot, x, spawnT, slot) {
   _stripeBytes = sb;
 }
 
-// Single black dot: x position encodes choice 0–3 symmetrically.
-// Outer pair (0,3) are mirrored about center; inner pair (1,2) are mirrored
-// closer to center. Formula gives exact symmetry: pos[i]+pos[3-i] = w-1.
+// Dot position encodes slot 0–3 symmetrically within a block of width w.
+// Outer pair (0,3) and inner pair (1,2) are each mirrored about center.
+// pos[i] + pos[3-i] == w-1 for all i.
 function _dotX(slot, w) {
   return Math.round(slot * (w - 1) / 3);
 }
@@ -2494,100 +2496,68 @@ function _dotX(slot, w) {
 function drawVerificationStripe(gx, gy, gw, gh) {
   const hist = _gameHistory;
   const n    = hist.length;
+  if(n === 0) return;
   CTX.save();
 
-  if(_wasKillScreen && n > 0){
-    // Kill screen mode: tape wraps around the playfield perimeter, one lap.
-    // Block size S computed so n records fill the loop exactly.
-    const perim = 2 * (gw + gh);
-    const S = Math.max(2, Math.floor(perim / n));
+  // S is locked to the predicted kill-screen size (90% of ~300 pieces = 270).
+  // Only starts shrinking once n exceeds that, and only over the last ~50 pieces
+  // (one full board fill) — so it's stable for 90% of the game.
+  const perim  = 2 * (gw + gh);
+  const TARGET = 270;  // predicted piece count at 90% of kill screen
+  const S      = Math.max(1, Math.floor(perim / Math.max(n, TARGET)));
+  const dotSz  = Math.max(1, Math.floor(S / 3));
 
-    // Background strips on all four sides (just outside playfield border)
-    CTX.fillStyle = '#000000';
-    CTX.fillRect(gx + gw + 1, gy,      S,  gh);  // right
-    CTX.fillRect(gx,          gy - S,  gw, S);   // top
-    CTX.fillRect(gx - S,      gy,      S,  gh);  // left
-    CTX.fillRect(gx,          gy + gh, gw, S);   // bottom
+  // Counter-clockwise routing: right↑ → top← → left↓ → bottom→
+  // nR/nT/nL/nB recomputed from current S so all n pieces fit.
+  const nR = Math.floor(gh / S);
+  const nT = Math.floor(gw / S);
+  const nL = Math.floor(gh / S);
+  const nB = Math.floor(gw / S);
 
-    // Path: right↑ → top← → left↓ → bottom→
-    const nR = Math.floor(gh / S);
-    const nT = Math.floor(gw / S);
-    const nL = Math.floor(gh / S);
+  // Black background strips on all four sides
+  CTX.fillStyle = '#000000';
+  CTX.fillRect(gx + gw + 1, gy,      S,  gh);
+  CTX.fillRect(gx,          gy - S,  gw, S);
+  CTX.fillRect(gx - S,      gy,      S,  gh);
+  CTX.fillRect(gx,          gy + gh, gw, S);
 
-    for(let i = 0; i < n; i++){
-      const rec   = hist[i % (nR + nT + nL + Math.floor(gw/S))]; // wrap if overflow
-      const color = _PIECE_STRIPE_COLORS[hist[i].k] || '#888';
-      const slot  = hist[i].slot || 0;
-      let bx, by, dotDx, dotDy;
+  for(let i = 0; i < n; i++){
+    const rec   = hist[i];
+    const color = _PIECE_STRIPE_COLORS[rec.k] || '#888';
+    const slot  = rec.slot || 0;
+    const j     = i;  // no wrapping — all n pieces drawn in one revolution
+    let bx, by, dotDx, dotDy;
 
-      const j = i % (nR + nT + nL + Math.floor(gw/S));
-      if(j < nR){
-        // Right side: bottom → top
-        bx = gx + gw + 1;  by = gy + gh - (j + 1) * S;
-        dotDx = _dotX(slot, S); dotDy = Math.floor(S / 2);
-      } else if(j < nR + nT){
-        // Top: right → left
-        const jj = j - nR;
-        bx = gx + gw - (jj + 1) * S;  by = gy - S;
-        dotDx = Math.floor(S / 2); dotDy = _dotX(slot, S);
-      } else if(j < nR + nT + nL){
-        // Left side: top → bottom
-        const jj = j - nR - nT;
-        bx = gx - S;  by = gy + jj * S;
-        dotDx = _dotX(3 - slot, S); dotDy = Math.floor(S / 2); // mirror x for left side
-      } else {
-        // Bottom: left → right
-        const jj = j - nR - nT - nL;
-        bx = gx + jj * S;  by = gy + gh;
-        dotDx = Math.floor(S / 2); dotDy = _dotX(3 - slot, S); // mirror y for bottom
-      }
-
-      CTX.fillStyle = color;
-      CTX.fillRect(bx, by, S, S);
-      if(S >= 2){
-        CTX.fillStyle = 'rgba(0,0,0,0.75)';
-        CTX.fillRect(bx + dotDx, by + dotDy, 1, 1);
-      }
+    if(j < nR){
+      bx = gx + gw + 1;
+      by = gy + gh - (j + 1) * S;
+      dotDx = _dotX(slot, S);
+      dotDy = Math.floor((S - dotSz) / 2);
+    } else if(j < nR + nT){
+      const jj = j - nR;
+      bx = gx + gw - (jj + 1) * S;
+      by = gy - S;
+      dotDx = Math.floor((S - dotSz) / 2);
+      dotDy = _dotX(slot, S);
+    } else if(j < nR + nT + nL){
+      const jj = j - nR - nT;
+      bx = gx - S;
+      by = gy + jj * S;
+      dotDx = _dotX(3 - slot, S);
+      dotDy = Math.floor((S - dotSz) / 2);
+    } else {
+      const jj = j - nR - nT - nL;
+      bx = gx + jj * S;
+      by = gy + gh;
+      dotDx = Math.floor((S - dotSz) / 2);
+      dotDy = _dotX(3 - slot, S);
     }
 
-  } else {
-    // Normal mode: three phases filling bottom-to-top on the right side.
-    // Phase 1 (8×4): clearly readable colored blocks with dot encoding.
-    // Phase 2 (5×2): denser — same data compressed.
-    // Phase 3 (4×1): color only — density shift signals further compression.
-    const cols = [{w:8,rh:4},{w:5,rh:2},{w:4,rh:1}];
-    const colX = [];
-    let cx = gx + gw + 1;
-    for(let c = 0; c < cols.length; c++){
-      colX.push(cx);
-      cx += cols[c].w + 1;
-    }
-
-    for(let c = 0; c < cols.length; c++){
-      CTX.fillStyle = '#000000';
-      CTX.fillRect(colX[c], gy, cols[c].w, gh);
-    }
-
-    let idx = 0;
-    for(let c = 0; c < cols.length; c++){
-      const {w, rh} = cols[c];
-      const cap   = Math.floor(gh / rh);
-      const count = Math.min(cap, n - idx);
-      if(count <= 0) break;
-
-      for(let j = 0; j < count; j++){
-        const rec    = hist[idx + j];
-        const color  = _PIECE_STRIPE_COLORS[rec.k] || '#888888';
-        const blockY = gy + gh - (j + 1) * rh;
-        CTX.fillStyle = color;
-        CTX.fillRect(colX[c], blockY, w, rh);
-        if(rh >= 2){
-          CTX.fillStyle = 'rgba(0,0,0,0.75)';
-          CTX.fillRect(colX[c] + _dotX(rec.slot || 0, w), blockY + Math.floor(rh / 2), 1, 1);
-        }
-      }
-      idx += count;
-      if(idx >= n) break;
+    CTX.fillStyle = color;
+    CTX.fillRect(bx, by, S, S);
+    if(S >= 3){
+      CTX.fillStyle = 'rgba(0,0,0,0.85)';
+      CTX.fillRect(bx + dotDx, by + dotDy, dotSz, dotSz);
     }
   }
 
@@ -4972,7 +4942,8 @@ function lock(){
     // P10 per-piece warnings suppressed
   }
 
-  const _lk=cur.k, _lr=cur.rot||0, _lx=cx, _lt=_spawnT, _lslot=selectedPlacementIdx!==null?selectedPlacementIdx:0;
+  const _lk=cur.k, _lr=cur.rot||0, _lx=cx, _lt=_spawnT,
+        _lslot=AUTO_PLAY ? (Math.random()*4|0) : (selectedPlacementIdx!==null?selectedPlacementIdx:0);
   placeOn(board,cur.c,cx,cy,cur.rgb);
   _chainPromise=_chainPromise.then(()=>_advanceHashChain(_lk,_lr,_lx,_lt,_lslot));
   cur=null; // ← hide the piece immediately so it never renders during explosion
@@ -5721,14 +5692,15 @@ function init(){
   G.gameSeed = Array.from(_sv).map(b=>b.toString(16).padStart(2,'0')).join('');
   G.hashChain = ''; G.receiptCode = '-----'; _stripeBytes = null; _spawnT = performance.now(); _gameHistory = [];
   _killScreenActive = false; _wasKillScreen = false;
+  autoUsed = AUTO_PLAY;
   _chainPromise = crypto.subtle.digest('SHA-256', _sv).then(buf => {
     _hashChainBuf = buf;
+    if(autoUsed) return;  // AI game — no valid receipt
     const hb = new Uint8Array(buf);
     G.hashChain = Array.from(hb).map(b=>b.toString(16).padStart(2,'0')).join('');
     G.receiptCode = _bytesToBase40(hb);
     const sb = new Uint8Array(50); sb.set(_sv, 0); sb.set(hb, 16); _stripeBytes = sb;
   });
-  autoUsed = AUTO_PLAY;
   _gamePauseCount=0; _gamePauseStartT=0; _gameTotalPauseMs=0;
   _tipMoveCount=0; _tipChoiceUsed=false; _tipShownAt=0; _tipDismissed=false;
   _gamesPlayed++;
