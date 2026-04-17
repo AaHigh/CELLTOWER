@@ -4976,8 +4976,25 @@ function lock(){
     // P10 per-piece warnings suppressed
   }
 
-  const _lk=cur.k, _lr=cur.rot||0, _lx=cx, _lt=_spawnT,
-        _lslot=AUTO_PLAY ? (Math.random()*4|0) : (selectedPlacementIdx!==null?selectedPlacementIdx:0);
+  const _lk=cur.k, _lr=cur.rot||0, _lx=cx, _lt=_spawnT;
+  let _lslot;
+  if(AUTO_PLAY){
+    _lslot = Math.random()*4|0;
+  } else if(selectedPlacementIdx !== null){
+    _lslot = selectedPlacementIdx;
+  } else {
+    // Manual play: find which placement slot the piece actually landed in
+    _lslot = 0;
+    if(placements){
+      let bestDist = Infinity;
+      for(let _si=0; _si<4; _si++){
+        const _sp = placements[_si];
+        if(!_sp) continue;
+        const d = Math.abs(_sp.x - cx);
+        if(d < bestDist){ bestDist = d; _lslot = _si; }
+      }
+    }
+  }
   placeOn(board,cur.c,cx,cy,cur.rgb);
   _chainPromise=_chainPromise.then(()=>_advanceHashChain(_lk,_lr,_lx,_lt,_lslot));
   cur=null; // ← hide the piece immediately so it never renders during explosion
