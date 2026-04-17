@@ -1066,9 +1066,17 @@ function drawNextPiece(t){
 
 function drawPauseBox(t){
   const r = R.rPause;
-  panel(r.x, r.y, r.w, r.h, paused ? C.cyan : C.border);
-  label('PAUSE', r.x, r.y+r.h*0.08, r.w, C.purple, Math.max(7,r.h*0.22));
-  val('⏸', r.x, r.y+r.h*0.65, r.w, paused ? C.cyan : C.white, Math.max(10,r.h*0.35));
+  if(paused){
+    panel(r.x, r.y, r.w, r.h, C.green);
+    const blinkOn = Math.floor(t * 2) % 2 === 0;
+    const resumeColor = blinkOn ? C.green : 'rgba(0,255,136,0.60)';
+    label('RESUME', r.x, r.y+r.h*0.08, r.w, resumeColor, Math.max(7,r.h*0.22));
+    val('▶', r.x, r.y+r.h*0.65, r.w, 'rgba(255,255,255,0.75)', Math.max(10,r.h*0.35));
+  } else {
+    panel(r.x, r.y, r.w, r.h, C.border);
+    label('PAUSE', r.x, r.y+r.h*0.08, r.w, C.purple, Math.max(7,r.h*0.22));
+    val('⏸', r.x, r.y+r.h*0.65, r.w, C.white, Math.max(10,r.h*0.35));
+  }
 }
 
 function drawTBonusBox(t){
@@ -1159,7 +1167,7 @@ function drawPlayfield(t){
   CTX.strokeRect(gx+bw2/2, gy+bw2/2, gw-bw2, gh-bw2);
   CTX.restore();
 
-
+  drawVerificationStripe(gx, gy, gw, gh);
 
   // READY/status text in bottom-left of playfield
 }
@@ -1413,6 +1421,20 @@ function drawPieceRow(t){
   for(let i=0;i<4;i++){
     addHit('piece'+i, r.x + i*(PW2+GAP2), r.y, PW2, r.h);
   }
+
+  // Pre-compute uniform scale: find minimum s across all valid slots so every
+  // piece and orientation renders at the same size regardless of bounding box.
+  let _uniS = Infinity;
+  for(let i=0;i<4;i++){
+    const p2 = placements ? placements[i] : null;
+    if(p2 && cur){
+      const cc2 = p2.c;
+      const s2 = Math.min(Math.floor(PW2*0.65/Math.max(cc2[0].length,4)), Math.floor(r.h*0.65/cc2.length));
+      if(s2 >= 2) _uniS = Math.min(_uniS, s2);
+    }
+  }
+  if(_uniS === Infinity) _uniS = 2;
+
   for(let i=0;i<4;i++){
     const px = r.x + i*(PW2+GAP2);
     const py = r.y;
@@ -1428,7 +1450,7 @@ function drawPieceRow(t){
     const p = placements ? placements[i] : null;
     if(p && cur){
       const cc = p.c;
-      const s = Math.min(Math.floor(PW2*0.65/Math.max(cc[0].length,4)), Math.floor(r.h*0.65/cc.length));
+      const s = _uniS;
       if(s < 2) continue;
 
       const pieceW = cc[0].length * s;
@@ -1691,10 +1713,12 @@ function drawAutoRow(t){
   }
   CTX.shadowBlur = 0;
 
-  // RECEIPT button
+  // RECEIPT button — only interactive when paused or dead
   const RX = r.x + r.w - RECEIPT_W;
-  panel(RX, r.y, RECEIPT_W, r.h, '#aa6600');
-  _dmWordLabel(CTX, 'RECEIPT', RX+2, r.y + r.h*0.12, RECEIPT_W-4, r.h*0.76, '#ffcc44');
+  const receiptAvail = paused || dead || !ui.gameStarted;
+  panel(RX, r.y, RECEIPT_W, r.h, receiptAvail ? '#aa6600' : '#442200');
+  _dmWordLabel(CTX, 'RECEIPT', RX+2, r.y + r.h*0.12, RECEIPT_W-4, r.h*0.76,
+    receiptAvail ? '#ffcc44' : '#664422');
 }
 
 // ── Tip bubble: hints player about faster placement controls ─────────
@@ -1973,7 +1997,7 @@ function handleTap(tx, ty){
     switch(id){
       case 'pause':        if(!dead) togglePause(); break;
       case 'auto_toggle':  toggleAutoPlay(); break; // allow turning OFF
-      case 'receipt':      showReceipt(); break;
+      case 'receipt':      if(paused||dead) showReceipt(); break;
       case 'receipt_close':hideReceipt(); break;
       case 'speed_slider': break; // handled by slider path
       // Everything else (piece0-3, tetris, ctrl_*, canvas) — silently ignored
@@ -1997,7 +2021,7 @@ function handleTap(tx, ty){
     case 'ctrl_left': mhz(-1); break;
     case 'ctrl_right':mhz(1);  break;
     case 'auto_toggle': if(ui.gameStarted&&!dead) toggleAutoPlay(); break;
-    case 'receipt':        showReceipt(); break;
+    case 'receipt':        if(paused||dead||!ui.gameStarted) showReceipt(); break;
     case 'receipt_close':  hideReceipt(); break;
     case 'speed_slider': break;
     default:
@@ -2241,6 +2265,223 @@ window.addEventListener('unhandledrejection',function(e){ e.preventDefault(); })
     return _origQS(sel) || makeStub(sel);
   };
 })();
+
+// ══════════════════════════════════════════════════════════════════════
+// G — CONSOLIDATED STATE (Phase 1: live aliases via getters/setters)
+// Every property mirrors an existing global via closure.
+// JSON.stringify(G.snapshot()) produces a hashable board state.
+// See rewrite.md for full migration plan.
+// ══════════════════════════════════════════════════════════════════════
+const G = (() => {
+  const g = {};
+  function def(obj, key, get, set) {
+    Object.defineProperty(obj, key, { get, set, enumerable: true, configurable: true });
+  }
+
+  // ── Core game state ───────────────────────────────────────────────
+  def(g,'board',   ()=>board,   v=>{board=v;});
+  def(g,'cur',     ()=>cur,     v=>{cur=v;});
+  def(g,'cx',      ()=>cx,      v=>{cx=v;});
+  def(g,'cy',      ()=>cy,      v=>{cy=v;});
+  def(g,'nxt',     ()=>nxt,     v=>{nxt=v;});
+  def(g,'score',   ()=>score,   v=>{score=v;});
+  def(g,'level',   ()=>level,   v=>{level=v;});
+  def(g,'lines',   ()=>lines,   v=>{lines=v;});
+  def(g,'hi',      ()=>hi,      v=>{hi=v;});
+  def(g,'dead',    ()=>dead,    v=>{dead=v;});
+  def(g,'paused',  ()=>paused,  v=>{paused=v;});
+
+  // ── Scoring / bonus state ─────────────────────────────────────────
+  def(g,'piecePot',             ()=>piecePot,              v=>{piecePot=v;});
+  def(g,'tetrisPot',            ()=>tetrisPot,             v=>{tetrisPot=v;});
+  def(g,'piecesPlaced',         ()=>piecesPlaced,          v=>{piecesPlaced=v;});
+  def(g,'tetrisStreak',         ()=>tetrisStreak,          v=>{tetrisStreak=v;});
+  def(g,'tetrisMultiplier',     ()=>tetrisMultiplier,      v=>{tetrisMultiplier=v;});
+  def(g,'currentScoringHoles',  ()=>currentScoringHoles,   v=>{currentScoringHoles=v;});
+  def(g,'scoringDisabledSound', ()=>scoringDisabledSound,  v=>{scoringDisabledSound=v;});
+  def(g,'hfRun',                ()=>hfRun,                 v=>{hfRun=v;});
+  def(g,'hfBest',               ()=>hfBest,                v=>{hfBest=v;});
+  def(g,'hfAllTime',            ()=>hfAllTime,             v=>{hfAllTime=v;});
+  def(g,'neverHoled',           ()=>_neverHoled,           v=>{_neverHoled=v;});
+  def(g,'tetrisLines',          ()=>_tetrisLines,          v=>{_tetrisLines=v;});
+  def(g,'dirtyRun',             ()=>_dirtyRun,             v=>{_dirtyRun=v;});
+  def(g,'dirtyBest',            ()=>_dirtyBest,            v=>{_dirtyBest=v;});
+  def(g,'towerSeverity',        ()=>_towerSeverity,        v=>{_towerSeverity=v;});
+  def(g,'lastScoringHoleCheck', ()=>_lastScoringHoleCheck, v=>{_lastScoringHoleCheck=v;});
+
+  // ── AI / placement state ──────────────────────────────────────────
+  def(g,'placements',       ()=>placements,           v=>{placements=v;});
+  def(g,'allCands',         ()=>allCands,             v=>{allCands=v;});
+  def(g,'shownFp',          ()=>shownFootprints,      v=>{shownFootprints=v;});
+  def(g,'candCursor',       ()=>_candCursor,          v=>{_candCursor=v;});
+  def(g,'selectedIdx',      ()=>selectedPlacementIdx, v=>{selectedPlacementIdx=v;});
+  def(g,'navStartT',        ()=>_navStartT,           v=>{_navStartT=v;});
+  def(g,'playerHasMoved',   ()=>playerHasMoved,       v=>{playerHasMoved=v;});
+  def(g,'moveStartT',       ()=>moveStartTime,        v=>{moveStartTime=v;});
+  def(g,'labelPositions',   ()=>labelPositions,       v=>{labelPositions=v;});
+  def(g,'gapList',          ()=>gapList,              v=>{gapList=v;});
+  def(g,'tetrisPrepCol',    ()=>tetrisPrepCol,        v=>{tetrisPrepCol=v;});
+  def(g,'tetrisPrepActive', ()=>tetrisPrepActive,     v=>{tetrisPrepActive=v;});
+
+  // ── Autoplay state ────────────────────────────────────────────────
+  def(g,'autoPlay',  ()=>AUTO_PLAY,  v=>{AUTO_PLAY=v;});
+  def(g,'autoSpeed', ()=>AUTO_SPEED, v=>{AUTO_SPEED=v;});
+  def(g,'autoUsed',  ()=>autoUsed,   v=>{autoUsed=v;});
+
+  // ── Puzzle state ──────────────────────────────────────────────────
+  const puz = {};
+  def(puz,'queue',      ()=>puzzleQueue,              v=>{puzzleQueue=v;});
+  def(puz,'targets',    ()=>puzzleTargets,            v=>{puzzleTargets=v;});
+  def(puz,'active',     ()=>puzzleActive,             v=>{puzzleActive=v;});
+  def(puz,'wellCol',    ()=>puzzleWellCol,            v=>{puzzleWellCol=v;});
+  def(puz,'correctFp',  ()=>window._proofCorrectFp,  v=>{window._proofCorrectFp=v;});
+  def(puz,'correctCand',()=>window._proofCorrectCand,v=>{window._proofCorrectCand=v;});
+  g.puzzle = puz;
+
+  // ── VFX / visual state (renderer-only, not in hash) ───────────────
+  const vfx = {};
+  def(vfx,'particles',  ()=>particles,      v=>{particles=v;});
+  def(vfx,'exploded',   ()=>explodedCells,  v=>{explodedCells=v;});
+  def(vfx,'clearAnim',  ()=>clearAnimating, v=>{clearAnimating=v;});
+  def(vfx,'shakeT',     ()=>_shakeT,        v=>{_shakeT=v;});
+  def(vfx,'shakeDur',   ()=>_shakeDur,      v=>{_shakeDur=v;});
+  def(vfx,'shakeAmp',   ()=>_shakeAmp,      v=>{_shakeAmp=v;});
+  def(vfx,'shakeField', ()=>_shakeField,    v=>{_shakeField=v;});
+  def(vfx,'shakeHUD',   ()=>_shakeHUD,      v=>{_shakeHUD=v;});
+  g.vfx = vfx;
+
+  // ── Timer handles (cancel-group, not in hash) ─────────────────────
+  // These reference variables declared later in the file — fine at runtime.
+  const tmr = {};
+  def(tmr,'autoIv',       ()=>_autoIv,       v=>{_autoIv=v;});
+  def(tmr,'animStep',     ()=>_animStep,     v=>{_animStep=v;});
+  def(tmr,'animArmT',     ()=>_animArmT,     v=>{_animArmT=v;});
+  def(tmr,'animArmMs',    ()=>_animArmMs,    v=>{_animArmMs=v;});
+  def(tmr,'autoPhase',    ()=>_autoPhase,    v=>{_autoPhase=v;});
+  def(tmr,'dropDeadline', ()=>_dropDeadline, v=>{_dropDeadline=v;});
+  def(tmr,'dropRafId',    ()=>_dropRafId,    v=>{_dropRafId=v;});
+  def(tmr,'selIv',        ()=>selIv,         v=>{selIv=v;});
+  def(tmr,'txDrainTO',    ()=>_txDrainTO,    v=>{_txDrainTO=v;});
+  def(tmr,'txRAF',        ()=>_txRAF,        v=>{_txRAF=v;});
+  g.timers = tmr;
+
+  // ── Session / meta state ──────────────────────────────────────────
+  const meta = {};
+  def(meta,'gamesPlayed', ()=>_gamesPlayed,      v=>{_gamesPlayed=v;});
+  def(meta,'pauseCount',  ()=>_gamePauseCount,   v=>{_gamePauseCount=v;});
+  def(meta,'pauseStartT', ()=>_gamePauseStartT,  v=>{_gamePauseStartT=v;});
+  def(meta,'totalPauseMs',()=>_gameTotalPauseMs, v=>{_gameTotalPauseMs=v;});
+  def(meta,'p10Log',      ()=>_p10Log,           v=>{_p10Log=v;});
+  g.meta = meta;
+
+  // ── Transaction log ───────────────────────────────────────────────
+  // txLog / txRunningTotal declared later in file — getters are runtime-only, fine.
+  const tx = {};
+  def(tx,'log',          ()=>txLog,          v=>{txLog=v;});
+  def(tx,'runningTotal', ()=>txRunningTotal, v=>{txRunningTotal=v;});
+  g.tx = tx;
+
+  // ── Marquee state ─────────────────────────────────────────────────
+  const mq = {};
+  def(mq,'offset',      ()=>_mqOffset,      v=>{_mqOffset=v;});
+  def(mq,'userPaused',  ()=>_mqUserPaused,  v=>{_mqUserPaused=v;});
+  def(mq,'pauseCount',  ()=>_mqPauseCount,  v=>{_mqPauseCount=v;});
+  def(mq,'pauseStartT', ()=>_mqPauseStartT, v=>{_mqPauseStartT=v;});
+  def(mq,'totalPauseMs',()=>_mqTotalPauseMs,v=>{_mqTotalPauseMs=v;});
+  def(mq,'hueOffset',   ()=>_mqHueOffset,   v=>{_mqHueOffset=v;});
+  def(mq,'lastT',       ()=>_mqLastT,       v=>{_mqLastT=v;});
+  def(mq,'msgIdx',      ()=>_mqMsgIdx,      v=>{_mqMsgIdx=v;});
+  g.marquee = mq;
+
+  // ── Tip bubble state ──────────────────────────────────────────────
+  const tip = {};
+  def(tip,'moveCount',  ()=>_tipMoveCount,  v=>{_tipMoveCount=v;});
+  def(tip,'choiceUsed', ()=>_tipChoiceUsed, v=>{_tipChoiceUsed=v;});
+  def(tip,'shownAt',    ()=>_tipShownAt,    v=>{_tipShownAt=v;});
+  def(tip,'dismissed',  ()=>_tipDismissed,  v=>{_tipDismissed=v;});
+  g.tip = tip;
+
+  // ── UI state (renderer display cache) ────────────────────────────
+  def(g,'ui', ()=>ui, v=>{Object.assign(ui,v);});
+
+  // ── Hash chain state (verification system — new fields) ───────────
+  g.hashChain   = '';      // hex string, updated async after each lock()
+  g.receiptCode = '-----'; // 5-char base-40 live display code
+  g.gameSeed    = '';      // committed before game start, revealed after
+
+  // ── Snapshot — hash-relevant fields only, JSON-serializable ───────
+  g.snapshot = function() {
+    return {
+      board:     board,
+      piece:     cur ? cur.k   : null,
+      rot:       cur ? cur.rot : 0,
+      x:         cx,
+      y:         cy,
+      score:     score,
+      holes:     currentScoringHoles,
+      piecePot:  piecePot,
+      tetrisPot: tetrisPot,
+    };
+  };
+
+  return g;
+})();
+
+// ── Verification chain — module state ────────────────────────────────
+let _hashChainBuf = null;            // current Hₙ as ArrayBuffer (32 bytes)
+let _chainPromise = Promise.resolve(); // serial update queue
+let _seedBytes    = null;            // Uint8Array(16), fixed per game
+let _stripeBytes  = null;            // Uint8Array(50): seed+hash+count, render cache
+let _spawnT       = 0;               // performance.now() when current piece spawned
+
+const _BASE40 = '0123456789ABCDEFGHJKLMNPQRSTUVWXYZ!?+@#%';
+
+function _bytesToBase40(b) {
+  let v = (((b[0]<<24)|(b[1]<<16)|(b[2]<<8)|b[3])>>>0) % 102400000; // Uint32 → mod 40^5
+  let s = '';
+  for(let i=0;i<5;i++){ s=_BASE40[v%40]+s; v=Math.floor(v/40); }
+  return s;
+}
+
+async function _advanceHashChain(k, rot, x, spawnT) {
+  const PIECE_ORDER = ['I','O','T','S','Z','J','L'];
+  const ms = Math.min(65535, Math.round(performance.now() - spawnT));
+  const rec = new Uint8Array([
+    PIECE_ORDER.indexOf(k) & 0xFF,
+    rot & 0xFF,
+    (x + 5) & 0xFF,
+    (ms >> 8) & 0xFF,
+    ms & 0xFF,
+  ]);
+  const prev = new Uint8Array(_hashChainBuf);
+  const msg = new Uint8Array(prev.length + rec.length);
+  msg.set(prev, 0); msg.set(rec, prev.length);
+  _hashChainBuf = await crypto.subtle.digest('SHA-256', msg);
+  const hb = new Uint8Array(_hashChainBuf);
+  G.hashChain = Array.from(hb).map(b=>b.toString(16).padStart(2,'0')).join('');
+  G.receiptCode = _bytesToBase40(hb);
+  const sb = new Uint8Array(50);
+  if (_seedBytes) sb.set(_seedBytes, 0);
+  sb.set(hb, 16);
+  sb[48] = (piecesPlaced >> 8) & 0xFF;
+  sb[49] = piecesPlaced & 0xFF;
+  _stripeBytes = sb;
+}
+
+function drawVerificationStripe(gx, gy, gw, gh) {
+  if (!_stripeBytes) return;
+  const W = 3;
+  const sx = gx + gw + 1;
+  const blockH = gh / _stripeBytes.length;
+  CTX.save();
+  for (let i = 0; i < _stripeBytes.length; i++) {
+    const hue = Math.round(_stripeBytes[i] * 360 / 256);
+    const lit  = i < 16 ? 45 : i < 48 ? 52 : 62;
+    CTX.fillStyle = `hsl(${hue},88%,${lit}%)`;
+    CTX.fillRect(sx, gy + i * blockH, W, Math.ceil(blockH));
+  }
+  CTX.restore();
+}
 
 // ══════════════════════════════════════════════════════════════════════
 
@@ -3265,6 +3506,7 @@ function spawn(){
   sndSpawn();
   stopDrop();
   calcPlacements(true);startSelTimer();drawNext();
+  _spawnT = performance.now();
 }
 
 // Scan all rotations × all x positions at rows 0-1.
@@ -4572,7 +4814,9 @@ function lock(){
     // P10 per-piece warnings suppressed
   }
 
+  const _lk=cur.k, _lr=cur.rot||0, _lx=cx, _lt=_spawnT;
   placeOn(board,cur.c,cx,cy,cur.rgb);
+  _chainPromise=_chainPromise.then(()=>_advanceHashChain(_lk,_lr,_lx,_lt));
   cur=null; // ← hide the piece immediately so it never renders during explosion
   placements=[null,null,null,null]; // ← invalidate stale candidates immediately
   selectedPlacementIdx=null; _navStartT=0; // clear nav state
@@ -5312,6 +5556,18 @@ function init(){
   currentScoringHoles=0;scoringDisabledSound=false;
   hfRun=0;hfBest=0;_tetrisLines=0;_dirtyRun=0;_dirtyBest=0;_neverHoled=true;
   _towerSeverity=0;
+  // Verification chain reset
+  const _sv = crypto.getRandomValues(new Uint8Array(16));
+  _seedBytes = _sv;
+  G.gameSeed = Array.from(_sv).map(b=>b.toString(16).padStart(2,'0')).join('');
+  G.hashChain = ''; G.receiptCode = '-----'; _stripeBytes = null; _spawnT = performance.now();
+  _chainPromise = crypto.subtle.digest('SHA-256', _sv).then(buf => {
+    _hashChainBuf = buf;
+    const hb = new Uint8Array(buf);
+    G.hashChain = Array.from(hb).map(b=>b.toString(16).padStart(2,'0')).join('');
+    G.receiptCode = _bytesToBase40(hb);
+    const sb = new Uint8Array(50); sb.set(_sv, 0); sb.set(hb, 16); _stripeBytes = sb;
+  });
   autoUsed = AUTO_PLAY;
   _gamePauseCount=0; _gamePauseStartT=0; _gameTotalPauseMs=0;
   _tipMoveCount=0; _tipChoiceUsed=false; _tipShownAt=0; _tipDismissed=false;
@@ -5800,12 +6056,22 @@ function buildReceiptDOM() {
     SP(2);
   }
 
+  // Verification receipt code
+  const _rc = (typeof G !== 'undefined' && G.receiptCode && G.receiptCode !== '-----') ? G.receiptCode : null;
+  if (_rc) {
+    HR('-');
+    L(center('VERIFICATION CODE'));
+    SP(1);
+    L(center(_rc));
+    L(center('PIECES: '+piecesPlaced));
+    SP(1);
+  }
   HR('-');
   L('  * TOWER DISTRICT DESIGN REVIEW');
   L('    BOARD DISCLAIMER: THIS CELL');
   L('    TOWER IS CLAD IN STUCCO-OVER-');
   L('    FOAM AND WE ARE NOT OK WITH IT.');
-  L('    VENICE & OLIVE. YOU KNOW WHY.');
+  L('    VAN NESS & OLIVE. YOU KNOW WHY.');
   HR('-');
   SP(4);
   L(center('PRODUCED BY'));
