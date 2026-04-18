@@ -5802,12 +5802,12 @@ function init(){
   _killScreenActive = false; _wasKillScreen = false;
   autoUsed = AUTO_PLAY;
   // Version hash: SHA-256 of the live game file. Computed once, reused every game.
-  if(!G.versionHash) {
+  if(!G.versionHash && location.protocol !== 'file:') {
     fetch(location.href).then(r=>r.arrayBuffer()).then(buf=>
       crypto.subtle.digest('SHA-256', buf)
     ).then(h=>{
       G.versionHash = Array.from(new Uint8Array(h)).map(b=>b.toString(16).padStart(2,'0')).join('');
-    }).catch(()=>{});  // silently skip if fetch fails (file:// protocol etc.)
+    }).catch(()=>{});
   }
   _chainPromise = crypto.subtle.digest('SHA-256', _sv).then(buf => {
     _hashChainBuf = buf;
