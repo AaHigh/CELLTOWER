@@ -252,6 +252,9 @@ var _navStartT=0; // AT timestamp when piece navigation animation started
 var _p10Log=[]; // per-piece log for first-10 debug audit
 var piecePot=0, tetrisPot=0;
 var AUTO_PLAY=false, AUTO_SPEED=10.66, autoUsed=false;
+var _replayMode=false, _replayPlacements=[], _replayIdx=0, _replayTimer=null;
+var _replayMeta={score:0,lines:0,level:0,pieces:0,_linesCleared:0};
+var _pendingReplayStream=null, _replayPromptVisible=false;
 // Screen shake — 4 independent sinusoidal channels, normalized so total energy=1
 // Each channel: {phx, phy, fx, fy, mx, my} — random phase & freq per axis per layer
 var _shakeT=0, _shakeDur=0, _shakeAmp=0;
@@ -709,6 +712,8 @@ function draw(ts){
   }
 
   if(_receiptOpen) drawReceiptOverlay(t);
+  if(_replayPromptVisible) _drawReplayPrompt();
+  if(_replayMode) _drawReplayHUD();
   if(ui.flash && ts < ui.flash.until) drawFlash(t);
   drawTipBubble(t);
 
@@ -1037,6 +1042,7 @@ function drawStartScreen(t){
   // ── hint lines ───────────────────────────────────────────────────────
   _dmWordLabel(CTX,'AUTO AVAILABLE AFTER START',bx+bw*0.04,by+bh*0.63,bw*0.92,bh*0.038,'#442266');
   _dmWordLabel(CTX,'AUTO SCORES: NO HIGH SCORE', bx+bw*0.04,by+bh*0.68,bw*0.92,bh*0.038,'#442266');
+  _dmWordLabel(CTX,'PASTE A REPLAY TO WATCH',   bx+bw*0.04,by+bh*0.74,bw*0.92,bh*0.038,'#113a4a');
 
   // ── small oscilloscope-style wave strip at bottom ─────────────────
   const waveY = by+bh*0.76;
@@ -2268,6 +2274,26 @@ function handleTap(tx, ty){
     return;
   }
 
+  // Replay prompt is a modal — intercept all taps
+  if(_replayPromptVisible){
+    if(ui._replayWatchW&&tx>=ui._replayWatchX&&tx<=ui._replayWatchX+ui._replayWatchW&&
+       ty>=ui._replayWatchY&&ty<=ui._replayWatchY+ui._replayWatchH){
+      _startReplayMode(_pendingReplayStream);
+    } else if(ui._replaySkipW&&tx>=ui._replaySkipX&&tx<=ui._replaySkipX+ui._replaySkipW&&
+              ty>=ui._replaySkipY&&ty<=ui._replaySkipY+ui._replaySkipH){
+      _pendingReplayStream=null;_replayPromptVisible=false;
+    }
+    return;
+  }
+  // Replay STOP button
+  if(_replayMode){
+    if(ui._replayStopW&&tx>=ui._replayStopX&&tx<=ui._replayStopX+ui._replayStopW&&
+       ty>=ui._replayStopY&&ty<=ui._replayStopY+ui._replayStopH){
+      _stopReplayMode();
+    }
+    return;
+  }
+
   // Marquee is always tappable — check before any game-state gating
   const idEarly = hitTest(tx, ty);
   if(idEarly === 'marquee'){
@@ -2803,6 +2829,43 @@ function _fromB92(str) {
   let n = 0;
   for(let i = 0; i < str.length; i++) n = n * 92 + _B92_ALPHABET.indexOf(str[i]);
   return n;
+}
+
+// Quick structural check — does this look like a CELLTOWER stream?
+function _looksLikeStream(t){
+  if(!t||t.length<200)return false;
+  const p=t.trim().split(';');
+  if(p.length<3)return false;
+  if(!/^[0-9a-f]{64},/.test(p[0]))return false;
+  if(!/^[0-9a-f]{64}$/.test(p[p.length-1]))return false;
+  return true;
+}
+
+// Parse stream into placements array + header meta for visual replay.
+function _parseStreamForReplay(streamText){
+  try{
+    const sections=streamText.trim().split(';');
+    const hdrParts=sections[0].split(',');
+    const stats=hdrParts[2]||'';
+    const replayScore=stats.length>=4?_fromB92(stats.slice(0,4)):0;
+    const replayLevel=stats.length>=6?_fromB92(stats.slice(4,6)):1;
+    const replayLines=stats.length>=8?_fromB92(stats.slice(6,8)):0;
+    const nPieces=stats.length>=10?_fromB92(stats.slice(8,10)):0;
+    const block=sections[1]||'';
+    const PO=['I','O','T','S','Z','J','L'];
+    const pieces=[];
+    for(let n=0;n<nPieces;n++){
+      const chunk=block.slice(n*4,n*4+4);
+      if(chunk.length<4)break;
+      const posIdx=_fromB92(chunk.slice(0,2));
+      const rot=Math.floor((posIdx%1160)/290);
+      const x=Math.floor((posIdx%290)/29);
+      const drop_y=(posIdx%29)-4;
+      const k=PO[Math.floor(posIdx/1160)]||'I';
+      pieces.push({k,rot,x,drop_y});
+    }
+    return{pieces,score:replayScore,level:replayLevel,lines:replayLines};
+  }catch(e){return null;}
 }
 
 function _bytesToBase40(b) {
@@ -6320,6 +6383,7 @@ function restart(asAuto){
 
 // ─── KEYBOARD ────────────────────────────────────────────────────────────────
 document.addEventListener('keydown',e=>{
+  if(_replayMode||_replayPromptVisible)return;
   if(dead)return;
   if(e.key==='ArrowLeft')mhz(-1);
   else if(e.key==='ArrowRight')mhz(1);
@@ -7190,6 +7254,123 @@ function _txDesc(tx) {
   return tx.desc || e.toUpperCase();
 }
 
+// ── CLIPBOARD REPLAY ENGINE ──────────────────────────────────────────────────
+const _REPLAY_STEP_MS = 110;
+
+function _startReplayMode(streamText){
+  const parsed=_parseStreamForReplay(streamText);
+  if(!parsed||!parsed.pieces.length)return;
+  _replayPromptVisible=false; _pendingReplayStream=null;
+  _replayMode=true;
+  _replayPlacements=parsed.pieces;
+  _replayIdx=0;
+  _replayMeta={score:parsed.score,lines:parsed.lines,level:parsed.level,
+               pieces:parsed.pieces.length,_linesCleared:0};
+  board=Array.from({length:ROWS},()=>Array(COLS).fill(null));
+  score=0;level=1;lines=0;dead=false;paused=false;
+  cur=null;cx=0;cy=0;nxt=null;
+  particles=[];explodedCells.clear();
+  ui.gameStarted=true;
+  _replayStep();
+}
+
+function _replayStep(){
+  if(!_replayMode)return;
+  if(_replayIdx>=_replayPlacements.length){
+    cur=null; _replayMode=false; dead=true; _deadAt=performance.now();
+    return;
+  }
+  const p=_replayPlacements[_replayIdx];
+  const cells=NRS[p.k][p.rot].map(r=>[...r]);
+  cur={k:p.k,rot:p.rot,c:cells,rgb:[...PTYPES[p.k].rgb]};
+  cx=p.x; cy=p.drop_y;
+  _replayTimer=setTimeout(_replayLock,_REPLAY_STEP_MS);
+}
+
+function _replayLock(){
+  if(!_replayMode||!cur)return;
+  placeOn(board,cur.c,cx,cy,cur.rgb);
+  cur=null;
+  let cleared=0;
+  for(let r=ROWS-1;r>=0;r--){
+    if(board[r].every(v=>v)){
+      board.splice(r,1);
+      board.unshift(Array(COLS).fill(null));
+      r++;cleared++;
+    }
+  }
+  _replayMeta._linesCleared+=cleared;
+  _replayIdx++;
+  _replayStep();
+}
+
+function _stopReplayMode(){
+  _replayMode=false;
+  if(_replayTimer){clearTimeout(_replayTimer);_replayTimer=null;}
+  cur=null; dead=false; ui.gameStarted=false;
+}
+
+function _drawReplayHUD(){
+  const bx=R.gx,bw=R.gw,by=R.gy;
+  const bh=Math.max(22,Math.round(by*0.7));
+  CTX.fillStyle='rgba(0,0,24,0.86)';
+  CTX.fillRect(bx,by-bh,bw,bh);
+  // progress bar
+  const pct=_replayPlacements.length>0?_replayIdx/_replayPlacements.length:0;
+  CTX.fillStyle='#002233'; CTX.fillRect(bx,by-4,bw,4);
+  CTX.fillStyle='#00ccff'; CTX.fillRect(bx,by-4,Math.round(bw*pct),4);
+  const stopW=Math.round(bw*0.22),stopH=bh-4,stopX=bx+bw-stopW,stopY=by-bh+2;
+  CTX.fillStyle='rgba(70,0,0,0.9)';
+  roundRect(stopX,stopY,stopW,stopH,4);CTX.fill();
+  _dmWordLabel(CTX,'STOP',stopX+2,stopY,stopW-4,stopH,'#ff4444');
+  _dmWordLabel(CTX,'REPLAY',bx+4,by-bh+2,bw*0.32,stopH,'#00ccff');
+  _dmWordLabel(CTX,_replayIdx+' / '+_replayPlacements.length,bx+bw*0.34,by-bh+2,bw*0.42,stopH,'#335566');
+  ui._replayStopX=stopX;ui._replayStopY=stopY;ui._replayStopW=stopW;ui._replayStopH=stopH;
+}
+
+function _drawReplayPrompt(){
+  CTX.fillStyle='rgba(0,0,16,0.95)';
+  CTX.fillRect(0,0,SW,SH);
+  const pw=Math.min(SW*0.88,380),ph=SH*0.50;
+  const px=(SW-pw)/2,py=(SH-ph)/2;
+  CTX.fillStyle='#080820';
+  roundRect(px,py,pw,ph,14);CTX.fill();
+  CTX.strokeStyle='#224488';CTX.lineWidth=1.5;
+  roundRect(px,py,pw,ph,14);CTX.stroke();
+
+  const meta=_pendingReplayStream?_parseStreamForReplay(_pendingReplayStream):null;
+  let oy=py+ph*0.08;
+  const row=(txt,col,fh)=>{
+    _dmWordLabel(CTX,txt,px+pw*0.06,oy,pw*0.88,ph*fh,col||'#8888bb');
+    oy+=ph*fh+ph*0.025;
+  };
+  CTX.shadowColor='#00ccff';CTX.shadowBlur=14;
+  row('REPLAY DETECTED','#00ddff',0.13);
+  CTX.shadowBlur=0;
+  if(meta){
+    row('SCORE   '+meta.score,'#88ffcc',0.09);
+    row('PIECES  '+meta.pieces+'    LINES  '+meta.lines,'#4466aa',0.08);
+  }
+
+  const bby=py+ph*0.60,bbw=pw*0.40,bbh=ph*0.17,gap=pw*0.06;
+  const b1x=px+gap,b2x=px+pw-gap-bbw;
+
+  CTX.fillStyle='#002218';
+  roundRect(b1x,bby,bbw,bbh,8);CTX.fill();
+  CTX.strokeStyle='#008844';CTX.lineWidth=1.2;
+  roundRect(b1x,bby,bbw,bbh,8);CTX.stroke();
+  _dmWordLabel(CTX,'WATCH IT',b1x+4,bby+2,bbw-8,bbh-4,'#00ff88');
+
+  CTX.fillStyle='#1a0000';
+  roundRect(b2x,bby,bbw,bbh,8);CTX.fill();
+  CTX.strokeStyle='#550022';CTX.lineWidth=1.2;
+  roundRect(b2x,bby,bbw,bbh,8);CTX.stroke();
+  _dmWordLabel(CTX,'SKIP',b2x+4,bby+2,bbw-8,bbh-4,'#ff4466');
+
+  ui._replayWatchX=b1x;ui._replayWatchY=bby;ui._replayWatchW=bbw;ui._replayWatchH=bbh;
+  ui._replaySkipX=b2x;ui._replaySkipY=bby;ui._replaySkipW=bbw;ui._replaySkipH=bbh;
+}
+
 function showReceipt() {
   // Pause game if running
   if(ui.gameStarted && !dead && !paused){
@@ -7199,6 +7380,11 @@ function showReceipt() {
   try {
     dbg('showReceipt: txLog='+txLog.length);
     buildReceiptDOM();
+    // Silently copy stream proof to clipboard whenever a scored non-AUTO game receipt is shown
+    if(score > 0 && !autoUsed){
+      const _s=_buildStream();
+      if(_s) navigator.clipboard.writeText(_s).catch(()=>{});
+    }
     const root = document.getElementById('receipt-content');
     dbg('receipt-content children: '+(root?root.children.length:'NULL'));
     const ov = document.getElementById('receipt-overlay');
@@ -7246,6 +7432,16 @@ window.addEventListener('DOMContentLoaded', function(){
     _syncAutoUI();
     dbg('init done, starting loop');
     requestAnimationFrame(loop);
+    // Paste listener: detect a CELLTOWER stream in clipboard when idle
+    document.addEventListener('paste',function(e){
+      if(_replayMode)return;
+      const text=(e.clipboardData||window.clipboardData||{}).getData('text');
+      if(!text||!_looksLikeStream(text))return;
+      if(ui.gameStarted&&!dead)return; // real game in progress
+      e.preventDefault();
+      _pendingReplayStream=text.trim();
+      _replayPromptVisible=true;
+    });
     // Show canvas welcome/identity screen immediately — no tap required
     _showIdentityCanvas(() => startGame());
   } catch(e) {
