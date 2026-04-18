@@ -2458,19 +2458,35 @@ function _bytesToBase40(b) {
   return s;
 }
 
-async function _advanceHashChain(k, rot, x, spawnT, slot) {
+// Convert live board to 50-byte big-endian bit-word array (25 rows × 16-bit, low 10 bits used).
+// Matches the board representation in the stream spec hash record.
+function _boardToWords(b) {
+  const out = new Uint8Array(50);
+  for(let r = 0; r < 25; r++) {
+    let w = 0;
+    for(let c = 0; c < 10; c++) if(b[r] && b[r][c]) w |= (1 << (9 - c));
+    out[r*2] = (w >> 8) & 0xFF;
+    out[r*2+1] = w & 0xFF;
+  }
+  return out;
+}
+
+// drop_y: final resting row of the piece. boardWords: 50-byte post-placement board state.
+// Record format matches stream.md spec: 6 bytes placement + 50 bytes board = 56 bytes.
+async function _advanceHashChain(k, rot, x, drop_y, spawnT, slot, boardWords) {
   _gameHistory.push({k, slot: slot||0});
   // AI games have no verifiable input — skip hash chain and leave receipt invalid.
   if(autoUsed) return;
   const PIECE_ORDER = ['I','O','T','S','Z','J','L'];
   const ms = Math.min(65535, Math.round(performance.now() - spawnT));
-  const rec = new Uint8Array([
-    PIECE_ORDER.indexOf(k) & 0xFF,
-    rot & 0xFF,
-    (x + 5) & 0xFF,
-    (ms >> 8) & 0xFF,
-    ms & 0xFF,
-  ]);
+  const rec = new Uint8Array(56);
+  rec[0] = PIECE_ORDER.indexOf(k) & 0xFF;
+  rec[1] = rot & 0xFF;
+  rec[2] = x & 0xFF;
+  rec[3] = drop_y & 0xFF;
+  rec[4] = (ms >> 8) & 0xFF;
+  rec[5] = ms & 0xFF;
+  if(boardWords) rec.set(boardWords, 6);
   const prev = new Uint8Array(_hashChainBuf);
   const msg = new Uint8Array(prev.length + rec.length);
   msg.set(prev, 0); msg.set(rec, prev.length);
@@ -4976,7 +4992,7 @@ function lock(){
     // P10 per-piece warnings suppressed
   }
 
-  const _lk=cur.k, _lr=cur.rot||0, _lx=cx, _lt=_spawnT;
+  const _lk=cur.k, _lr=cur.rot||0, _lx=cx, _ly=cy, _lt=_spawnT;
   let _lslot;
   if(AUTO_PLAY){
     _lslot = Math.random()*4|0;
@@ -4996,7 +5012,6 @@ function lock(){
     }
   }
   placeOn(board,cur.c,cx,cy,cur.rgb);
-  _chainPromise=_chainPromise.then(()=>_advanceHashChain(_lk,_lr,_lx,_lt,_lslot));
   cur=null; // ← hide the piece immediately so it never renders during explosion
   placements=[null,null,null,null]; // ← invalidate stale candidates immediately
   selectedPlacementIdx=null; _navStartT=0; // clear nav state
@@ -5007,6 +5022,9 @@ function lock(){
   for(let r=ROWS-1;r>=0;r--)if(board[r].every(v=>v))completeRows.push(r);
 
   if(completeRows.length===0){
+    // Board is final — no lines to clear. Snapshot and advance hash now.
+    const _bw0 = _boardToWords(board);
+    _chainPromise = _chainPromise.then(() => _advanceHashChain(_lk,_lr,_lx,_ly,_lt,_lslot,_bw0));
     piecesPlaced++;
     addScore(0);
     rebuildGapList();
@@ -5027,6 +5045,9 @@ function lock(){
     };
 
     const _afterClear = (cleared) => {
+      // Board rows are already removed — snapshot the final post-clear state.
+      const _bwC = _boardToWords(board);
+      _chainPromise = _chainPromise.then(() => _advanceHashChain(_lk,_lr,_lx,_ly,_lt,_lslot,_bwC));
       piecesPlaced++;
       addScore(cleared);
       rebuildGapList();
