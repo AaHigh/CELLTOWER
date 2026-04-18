@@ -5072,6 +5072,11 @@ function slideAdjustedBonus(cells,x,gy,dist){
 // fresh=true resets the "already shown" set (called on new piece spawn).
 function calcPlacements(fresh=false){
   if(!cur)return;
+  if(_replayMode){
+    placements=[null,null,null,null];
+    for(let i=0;i<4;i++) drawPrevBtn(i,null);
+    return;
+  }
   if(fresh){shownFootprints=new Set();_candCursor=0;playerHasMoved=false;moveStartTime=0}
   else{_candCursor=0;shownFootprints=new Set();}  // also reset cursor on re-calc after move
 
