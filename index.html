@@ -2901,7 +2901,7 @@ function _parseStreamForReplay(streamText){
   try{
     const sections=streamText.trim().split(';');
     const hdrParts=sections[0].split(',');
-    const stats=hdrParts[2]||'';
+    const stats=hdrParts[1]||'';
     const replayScore=stats.length>=4?_fromB92(stats.slice(0,4)):0;
     const replayLevel=stats.length>=6?_fromB92(stats.slice(4,6)):1;
     const replayLines=stats.length>=8?_fromB92(stats.slice(6,8)):0;
