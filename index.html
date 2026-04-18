@@ -2216,7 +2216,7 @@ function drawReceiptOverlay(t){
   CTX.fillText(`Score:    ${score}`, rx+10, ry); ry+=rlh;
   CTX.fillText(`High:     ${hi}`, rx+10, ry); ry+=rlh;
   CTX.fillText(`Level:    ${level}`, rx+10, ry); ry+=rlh;
-  CTX.fillText(`Lines:    ${lines}`, rx+10, ry); ry+=rlh;
+  if(lines > 0){ CTX.fillText(`Lines:    ${lines}`, rx+10, ry); ry+=rlh; }
   CTX.fillText(`Auto:     ${autoUsed?'YES (no hi score)':'NO'}`, rx+10, ry); ry+=rlh*1.5;
   if(txLog && txLog.length>0){
     CTX.font='700 10px "Courier New",monospace';
@@ -3793,6 +3793,7 @@ function checkTowers(){
 // hfAllTime: longest run ever across all games (persists like hi)
 let hfRun=0, hfBest=0, hfAllTime=0, _gamesPlayed=0;
 let _tetrisLines=0;
+let _maxTetrisStreak=0; // highest consecutive-Tetris streak reached this game
 let _dirtyRun=0, _dirtyBest=0;
 let _neverHoled=true; // stayed hole-free the entire game so far // longest run of pieces placed WITH holes present // lines cleared in 4-at-a-time Tetrises
 // cur,cx,cy,nxt declared at top
@@ -6031,6 +6032,7 @@ function updateTBDisplay(){
 function fanfare(tetrisPoints){
   triggerShake(11, 420); // Tetris shake: 11px amplitude, 420ms duration
   tetrisStreak++;
+  if(tetrisStreak > _maxTetrisStreak) _maxTetrisStreak = tetrisStreak;
   _tetrisLines += 4; // track lines cleared via Tetris for receipt %
 
   // Collect both pots into score NOW (before adding next virtual credit)
@@ -6127,7 +6129,7 @@ function init(){
   piecePot=0;tetrisPot=0;piecesPlaced=0;_lastScoringHoleCheck=false;_p10Log=[];
   tetrisStreak=0;tetrisMultiplier=1;
   currentScoringHoles=0;scoringDisabledSound=false;
-  hfRun=0;hfBest=0;_tetrisLines=0;_dirtyRun=0;_dirtyBest=0;_neverHoled=true;
+  hfRun=0;hfBest=0;_tetrisLines=0;_maxTetrisStreak=0;_dirtyRun=0;_dirtyBest=0;_neverHoled=true;
   _towerSeverity=0;
   // Verification chain reset
   const _sv = crypto.getRandomValues(new Uint8Array(16));
@@ -6926,22 +6928,25 @@ function buildReceiptDOM() {
 
   SP(4);
   HR('=');
-  // \u2500\u2500 TOTALS SUMMARY \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-  L(dmRow('  LINES CLEARED',   String(lines)));
+  // ── TOTALS SUMMARY ──────────────────────────────────────────────────────────
+  if(lines > 0) L(dmRow('  LINES CLEARED', String(lines)));
   L(dmRow('  LEVEL REACHED',   String(level)));
   L(dmRow('  PIECES PLACED',   String(piecesPlaced)));
-  // Hole-free run display — optimistic framing
-  if(_neverHoled && piecesPlaced > 0){
-    // Perfect game — never created a hole
+  // Hole-free run — "perfect game" requires hole-free AND T-bonus (streak ≥2 once)
+  const _isPerfect = _neverHoled && piecesPlaced > 0 && _maxTetrisStreak >= 2;
+  if(_isPerfect){
     L(dmRow('  HOLE-FREE STREAK', 'PERFECT GAME! '+piecesPlaced+'CS'), {bold:true});
+  } else if(_neverHoled && piecesPlaced > 0){
+    L(dmRow('  HOLE-FREE STREAK', piecesPlaced+'CS  NO HOLES'), {bold:false});
   } else if(hfBest >= piecesPlaced && piecesPlaced > 0 && currentScoringHoles===0){
-    // Died hole-free (crash-out while clean — last hole was before final lines)
     L(dmRow('  HOLE-FREE STREAK', piecesPlaced+'CS  CLEAN EXIT!'));
-  } else {
-    L(dmRow('  HOLE-FREE STREAK', hfBest > 0 ? hfBest+'CS' : '0'));
+  } else if(hfBest > 0){
+    L(dmRow('  HOLE-FREE STREAK', hfBest+'CS'));
   }
-  const _tetrisPct = lines > 0 ? Math.round(_tetrisLines / lines * 100) : 0;
-  L(dmRow('  TETRIS %',        _tetrisPct+'%  ('+_tetrisLines+' of '+lines+' lines)'));
+  if(lines > 0){
+    const _tetrisPct = Math.round(_tetrisLines / lines * 100);
+    L(dmRow('  TETRIS %', _tetrisPct+'%  ('+_tetrisLines+' of '+lines+' lines)'));
+  }
   HR('-');
   L(dmRow('  SUBTOTAL', score.toLocaleString()));
   L(dmRow('  TAX / FEES',      'N/A'));
