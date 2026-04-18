@@ -6240,6 +6240,7 @@ function togglePause(){
 function init(){
   board=Array.from({length:ROWS},()=>Array(COLS).fill(null));
   score=0;level=1;lines=0;dead=false;paused=false;
+  selectedPlacementIdx=null; _navStartT=0;
   particles=[];explodedCells.clear();clearAnimating=false;
   gapList=[];tetrisPrepActive=false;tetrisPrepCol=-1;
   piecePot=0;tetrisPot=0;piecesPlaced=0;_lastScoringHoleCheck=false;_p10Log=[];
