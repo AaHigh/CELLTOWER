@@ -1,6 +1,34 @@
 # CELLTOWER Refactor Blueprint
 ## Goal: Consolidated State Object for Tournament Verification
 
+---
+
+## Status as of April 2026
+
+### Phase 1: State Inventory
+✅ **Complete.** All globals catalogued and mapped to G field names. No code changes required — this was a planning exercise.
+
+### Phase 2: Migration Order
+
+| Step | Description | Status |
+|------|-------------|--------|
+| Step 1 | Declare G, alias existing globals | ✅ **Done** (April 2026) — implemented with `Object.defineProperty` getters/setters, proxying all bare globals through G bidirectionally. More robust than the simple alias approach described below. |
+| Step 2 | Route all WRITES through G | ⚠️ **Not migrated** — bare globals (`score`, `board`, `dead`, etc.) still written directly throughout the codebase. The proxy pattern makes this functionally equivalent for now, but the migration has not been done. |
+| Step 3 | Route all READS through G | ⚠️ **Not migrated** — same as Step 2. Direct reads of bare globals still throughout. |
+| Step 4 | Remove bare globals | ❌ **Not done** — bare globals at lines 135–137 still exist and are required by the Step 1 proxy. Cannot be removed until Steps 2–3 are complete. |
+| Step 5 | Kill DOM stubs | ❌ **Not done** — `setupDOMStubs()` still present (line 2221). |
+| Step 6 | Add snapshot hook in lock() | ✅ **Done** (April 2026) — implemented as `_advanceHashChain()` with a 56-byte binary record (see note below). Called from `lock()` in both the no-clear and post-clear paths. |
+| Step 7 | Extract pure AI module | ❌ **Not done** — `calcPlacements` / `applyNextOptions` still in main file with side effects. |
+| Step 8 | Phase state machine | ❌ **Not done** — no phase enum; timer management still scattered. |
+
+### Phase 3: Hash Chain Spec
+⚠️ **Superseded.** The spec in this document (32-byte record, QR code display) has been replaced by the implementation and stream.md v1.4. Key differences:
+- Record is **56 bytes**, not 32: `[type(1), rot(1), x(1), drop_y(1), ms_hi(1), ms_lo(1), board_words×50]`. The full post-placement board state (50 bytes) is in every hash record, not a 10-byte board hash. This makes the hash chain a complete replay log, not just a summary.
+- Transport is **screenshot-primary / share-sheet secondary**, not QR code. See stream.md for the current dual-transport architecture.
+- The base-40 receipt code display is implemented and live on canvas.
+
+---
+
 ### Why This Matters
 The SHA-based per-placement hash chain requires snapshotting complete game state at every `lock()` call. Current architecture scatters state across 60+ globals mutated by dozens of functions — no clean snapshot is possible. Consolidating into `G` enables:
 - `JSON.stringify(G)` snapshots for hash chain input
