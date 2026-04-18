@@ -1255,17 +1255,20 @@ function drawPlayerBadge(t){
   CTX.textAlign = 'left';
   CTX.textBaseline = 'alphabetic';
 
-  // Heavy drop shadow — falls down-right, darkens whatever scrolls under
-  CTX.shadowColor = 'rgba(0,0,0,0.95)';
-  CTX.shadowBlur = nameSz * 0.5;
+  // Pass 1: broad black stroke — gives the outline that makes white pop
+  CTX.lineJoin = 'round';
+  CTX.lineWidth = Math.max(3, nameSz * 0.22);
+  CTX.strokeStyle = '#000000';
+  CTX.strokeText(_currentPlayer.name, tx2, ty2);
+
+  // Pass 2: white fill + soft drop-shadow
+  CTX.shadowColor = 'rgba(0,0,0,0.80)';
+  CTX.shadowBlur = nameSz * 0.30;
   CTX.shadowOffsetX = nameSz * 0.18;
-  CTX.shadowOffsetY = nameSz * 0.25;
-  CTX.fillStyle = '#ffcc44';
+  CTX.shadowOffsetY = nameSz * 0.22;
+  CTX.fillStyle = '#ffffff';
   CTX.fillText(_currentPlayer.name, tx2, ty2);
 
-  CTX.shadowBlur = 0;
-  CTX.shadowOffsetX = 0;
-  CTX.shadowOffsetY = 0;
   CTX.restore();
 }
 
