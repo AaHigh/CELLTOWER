@@ -2441,7 +2441,8 @@ let _chainPromise = Promise.resolve(); // serial update queue
 let _seedBytes    = null;            // Uint8Array(16), fixed per game
 let _stripeBytes  = null;            // Uint8Array(50): seed+hash+count, render cache
 let _spawnT           = 0;     // performance.now() when current piece spawned
-let _gameHistory      = [];    // [{k}] one entry per locked piece, oldest first
+let _gameHistory      = [];    // [{k, slot}] one entry per locked piece, oldest first
+let _iFrames          = [];    // [{pieceNum, words}] board snapshots every 30 pieces
 let _killScreenActive = false; // true during the 2.5s kill screen animation
 let _killScreenT      = 0;     // performance.now() when kill screen started
 let _wasKillScreen    = false; // true if this game ended via kill screen
@@ -2475,6 +2476,10 @@ function _boardToWords(b) {
 // Record format matches stream.md spec: 6 bytes placement + 50 bytes board = 56 bytes.
 async function _advanceHashChain(k, rot, x, drop_y, spawnT, slot, boardWords) {
   _gameHistory.push({k, slot: slot||0});
+  // I-frame snapshot every 30 pieces — copy boardWords so the reference stays stable.
+  if(_gameHistory.length % 30 === 0 && boardWords) {
+    _iFrames.push({pieceNum: _gameHistory.length, words: Uint8Array.from(boardWords)});
+  }
   // AI games have no verifiable input — skip hash chain and leave receipt invalid.
   if(autoUsed) return;
   const PIECE_ORDER = ['I','O','T','S','Z','J','L'];
@@ -5762,7 +5767,7 @@ function init(){
   const _sv = crypto.getRandomValues(new Uint8Array(16));
   _seedBytes = _sv;
   G.gameSeed = Array.from(_sv).map(b=>b.toString(16).padStart(2,'0')).join('');
-  G.hashChain = ''; G.receiptCode = '-----'; _stripeBytes = null; _spawnT = performance.now(); _gameHistory = [];
+  G.hashChain = ''; G.receiptCode = '-----'; _stripeBytes = null; _spawnT = performance.now(); _gameHistory = []; _iFrames = [];
   _killScreenActive = false; _wasKillScreen = false;
   autoUsed = AUTO_PLAY;
   _chainPromise = crypto.subtle.digest('SHA-256', _sv).then(buf => {
