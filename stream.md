@@ -3,6 +3,14 @@
 
 ---
 
+## Design Ceiling: 600 Pieces
+
+CELLTOWER ends at a kill screen at level 20. Level 20 requires clearing 200 lines. Each cleared line is 10 cells wide, giving 2,000 cleared cells over the game's lifetime. The visible playfield at game-over is 10 × 25 = 250 occupied cells. Total cell budget: 2,250 cells. At 4 cells per piece, that is 562.5 pieces — rounded to **600 pieces** as the design ceiling.
+
+All capacity estimates, size budgets, and QR version targets in this document are sized to handle a 600-piece game. A game that reaches the kill screen will always fit within this budget.
+
+---
+
 ## Design Constraints
 
 1. **One stream, one checksum.** Valid or invalid. No partial recovery, no error correction, no UDP. Connection-oriented delivery — there may be delay but the stream arrives complete or not at all.
@@ -141,7 +149,7 @@ Milliseconds from piece spawn to lock. Range 0-8,463ms. Values above 8,463 are c
 
 This field serves bot detection. Human timing distributions exhibit characteristic variability — reaction time variance, corrective movements, pauses before rotations. Automated play produces unnaturally uniform timing. Statistical analysis of the timing distribution provides a secondary integrity signal, analogous to engine-detection methods in competitive chess.
 
-**Placement block length:** 4 characters * N pieces. A 300-piece game = 1,200 characters.
+**Placement block length:** 4 characters × N pieces. A 300-piece game = 1,200 characters. The design ceiling of 600 pieces = 2,400 characters.
 
 ### Snapshots (I-Frames)
 
@@ -248,8 +256,9 @@ zlib is also the most universally available compression algorithm — built into
 | 300 pcs   | 1,936 B  | 1,324 B             | 68.4% | v17        |
 | 400 pcs   | 2,495 B  | 1,729 B             | 69.3% | v20        |
 | 500 pcs   | 3,054 B  | 2,142 B             | 70.1% | v25        |
+| **600 pcs** | **3,666 B** | **~2,530 B**    | **69.0%** | **v26**    |
 
-Compression ratio stabilizes at approximately 69% regardless of game length. All tested game sizes fit in a single QR code.
+Compression ratio stabilizes at approximately 69% regardless of game length. All game sizes up to the 600-piece kill screen ceiling fit in a single QR code (v26 capacity: 2,672 bytes).
 
 ### Key Finding
 
@@ -386,22 +395,89 @@ Both applications use the same base-92 encode/decode implementation and the same
 
 ---
 
-## Size Budget (300-piece game)
+## Size Budget
+
+### 300-piece game (mid-skill reference)
 
 ```
 Header:          140 chars
 Placements:    1,200 chars  (300 x 4)
-Snapshots:       524 chars  (10 snapshots x 52, plus 9 semicolons)
+Snapshots:       529 chars  (10 snapshots x 52, plus 9 semicolons)
 Terminal hash:    64 chars
 Delimiters:        3 chars  (3 semicolons between sections)
 ────────────────────────────
-Minified total: 1,931 chars
+Minified total: 1,936 chars
 
 Compressed:    ~1,324 bytes  (zlib-9)
 QR version:    17            (1,556 byte capacity, 232 bytes spare)
 ```
 
+### 600-piece game (kill screen ceiling)
+
+```
+Header:          140 chars
+Placements:    2,400 chars  (600 x 4)
+Snapshots:     1,059 chars  (20 snapshots x 52, plus 19 semicolons)
+Terminal hash:    64 chars
+Delimiters:        3 chars  (3 semicolons between sections)
+────────────────────────────
+Minified total: 3,666 chars
+
+Compressed:    ~2,530 bytes  (zlib-9)
+QR version:    26            (2,672 byte capacity, 142 bytes spare)
+```
+
 ---
 
-*Format version: 1.1*
+## In-Frame Visual Encoding
+
+The QR code is the primary verification channel. The following visual encoding channels are secondary — they are embedded directly in the game canvas on every frame, including during active play and in any screenshot. Together they allow a single screenshot to carry substantially all game history data, independent of QR decoding.
+
+These channels are not part of the stream format and are not verified by the validator. They serve transparency, leaderboard screenshot verification, and the broader design principle: every frame of the game is a partial receipt.
+
+### Channel 1: Verification Stripe (Piece History Tape)
+
+A colored block is appended to the perimeter tape on every piece lock. Each block encodes:
+
+- **Color** — piece type (I=cyan, O=yellow, T=purple, S=green, Z=red, J=blue, L=orange). 3 bits.
+- **Dot X position** — which of the 4 placement slots was chosen, encoded symmetrically: slots 1 and 4 are mirrored about the block center, slots 2 and 3 are mirrored inward. Formula: `pos = round(slot * (w-1) / 3)`. 2 bits.
+- **Dot Y position** — piece rotation (0–3), encoded on the vertical axis using the same symmetric formula. 2 bits.
+
+Total per block: 7 bits (piece type + slot + rotation). This matches the P-frame record minus timing and column — both of which are present in the other channels.
+
+The tape routes counter-clockwise around the playfield: right side up → top across → left side down → bottom across. Block size is fixed at `max(4, floor(perimeter/270))` pixels so that approximately 270 pieces fill one revolution — roughly 90% of a kill screen game. When the tape exceeds one revolution, additional columns grow outward from the right and left sides with a 1-pixel black gap between them. History is unlimited — no blocks are ever overwritten or discarded.
+
+### Channel 2: Timing Strip
+
+A 1-pixel-tall grayscale strip runs parallel to each block in the verification stripe, separated by a 1-pixel black gap. Intensity encodes placement timing:
+
+```
+intensity = round(min(timing_ms, 8463) / 8463 * 255)
+```
+
+Dark = fast placement. Bright = slow. This embeds the timing field from the P-frame record directly into the visual history. The timing distribution across all pieces is visible as a luminance pattern — bot play produces uniform gray; human play produces variable intensity.
+
+### Channel 3: Board Luminance Steganography
+
+The board cells visible on any screenshot are rendered with a slight luminance modulation (±2 brightness units, imperceptible to the eye and survivable in PNG). Each cell carries 1 bit. At 10 × 25 = 250 cells, each frame carries 250 bits = 31 bytes.
+
+This space embeds periodic hash chain checkpoints: a 4-byte truncated H-frame every 30 pieces = approximately 10 checkpoints over a 600-piece game = 40 bytes. At 31 bytes per frame, two consecutive screenshots together carry the full checkpoint set.
+
+This channel functions as a passive integrity probe. A doctored screenshot would need to correctly recompute not only the visible board state but the embedded hash values — which requires the full hash chain from game start.
+
+### Combined Per-Screenshot Data Budget (600-piece game)
+
+| Channel | Data per block | Blocks | Total bits |
+|---------|---------------|--------|------------|
+| Stripe color (piece type) | 3 bits | 600 | 1,800 bits |
+| Stripe dot X (slot) | 2 bits | 600 | 1,200 bits |
+| Stripe dot Y (rotation) | 2 bits | 600 | 1,200 bits |
+| Timing strip (ms) | 8 bits | 600 | 4,800 bits |
+| Board stego (hash chain) | 1 bit/cell | 250 | 250 bits/frame |
+
+A screenshot taken at game-over carries: full piece type sequence, full slot sequence, full rotation sequence, full timing sequence, and approximately 10 hash chain checkpoints. The seed (from the receipt code already visible on-screen) and the column positions (derivable from stripe routing position) complete the picture. A single screenshot is very nearly a full P-frame log.
+
+---
+
+*Format version: 1.2*
 *April 2026*
