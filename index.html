@@ -1252,7 +1252,7 @@ function drawIdentityScreen(t) {
 }
 
 function drawPlayerBadge(t){
-  if(!_currentPlayer || _replayMode) return;
+  if(!_currentPlayer || !_currentPlayer.name) return;
   const r = R.lTicker;
   const nameSz = Math.round(r.h * 0.14);
   const tx2 = r.x + 3;
@@ -2926,7 +2926,8 @@ function _parseStreamForReplay(streamText){
       const k=PO[Math.floor(posIdx/1160)]||'I';
       pieces.push({k,rot,x,drop_y});
     }
-    return{pieces,score:replayScore,level:replayLevel,lines:replayLines};
+    const playerName=(hdrParts[2]||'').slice(0,3);
+    return{pieces,score:replayScore,level:replayLevel,lines:replayLines,playerName};
   }catch(e){return null;}
 }
 
@@ -7283,6 +7284,7 @@ function _startReplayMode(streamText){
                pieces:parsed.pieces.length};
   _replaySource=streamText;
   _preReplayPlayer=_currentPlayer?{name:_currentPlayer.name}:null;
+  if(parsed.playerName) _currentPlayer={name:parsed.playerName};
   startGame(); // full board/score reset; spawn() → startSelTimer() → _startReplayPlay()
   autoUsed=true; // prevent replay score from overwriting human hi score
 }
