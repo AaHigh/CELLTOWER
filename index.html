@@ -2580,35 +2580,39 @@ function drawVerificationStripe(gx, gy, gw, gh) {
     const rec   = hist[i];
     const color = _PIECE_STRIPE_COLORS[rec.k] || '#888';
     const slot  = rec.slot || 0;
-    let bx, by, dotDx, dotDy;
+    const rot   = rec.rot  || 0;
+    // Timing strip: intensity = ms/8463 * 255 (dark=fast, bright=slow)
+    const msV   = rec.ms   || 0;
+    const tInt  = Math.round(Math.min(msV, 8463) / 8463 * 255);
+    let bx, by, dotDx, dotDy, tsX, tsY, tsW, tsH;
 
     if(i < nR) {
-      // Right lane 0, bottom→top
+      // Right lane 0, bottom→top — X=slot, Y=rotation
       bx = gx + gw + 1;
       by = gy + gh - (i + 1) * S;
-      dotDx = _dotX(slot, S);
-      dotDy = Math.floor((S - dotSz) / 2);
+      dotDx = _dotX(slot, S);  dotDy = _dotX(rot, S);
+      tsX = bx - 1; tsY = by; tsW = 1; tsH = S;  // timing strip: 1px left of block
     } else if(i < nR + nT) {
-      // Top lane 0, right→left
+      // Top lane 0, right→left — Y=slot, X=rotation
       const jj = i - nR;
       bx = gx + gw - (jj + 1) * S;
       by = gy - S;
-      dotDx = Math.floor((S - dotSz) / 2);
-      dotDy = _dotX(slot, S);
+      dotDx = _dotX(rot, S);   dotDy = _dotX(slot, S);
+      tsX = bx; tsY = by - 1; tsW = S; tsH = 1;  // timing strip: 1px above block
     } else if(i < nR + nT + nL) {
-      // Left lane 0, top→bottom
+      // Left lane 0, top→bottom — X=slot(mirrored), Y=rotation
       const jj = i - nR - nT;
       bx = gx - S;
       by = gy + jj * S;
-      dotDx = _dotX(3 - slot, S);
-      dotDy = Math.floor((S - dotSz) / 2);
+      dotDx = _dotX(3 - slot, S); dotDy = _dotX(rot, S);
+      tsX = bx + S; tsY = by; tsW = 1; tsH = S;  // timing strip: 1px right of block
     } else if(i < firstLap) {
-      // Bottom lane 0, left→right
+      // Bottom lane 0, left→right — Y=slot(mirrored), X=rotation
       const jj = i - nR - nT - nL;
       bx = gx + jj * S;
       by = gy + gh;
-      dotDx = Math.floor((S - dotSz) / 2);
-      dotDy = _dotX(3 - slot, S);
+      dotDx = _dotX(rot, S);   dotDy = _dotX(3 - slot, S);
+      tsX = bx; tsY = by + S; tsW = S; tsH = 1;  // timing strip: 1px below block
     } else {
       // Extra lanes: right col then left col, expanding outward, skipping top/bottom
       const ei   = i - firstLap;
@@ -2618,14 +2622,14 @@ function drawVerificationStripe(gx, gy, gw, gh) {
       if(wp < nR) {
         bx = gx + gw + 1 + off;
         by = gy + gh - (wp + 1) * S;
-        dotDx = _dotX(slot, S);
-        dotDy = Math.floor((S - dotSz) / 2);
+        dotDx = _dotX(slot, S);       dotDy = _dotX(rot, S);
+        tsX = bx - 1; tsY = by; tsW = 1; tsH = S;
       } else {
         const jj = wp - nR;
         bx = gx - S - off;
         by = gy + jj * S;
-        dotDx = _dotX(3 - slot, S);
-        dotDy = Math.floor((S - dotSz) / 2);
+        dotDx = _dotX(3 - slot, S);   dotDy = _dotX(rot, S);
+        tsX = bx + S; tsY = by; tsW = 1; tsH = S;
       }
     }
 
@@ -2634,6 +2638,11 @@ function drawVerificationStripe(gx, gy, gw, gh) {
     if(S >= 3) {
       CTX.fillStyle = 'rgba(0,0,0,0.85)';
       CTX.fillRect(bx + dotDx, by + dotDy, dotSz, dotSz);
+    }
+    // Timing strip — 1px grayscale adjacent to block
+    if(S >= 4 && tsW && tsH) {
+      CTX.fillStyle = `rgb(${tInt},${tInt},${tInt})`;
+      CTX.fillRect(tsX, tsY, tsW, tsH);
     }
   }
 
