@@ -253,8 +253,9 @@ var _p10Log=[]; // per-piece log for first-10 debug audit
 var piecePot=0, tetrisPot=0;
 var AUTO_PLAY=false, AUTO_SPEED=10.66, autoUsed=false;
 var _replayMode=false, _replayPlacements=[], _replayIdx=0, _replayTimer=null;
-var _replayMeta={score:0,lines:0,level:0,pieces:0,_linesCleared:0};
+var _replayMeta={score:0,lines:0,level:0,pieces:0};
 var _pendingReplayStream=null, _replayPromptVisible=false;
+var _replaySource=null; // stream that finished — enables "WATCH AGAIN"
 // Screen shake — 4 independent sinusoidal channels, normalized so total energy=1
 // Each channel: {phx, phy, fx, fy, mx, my} — random phase & freq per axis per layer
 var _shakeT=0, _shakeDur=0, _shakeAmp=0;
@@ -713,7 +714,6 @@ function draw(ts){
 
   if(_receiptOpen) drawReceiptOverlay(t);
   if(_replayPromptVisible) _drawReplayPrompt();
-  if(_replayMode) _drawReplayHUD();
   if(ui.flash && ts < ui.flash.until) drawFlash(t);
   drawTipBubble(t);
 
@@ -1396,7 +1396,13 @@ function drawNextPiece(t){
 
 function drawPauseBox(t){
   const r = R.rPause;
-  if(dead){
+  if(dead && _replaySource){
+    // Replay just finished — offer to watch again
+    panel(r.x, r.y, r.w, r.h, '#002233');
+    label('WATCH', r.x, r.y+r.h*0.04, r.w, '#00ccff', Math.max(5,r.h*0.20));
+    label('AGAIN', r.x, r.y+r.h*0.28, r.w, '#00ccff', Math.max(5,r.h*0.20));
+    val('↺', r.x, r.y+r.h*0.62, r.w, 'rgba(0,204,255,0.90)', Math.max(10,r.h*0.38));
+  } else if(dead){
     panel(r.x, r.y, r.w, r.h, '#330000');
     label('GAME OVER', r.x, r.y+r.h*0.06, r.w, '#ff4444', Math.max(5,r.h*0.20));
     val('▶', r.x, r.y+r.h*0.72, r.w, 'rgba(255,255,255,0.85)', Math.max(10,r.h*0.38));
@@ -1406,6 +1412,13 @@ function drawPauseBox(t){
     const resumeColor = blinkOn ? C.green : 'rgba(0,255,136,0.60)';
     label('RESUME', r.x, r.y+r.h*0.08, r.w, resumeColor, Math.max(7,r.h*0.22));
     val('▶', r.x, r.y+r.h*0.65, r.w, 'rgba(255,255,255,0.75)', Math.max(10,r.h*0.35));
+  } else if(_replayMode){
+    // Active replay — show progress counter and pause affordance
+    panel(r.x, r.y, r.w, r.h, '#003344');
+    label('REPLAY', r.x, r.y+r.h*0.08, r.w, '#00ccff', Math.max(5,r.h*0.20));
+    const progStr = _replayIdx+'/'+_replayPlacements.length;
+    val(progStr, r.x, r.y+r.h*0.56, r.w, 'rgba(0,180,220,0.80)', Math.max(7,r.h*0.28));
+    val('⏸', r.x, r.y+r.h*0.82, r.w, 'rgba(0,180,220,0.55)', Math.max(7,r.h*0.20));
   } else {
     panel(r.x, r.y, r.w, r.h, C.border);
     label('PAUSE', r.x, r.y+r.h*0.08, r.w, C.purple, Math.max(7,r.h*0.22));
@@ -2284,12 +2297,10 @@ function handleTap(tx, ty){
     }
     return;
   }
-  // Replay STOP button
+  // During active replay only the pause button is interactive — handled below via id===pause
   if(_replayMode){
-    if(ui._replayStopW&&tx>=ui._replayStopX&&tx<=ui._replayStopX+ui._replayStopW&&
-       ty>=ui._replayStopY&&ty<=ui._replayStopY+ui._replayStopH){
-      _stopReplayMode();
-    }
+    const idR=hitTest(tx,ty);
+    if(idR==='pause') togglePause();
     return;
   }
 
@@ -2353,8 +2364,9 @@ function handleTap(tx, ty){
     }
     // Also allow the corner RECEIPT hit zone while dead
     if(id === 'receipt'){ showReceipt(); return; }
-    // Pause box doubles as GAME OVER / play-again while dead
+    // Pause box: "WATCH AGAIN" after replay, normal play-again otherwise
     if(id === 'pause'){
+      if(_replaySource){ _startReplayMode(_replaySource); return; }
       if(performance.now()-_deadAt >= 3000) _showIdentityCanvas(()=>restart(false));
       else restart(false);
       return;
@@ -6371,7 +6383,7 @@ function startGame(){
 function _showErr(e){ /*suppressed*/ }
 
 function restart(asAuto){
-  // Set AUTO_PLAY BEFORE init() so autoUsed seeds correctly inside init()
+  _replayMode=false; _replaySource=null; // clear replay state on new human/auto game
   AUTO_PLAY = (asAuto === true);
   ui._playAgainW  = 0;
   ui._receiptBtnW = 0;
@@ -7269,6 +7281,7 @@ function _startReplayMode(streamText){
   _replayIdx=0;
   _replayMeta={score:parsed.score,lines:parsed.lines,level:parsed.level,
                pieces:parsed.pieces.length};
+  _replaySource=streamText; // remembered so "WATCH AGAIN" can restart it
   startGame(); // full board/score reset; spawn() → startSelTimer() → _startReplayPlay()
   autoUsed=true; // prevent replay score from overwriting human hi score
 }
@@ -7277,7 +7290,10 @@ function _startReplayMode(streamText){
 // with the recorded type, then delegates to _navigateAndLock() for the animation.
 function _startReplayPlay(){
   if(!cur||dead||paused||clearAnimating)return;
-  if(_replayIdx>=_replayPlacements.length)return; // last piece already locked; wait for triggerDead
+  // Wipe AI-computed ghosts immediately — they belong to the pre-override piece type
+  placements=[null,null,null,null];
+  for(let i=0;i<4;i++) drawPrevBtn(i,null);
+  if(_replayIdx>=_replayPlacements.length)return; // last piece locked; wait for triggerDead
   const p=_replayPlacements[_replayIdx++];
   // Substitute recorded piece type — RNG seed differs, piece order will diverge otherwise
   if(cur.k!==p.k){
