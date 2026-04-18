@@ -656,6 +656,9 @@ function draw(ts){
   if(!SW||!SH||!R.gw) return; // layout not ready yet
   const t = ts * 0.001;
 
+  // Identity screen takes over the full canvas
+  if(_identityScreen){ drawIdentityScreen(t); return; }
+
   // Background
   const bg = CTX.createLinearGradient(0,0,SW,SH);
   bg.addColorStop(0,'#080018'); bg.addColorStop(1,'#050015');
@@ -1062,6 +1065,184 @@ function drawStartScreen(t){
 
 
 // ── Left panel ───────────────────────────────────────────────────────
+// ─── CANVAS IDENTITY SCREEN ──────────────────────────────────────────────────
+let _identityScreen = false;
+let _idOnComplete   = null;
+let _idHitZones     = [];
+const _EQ_N = 24;
+const _eqSpike = new Float32Array(_EQ_N);
+let _eqSpikeT = 0;
+
+function _showIdentityCanvas(onComplete) {
+  const stored = _getStoredIdentity();
+  const pre = (stored && stored.name) ? Array.from(stored.name) : _genRandomName();
+  _nameChars = pre.slice(0, 3);
+  _namePreFilled = true;
+  _identityScreen = true;
+  _idOnComplete = onComplete;
+}
+
+function _confirmIdentityCanvas() {
+  while(_nameChars.length < 3){ const r=_genRandomName(); _nameChars.push(r[_nameChars.length]||r[0]); }
+  const checked = _checkBadWord(_nameChars);
+  const name = checked.join('');
+  _namePreFilled = false;
+  _saveIdentity({ name });
+  _currentPlayer = { name };
+  _identityScreen = false;
+  if(_idOnComplete){ _idOnComplete(); _idOnComplete = null; }
+}
+
+function drawIdentityScreen(t) {
+  _idHitZones = [];
+
+  // ── Background + scanlines ─────────────────────────────────────────────────
+  CTX.fillStyle = '#05000f';
+  CTX.fillRect(0, 0, SW, SH);
+  CTX.fillStyle = 'rgba(0,0,0,0.18)';
+  for(let y=0; y<SH; y+=3) CTX.fillRect(0, y, SW, 1);
+
+  // ── Layout: derive everything from a single "unit" so it fits SW × SH ─────
+  // unit = grid cell height. All other heights are multiples of unit.
+  // Coefficient table (multiples of unit):
+  //   topPad=0.3  title=2.0  titleGap=0.15  sub=0.6  subGap=0.3
+  //   slot=2.2    slotGap=0.3   grid=GROW    gridGap=0.25
+  //   btn=0.9     eqH=1.5
+  const GCOLS  = 10;
+  const GROW   = Math.ceil(_B92_CHARS.length / GCOLS);
+  const K_FIXED = 0.3+2.0+0.15+0.6+0.3+2.2+0.3+0.25+0.9+1.5; // fixed-element sum
+  const K_TOTAL = K_FIXED + GROW;
+
+  // unit constrained by height
+  const unitByH = SH / K_TOTAL;
+  // unit constrained by width (cells fill SW with a small pad)
+  const pad     = Math.max(4, Math.round(Math.min(SW,SH) * 0.015));
+  const cellWmax= Math.floor((SW - pad*2) / GCOLS);
+  const unitByW = cellWmax * 0.88; // cellH ≈ cellW * 0.88
+
+  const unit  = Math.min(unitByH, unitByW);
+  const cellH = Math.round(unit);
+  const cellW = Math.min(cellWmax, Math.round(unit / 0.88));
+  const gridTW= GCOLS * cellW;
+  const gridX = Math.round((SW - gridTW) / 2);
+
+  // Derived heights
+  const titleH = Math.round(unit * 2.0);
+  const subH   = Math.round(unit * 0.6);
+  const slotSz = Math.round(unit * 2.2);
+  const btnH2  = Math.round(unit * 0.9);
+  const eqH    = Math.round(unit * 1.5);
+
+  // Y positions (top-to-bottom)
+  const titleY = Math.round(unit * 0.3);
+  const subY   = titleY + titleH + Math.round(unit * 0.15);
+  const slotY  = subY   + subH   + Math.round(unit * 0.3);
+  const gridY  = slotY  + slotSz + Math.round(unit * 0.3);
+  const btnY2  = gridY  + GROW*cellH + Math.round(unit * 0.25);
+  const eqY    = SH - eqH;
+
+  // ── Equalizer bars ─────────────────────────────────────────────────────────
+  const bW   = SW / _EQ_N;
+  const spDt = t - _eqSpikeT;
+  for(let i=0; i<_EQ_N; i++){
+    const w1   = 0.38 + 0.38*Math.sin(t*1.9  + i*0.55);
+    const w2   = 0.18 + 0.18*Math.sin(t*3.3  + i*0.88 + 1.4);
+    const w3   = 0.10 *Math.sin(t*5.7  + i*0.31 + 2.1);
+    const spk  = Math.max(0, _eqSpike[i] - spDt*2.8);
+    const frac = Math.min(1, Math.abs(w1+w2+w3) + spk);
+    const h    = frac * eqH;
+    const by   = eqY + eqH - h;
+    const gr   = CTX.createLinearGradient(0, by, 0, eqY+eqH);
+    gr.addColorStop(0,    `rgba(255,${Math.round(80+frac*80)},0,${0.5+frac*0.5})`);
+    gr.addColorStop(0.45, `rgba(140,0,220,${0.35+frac*0.35})`);
+    gr.addColorStop(1,    `rgba(0,220,200,0.55)`);
+    CTX.fillStyle = gr;
+    CTX.fillRect(i*bW+1, by, bW-2, h);
+    if(h > 3){ CTX.fillStyle=`rgba(255,220,120,${0.55+frac*0.45})`; CTX.fillRect(i*bW+1, by, bW-2, 3); }
+  }
+
+  // ── Title ──────────────────────────────────────────────────────────────────
+  CTX.save();
+  CTX.shadowColor='#cc4400'; CTX.shadowBlur=28;
+  _dmWordLabel(CTX,'CELLTOWER',SW*0.04,titleY,SW*0.92,titleH,'#ff7700');
+  CTX.shadowColor='#ff8800'; CTX.shadowBlur=14;
+  _dmWordLabel(CTX,'CELLTOWER',SW*0.04,titleY,SW*0.92,titleH,'#ffaa33');
+  CTX.shadowBlur=0; CTX.restore();
+
+  CTX.save();
+  CTX.shadowColor='#00ffcc'; CTX.shadowBlur=6;
+  _dmWordLabel(CTX,'THE HIGH TOWER DISTRICT · FRESNO CA',SW*0.04,subY,SW*0.92,subH,'#00ddaa');
+  CTX.shadowBlur=0; CTX.restore();
+
+  // ── Name slots ─────────────────────────────────────────────────────────────
+  const slotGap = Math.round(slotSz * 0.18);
+  const slot0X  = Math.round((SW - (3*slotSz + 2*slotGap)) / 2);
+  for(let i=0; i<3; i++){
+    const sx = slot0X + i*(slotSz+slotGap);
+    const ch = _nameChars[i];
+    const pulse = 0.55 + 0.45*Math.sin(t*3.8 + i*1.3);
+    CTX.fillStyle = ch ? 'rgba(255,110,0,0.14)' : 'rgba(255,255,255,0.03)';
+    CTX.fillRect(sx, slotY, slotSz, slotSz);
+    CTX.save();
+    CTX.shadowColor=ch?'#ff6600':'#223344'; CTX.shadowBlur=ch?16:5;
+    CTX.strokeStyle=ch?`rgba(255,${Math.round(100+pulse*100)},0,${0.7+pulse*0.3})`:`rgba(60,90,110,${0.25+pulse*0.12})`;
+    CTX.lineWidth=ch?2:1;
+    CTX.strokeRect(sx+0.5,slotY+0.5,slotSz-1,slotSz-1);
+    CTX.restore();
+    const chSz=Math.round(slotSz*0.62);
+    CTX.save();
+    CTX.font=`900 ${chSz}px "Arial Black","Impact",Arial,sans-serif`;
+    CTX.textAlign='center'; CTX.textBaseline='middle';
+    if(ch){CTX.shadowColor='#ff8800';CTX.shadowBlur=chSz*0.4;CTX.fillStyle='#ffdd55';}
+    else  {CTX.fillStyle='rgba(80,100,120,0.35)';}
+    CTX.fillText(ch||'_', sx+slotSz/2, slotY+slotSz/2);
+    CTX.restore();
+  }
+
+  // ── Char grid ──────────────────────────────────────────────────────────────
+  const chFsz = Math.round(cellH * 0.5);
+  for(let i=0; i<_B92_CHARS.length; i++){
+    const col=i%GCOLS, row=Math.floor(i/GCOLS);
+    const cx=gridX+col*cellW, cy=gridY+row*cellH;
+    const ch=_B92_CHARS[i];
+    const isUp=ch>='A'&&ch<='Z', isDg=ch>='0'&&ch<='9', isLo=ch>='a'&&ch<='z';
+    const col0=isUp?'rgba(230,240,255,0.78)':isDg?'rgba(0,255,200,0.78)':isLo?'rgba(160,200,255,0.65)':'rgba(200,140,255,0.65)';
+    CTX.fillStyle='rgba(255,255,255,0.025)';
+    CTX.fillRect(cx+1,cy+1,cellW-2,cellH-2);
+    CTX.font=`600 ${chFsz}px "Courier New",monospace`;
+    CTX.textAlign='center'; CTX.textBaseline='middle';
+    CTX.fillStyle=col0;
+    CTX.fillText(ch, cx+cellW/2, cy+cellH/2);
+    _idHitZones.push({type:'char',ch,x:cx,y:cy,w:cellW,h:cellH});
+  }
+
+  // ── Buttons ────────────────────────────────────────────────────────────────
+  const bkW  = Math.round(SW*0.18);
+  const playX= pad + bkW + Math.round(SW*0.025);
+  const playW= SW - pad - playX;
+
+  CTX.fillStyle='rgba(50,15,0,0.7)'; CTX.fillRect(pad,btnY2,bkW,btnH2);
+  CTX.strokeStyle='rgba(255,80,0,0.35)'; CTX.lineWidth=1; CTX.strokeRect(pad,btnY2,bkW,btnH2);
+  CTX.font=`700 ${Math.round(btnH2*0.5)}px monospace`; CTX.textAlign='center'; CTX.textBaseline='middle';
+  CTX.fillStyle='#ff6600'; CTX.fillText('⌫', pad+bkW/2, btnY2+btnH2/2);
+  _idHitZones.push({type:'backspace',x:pad,y:btnY2,w:bkW,h:btnH2});
+
+  const pp=0.72+0.28*Math.sin(t*2.1);
+  const pgr=CTX.createLinearGradient(playX,0,playX+playW,0);
+  pgr.addColorStop(0,`rgba(160,50,0,${pp})`); pgr.addColorStop(1,`rgba(240,100,0,${pp})`);
+  CTX.fillStyle=pgr; CTX.fillRect(playX,btnY2,playW,btnH2);
+  CTX.save();
+  CTX.shadowColor='#ff8800'; CTX.shadowBlur=14*pp;
+  CTX.strokeStyle=`rgba(255,160,40,${pp})`; CTX.lineWidth=1.5;
+  CTX.strokeRect(playX,btnY2,playW,btnH2); CTX.restore();
+  CTX.save();
+  CTX.shadowColor='rgba(0,0,0,0.9)'; CTX.shadowBlur=0; CTX.shadowOffsetX=1; CTX.shadowOffsetY=1;
+  CTX.font=`900 ${Math.round(btnH2*0.46)}px "Arial Black",Arial,sans-serif`;
+  CTX.textAlign='center'; CTX.textBaseline='middle'; CTX.fillStyle='#fff';
+  CTX.fillText('PLAY', playX+playW/2, btnY2+btnH2/2); CTX.restore();
+  _idHitZones.push({type:'play',x:playX,y:btnY2,w:playW,h:btnH2});
+}
+
 function drawPlayerBadge(t){
   if(!_currentPlayer) return;
   const r = R.lTicker;
@@ -2067,6 +2248,23 @@ function hitTest(tx, ty){
 }
 
 function handleTap(tx, ty){
+  // Identity screen owns all input while showing
+  if(_identityScreen){
+    const hit = _idHitZones.find(z => tx>=z.x && tx<=z.x+z.w && ty>=z.y && ty<=z.y+z.h);
+    if(!hit) return;
+    if(hit.type === 'char'){
+      _pickChar(hit.ch);
+      for(let i=0;i<_EQ_N;i++) _eqSpike[i] = 0.4 + Math.random()*0.6;
+      _eqSpikeT = AT;
+    } else if(hit.type === 'backspace'){
+      _namePreFilled = false;
+      if(_nameChars.length > 0) _nameChars.pop();
+    } else if(hit.type === 'play'){
+      _confirmIdentityCanvas();
+    }
+    return;
+  }
+
   // Marquee is always tappable — check before any game-state gating
   const idEarly = hitTest(tx, ty);
   if(idEarly === 'marquee'){
@@ -2117,7 +2315,9 @@ function handleTap(tx, ty){
     }
     if(ui._playAgainW && tx>=ui._playAgainX && tx<=ui._playAgainX+ui._playAgainW &&
        ty>=ui._playAgainY && ty<=ui._playAgainY+ui._playAgainH){
-      restart(false); return;
+      if(performance.now()-_deadAt >= 3000) _showIdentityCanvas(()=>restart(false));
+      else restart(false);
+      return;
     }
     if(ui._playAutoW && tx>=ui._playAutoX && tx<=ui._playAutoX+ui._playAutoW &&
        ty>=ui._playAutoY && ty<=ui._playAutoY+ui._playAutoH){
@@ -2126,7 +2326,11 @@ function handleTap(tx, ty){
     // Also allow the corner RECEIPT hit zone while dead
     if(id === 'receipt'){ showReceipt(); return; }
     // Pause box doubles as GAME OVER / play-again while dead
-    if(id === 'pause'){ restart(false); return; }
+    if(id === 'pause'){
+      if(performance.now()-_deadAt >= 3000) _showIdentityCanvas(()=>restart(false));
+      else restart(false);
+      return;
+    }
     return;
   }
 
@@ -6930,8 +7134,8 @@ window.addEventListener('DOMContentLoaded', function(){
     _syncAutoUI();
     dbg('init done, starting loop');
     requestAnimationFrame(loop);
-    // Show welcome/identity screen immediately — no tap required to get here
-    _showIdentityModal(() => startGame());
+    // Show canvas welcome/identity screen immediately — no tap required
+    _showIdentityCanvas(() => startGame());
   } catch(e) {
     // Last resort — draw error directly on canvas
     const cv2 = document.getElementById('cv');
