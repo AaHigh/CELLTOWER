@@ -5755,6 +5755,7 @@ function triggerDead(){
   const qualifier = autoUsed ? ' · AUTO (no hi score)' : (score>=hi&&score>0?' · NEW HIGH!':'');
   document.getElementById('fst').textContent='Score: '+score+qualifier;
   document.getElementById('gov').style.display='flex';
+  _selfCheck();
 }
 
 function togglePause(){
@@ -6162,6 +6163,175 @@ function _buildStream() {
     .map(b=>b.toString(16).padStart(2,'0')).join('');
 
   return `${header};${placements};${snapParts.join(';')};${termHash}`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PORTABLE VERIFICATION CORE
+// This block is self-contained — it references no game globals.
+// All state lives in local variables. All inputs come through parameters.
+// Copy this block verbatim into the standalone validator app.
+// Modifying one copy requires updating the other.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Piece shapes — independently defined (same data as NRS, separate object)
+const _V_SHAPES = {
+  I: [[[1,1,1,1]],         [[1],[1],[1],[1]],     [[1,1,1,1]],         [[1],[1],[1],[1]]],
+  O: [[[1,1],[1,1]],       [[1,1],[1,1]],         [[1,1],[1,1]],       [[1,1],[1,1]]],
+  T: [[[0,1,0],[1,1,1]],   [[1,0],[1,1],[1,0]],   [[1,1,1],[0,1,0]],   [[0,1],[1,1],[0,1]]],
+  S: [[[0,1,1],[1,1,0]],   [[1,0],[1,1],[0,1]],   [[0,1,1],[1,1,0]],   [[1,0],[1,1],[0,1]]],
+  Z: [[[1,1,0],[0,1,1]],   [[0,1],[1,1],[1,0]],   [[1,1,0],[0,1,1]],   [[0,1],[1,1],[1,0]]],
+  J: [[[1,0,0],[1,1,1]],   [[1,1],[1,0],[1,0]],   [[1,1,1],[0,0,1]],   [[0,1],[0,1],[1,1]]],
+  L: [[[0,0,1],[1,1,1]],   [[1,0],[1,0],[1,1]],   [[1,1,1],[1,0,0]],   [[1,1],[0,1],[0,1]]]
+};
+const _V_PIECE_ORDER = ['I','O','T','S','Z','J','L'];
+
+// Base-92 decoder — independently defined (same alphabet as _fromB92)
+const _V_B92 = (() => {
+  const a = [];
+  for (let i = 33; i <= 126; i++) { const c = String.fromCharCode(i); if (c !== ',' && c !== ';') a.push(c); }
+  return a;
+})();
+function _vFromB92(s) { let n = 0; for (const c of s) n = n * 92 + _V_B92.indexOf(c); return n; }
+
+// Convert flat 25×10 board (Uint8Array, index=row*10+col) to 50-byte word array
+function _vBoardToWords(b) {
+  const out = new Uint8Array(50);
+  for (let r = 0; r < 25; r++) {
+    let w = 0;
+    for (let c = 0; c < 10; c++) if (b[r*10+c]) w |= (1 << (9-c));
+    out[r*2] = (w >> 8) & 0xFF; out[r*2+1] = w & 0xFF;
+  }
+  return out;
+}
+
+// Apply one placement to the board, clear complete rows, return lines cleared
+function _vApply(board, typeIdx, rot, x, drop_y) {
+  const cells = _V_SHAPES[_V_PIECE_ORDER[typeIdx]][rot];
+  for (let r = 0; r < cells.length; r++)
+    for (let c = 0; c < cells[r].length; c++)
+      if (cells[r][c]) board[(drop_y + r) * 10 + (x + c)] = 1;
+  let cleared = 0;
+  for (let r = 24; r >= 0; r--) {
+    let full = true;
+    for (let c = 0; c < 10; c++) if (!board[r*10+c]) { full = false; break; }
+    if (full) {
+      for (let rr = r; rr > 0; rr--) for (let c = 0; c < 10; c++) board[rr*10+c] = board[(rr-1)*10+c];
+      for (let c = 0; c < 10; c++) board[c] = 0;
+      r++; cleared++;
+    }
+  }
+  return cleared;
+}
+
+// Build the 56-byte hash record for one placement (same layout as _advanceHashChain)
+function _vRecord(typeIdx, rot, x, drop_y, ms, boardWords) {
+  const rec = new Uint8Array(56);
+  rec[0]=typeIdx&0xFF; rec[1]=rot&0xFF; rec[2]=x&0xFF; rec[3]=drop_y&0xFF;
+  rec[4]=(ms>>8)&0xFF; rec[5]=ms&0xFF;
+  rec.set(boardWords, 6);
+  return rec;
+}
+
+// Verify a stream text. Returns {valid, piecesReplayed, error}.
+// No game globals referenced — pass the raw stream string returned by _buildStream().
+async function _verifyStream(streamText) {
+  try {
+    const sections = streamText.split(';');
+    if (sections.length < 3) return { valid: false, error: 'bad section count: ' + sections.length };
+
+    const headerParts = sections[0].split(',');
+    if (headerParts.length < 3) return { valid: false, error: 'bad header fields' };
+
+    const seedHex         = headerParts[0];             // 64 hex chars (first 32 = actual seed)
+    const stats           = headerParts[2];             // 10 base-92 chars
+    const nPieces         = _vFromB92(stats.slice(8,10));
+    const placementsBlock = sections[1];
+    const termHashHex     = sections[sections.length - 1];
+
+    // Parse snapshots (sections[2] through sections[length-2], skip empty)
+    const snapMap = new Map();
+    for (const snap of sections.slice(2, -1).filter(s => s.length >= 52)) {
+      const pieceNum = _vFromB92(snap.slice(0, 2));
+      const words = new Uint8Array(50);
+      for (let r = 0; r < 25; r++) {
+        const word = _vFromB92(snap.slice(2 + r*2, 4 + r*2));
+        words[r*2] = (word >> 8) & 0xFF; words[r*2+1] = word & 0xFF;
+      }
+      snapMap.set(pieceNum, words);
+    }
+
+    // Reconstruct seed bytes from first 32 hex chars of seedHex
+    const seedBytes = new Uint8Array(16);
+    for (let i = 0; i < 16; i++) seedBytes[i] = parseInt(seedHex.slice(i*2, i*2+2), 16);
+
+    // H_0 = SHA-256(seedBytes)
+    let H = await crypto.subtle.digest('SHA-256', seedBytes);
+
+    // Fresh board — no game state
+    const board = new Uint8Array(250);  // 25 rows × 10 cols
+
+    for (let n = 0; n < nPieces; n++) {
+      const chunk = placementsBlock.slice(n*4, n*4+4);
+      if (chunk.length < 4) return { valid: false, error: 'short placement block at piece ' + n };
+
+      const posIdx  = _vFromB92(chunk.slice(0,2));
+      const ms      = _vFromB92(chunk.slice(2,4));
+      const typeIdx = Math.floor(posIdx / 1000);
+      const rot     = Math.floor((posIdx % 1000) / 250);
+      const x       = Math.floor((posIdx % 250) / 25);
+      const drop_y  = posIdx % 25;
+
+      _vApply(board, typeIdx, rot, x, drop_y);
+      const boardWords = _vBoardToWords(board);
+
+      // Snapshot integrity check
+      if (snapMap.has(n + 1)) {
+        const snap = snapMap.get(n + 1);
+        for (let i = 0; i < 50; i++) {
+          if (boardWords[i] !== snap[i]) return { valid: false, error: `snapshot mismatch at piece ${n+1} byte ${i}` };
+        }
+      }
+
+      // H_n = SHA-256(H_{n-1} || record)
+      const prev = new Uint8Array(H);
+      const msg  = new Uint8Array(88);  // 32 + 56
+      msg.set(prev, 0); msg.set(_vRecord(typeIdx, rot, x, drop_y, ms, boardWords), 32);
+      H = await crypto.subtle.digest('SHA-256', msg);
+    }
+
+    const computedHex = Array.from(new Uint8Array(H)).map(b=>b.toString(16).padStart(2,'0')).join('');
+    const valid = computedHex === termHashHex;
+    return {
+      valid,
+      piecesReplayed: nPieces,
+      snapshotsChecked: snapMap.size,
+      error: valid ? null : `hash mismatch\n  computed: ${computedHex}\n  stream:   ${termHashHex}`
+    };
+  } catch(e) {
+    return { valid: false, error: e.message };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// END PORTABLE VERIFICATION CORE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Run at game-over. Waits for hash chain to settle, then verifies the stream
+// against an independent replay. Result goes to console only.
+async function _selfCheck() {
+  await _chainPromise;
+  if (autoUsed) { console.log('[SELFCHECK] skipped — AUTO game, hash chain suppressed'); return; }
+  const stream = _buildStream();
+  if (!stream) { console.warn('[SELFCHECK] no stream (game too short or not initialized)'); return; }
+  console.log(`[SELFCHECK] verifying ${_gameHistory.length} placements...`);
+  const t0 = performance.now();
+  const result = await _verifyStream(stream);
+  const ms = Math.round(performance.now() - t0);
+  if (result.valid) {
+    console.log(`[SELFCHECK] ✓ PASS — ${result.piecesReplayed} pieces, ${result.snapshotsChecked} snapshots, ${ms}ms`);
+  } else {
+    console.error(`[SELFCHECK] ✗ FAIL — ${result.error}`);
+  }
 }
 
 // ── Build receipt DOM ──────────────────────────────────────────────────────
