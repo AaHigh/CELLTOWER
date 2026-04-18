@@ -45,18 +45,10 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
 
 <!-- ── IDENTITY OVERLAY ── -->
 <div id="id-overlay">
-  <!-- Returning player view -->
-  <div id="id-returning" class="id-view">
+  <!-- Welcome / name picker — shown on startup; pre-populated -->
+  <div id="id-new" class="id-view">
     <div class="id-title">CELLTOWER</div>
-    <div class="id-sub">THE HIGH TOWER DISTRICT</div>
-    <div class="id-label" id="id-ret-name"></div>
-    <button class="id-btn id-btn-primary" id="id-ret-play">PLAY AS THIS PLAYER</button>
-    <button class="id-btn id-btn-ghost" id="id-ret-other">SOMEONE ELSE</button>
-  </div>
-  <!-- New player / name entry view -->
-  <div id="id-new" class="id-view" style="display:none">
-    <div class="id-title">CHOOSE YOUR NAME</div>
-    <div class="id-sub">PICK 3 CHARACTERS</div>
+    <div class="id-sub">THE HIGH TOWER DISTRICT · FRESNO CA</div>
     <div class="id-name-display">
       <span class="id-slot" id="id-slot-0">_</span>
       <span class="id-slot" id="id-slot-1">_</span>
@@ -65,16 +57,8 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
     <div class="id-char-grid" id="id-char-grid"></div>
     <div class="id-picker-row">
       <button class="id-btn id-btn-ghost" id="id-backspace">⌫</button>
-      <button class="id-btn id-btn-primary" id="id-name-ok" disabled>ENTER THE TOWER</button>
+      <button class="id-btn id-btn-primary" id="id-name-ok">PLAY</button>
     </div>
-  </div>
-  <!-- QRC reveal view -->
-  <div id="id-qrc-reveal" class="id-view" style="display:none">
-    <div class="id-title">YOUR QUICK RETURN CODE</div>
-    <div class="id-sub">WRITE THIS DOWN</div>
-    <div class="id-qrc" id="id-qrc-display"></div>
-    <div class="id-qrc-hint">Next time you play, enter this 4-letter code<br>to identify yourself instantly.</div>
-    <button class="id-btn id-btn-primary" id="id-qrc-ok">GOT IT — LET'S PLAY</button>
   </div>
 </div>
 
@@ -136,14 +120,13 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
 }
 #id-overlay{
   position:fixed;top:0;left:0;right:0;bottom:0;
-  background:#080018;
+  background:rgba(2,0,14,0.78);
   z-index:600;
   display:none;
   flex-direction:column;
   align-items:center;
-  overflow-y:auto;
-  -webkit-overflow-scrolling:touch;
-  padding:24px 24px 40px 24px;
+  justify-content:flex-end;
+  padding:0 16px 32px 16px;
   box-sizing:border-box;
 }
 #id-overlay.show{display:flex}
@@ -153,8 +136,12 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
   align-items:center;
   width:100%;
   max-width:360px;
-  gap:10px;
-  padding-top:16px;
+  gap:8px;
+  background:rgba(4,0,20,0.88);
+  border:1px solid rgba(255,140,0,0.25);
+  border-radius:10px;
+  padding:14px 14px 18px 14px;
+  box-sizing:border-box;
 }
 .id-title{
   font-family:'Courier New',monospace;
@@ -171,14 +158,7 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
   text-align:center;
   margin-top:-8px;
 }
-.id-label{
-  font-family:'Courier New',monospace;
-  font-size:1.3rem;font-weight:900;
-  color:#ffffff;
-  letter-spacing:.1em;
-  text-align:center;
-  margin:8px 0;
-}
+
 .id-btn{
   width:100%;
   padding:14px 0;
@@ -229,23 +209,7 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
 }
 .id-picker-row .id-btn{flex:1;}
 .id-picker-row .id-btn-ghost{flex:0 0 60px;}
-.id-qrc{
-  font-family:'Courier New',monospace;
-  font-size:3rem;font-weight:900;
-  color:#ff8800;
-  letter-spacing:.3em;
-  padding:16px 24px;
-  border:2px solid #ff8800;
-  margin:8px 0;
-}
-.id-qrc-hint{
-  font-family:'Courier New',monospace;
-  font-size:.65rem;
-  color:#666;
-  text-align:center;
-  line-height:1.6;
-  letter-spacing:.05em;
-}
+
 </style>
 
 <script>
@@ -1098,11 +1062,38 @@ function drawStartScreen(t){
 
 
 // ── Left panel ───────────────────────────────────────────────────────
+function drawPlayerBadge(t){
+  if(!_currentPlayer) return;
+  const r = R.lTicker;
+  const nameSz = Math.round(r.h * 0.14);
+  const tx2 = r.x + 3;
+  const ty2 = r.y + nameSz * 0.9;
+
+  CTX.save();
+  CTX.font = `900 ${nameSz}px "Arial Black","Impact",Arial,sans-serif`;
+  CTX.textAlign = 'left';
+  CTX.textBaseline = 'alphabetic';
+
+  // Heavy drop shadow — falls down-right, darkens whatever scrolls under
+  CTX.shadowColor = 'rgba(0,0,0,0.95)';
+  CTX.shadowBlur = nameSz * 0.5;
+  CTX.shadowOffsetX = nameSz * 0.18;
+  CTX.shadowOffsetY = nameSz * 0.25;
+  CTX.fillStyle = '#ffcc44';
+  CTX.fillText(_currentPlayer.name, tx2, ty2);
+
+  CTX.shadowBlur = 0;
+  CTX.shadowOffsetX = 0;
+  CTX.shadowOffsetY = 0;
+  CTX.restore();
+}
+
 function drawLeftPanel(t){
   draw7SegScore(R.lScore, 'SCORE', score);  // default pink
   draw7SegScore(R.lLevel, 'LEVEL', level,   {litColor:'#00ffff', glowColor:'#00ffff', dimColor:'rgba(0,50,60,0.35)', labelColor:'#00ffff'});
   draw7SegScore(R.lLines, 'LINES', lines,   {litColor:'#00ffff', glowColor:'#00ffff', dimColor:'rgba(0,50,60,0.35)', labelColor:'#00ffff'});
   drawTicker(t);
+  drawPlayerBadge(t);
 }
 
 function drawTicker(t){
@@ -1215,12 +1206,10 @@ function drawNextPiece(t){
 
 function drawPauseBox(t){
   const r = R.rPause;
-  const pName = _currentPlayer ? _currentPlayer.name : null;
   if(dead){
     panel(r.x, r.y, r.w, r.h, '#330000');
-    label('GAME OVER', r.x, r.y+r.h*0.04, r.w, '#ff4444', Math.max(5,r.h*0.18));
-    if(pName) val(pName, r.x, r.y+r.h*0.50, r.w, '#ff8800', Math.max(8,r.h*0.24));
-    val('▶', r.x, r.y+r.h*0.82, r.w, 'rgba(255,255,255,0.80)', Math.max(10,r.h*0.28));
+    label('GAME OVER', r.x, r.y+r.h*0.06, r.w, '#ff4444', Math.max(5,r.h*0.20));
+    val('▶', r.x, r.y+r.h*0.72, r.w, 'rgba(255,255,255,0.85)', Math.max(10,r.h*0.38));
   } else if(paused){
     panel(r.x, r.y, r.w, r.h, C.green);
     const blinkOn = Math.floor(t * 2) % 2 === 0;
@@ -1229,35 +1218,29 @@ function drawPauseBox(t){
     val('▶', r.x, r.y+r.h*0.65, r.w, 'rgba(255,255,255,0.75)', Math.max(10,r.h*0.35));
   } else {
     panel(r.x, r.y, r.w, r.h, C.border);
-    if(pName){
-      val(pName, r.x, r.y+r.h*0.32, r.w, '#ff8800', Math.max(8,r.h*0.24));
-      val('⏸', r.x, r.y+r.h*0.78, r.w, C.white, Math.max(8,r.h*0.26));
-    } else {
-      label('PAUSE', r.x, r.y+r.h*0.08, r.w, C.purple, Math.max(7,r.h*0.22));
-      val('⏸', r.x, r.y+r.h*0.65, r.w, C.white, Math.max(10,r.h*0.35));
-    }
+    label('PAUSE', r.x, r.y+r.h*0.08, r.w, C.purple, Math.max(7,r.h*0.22));
+    val('⏸', r.x, r.y+r.h*0.65, r.w, C.white, Math.max(10,r.h*0.35));
   }
 }
 
 function drawTBonusBox(t){
   const r = R.rTBonus;
   panel(r.x, r.y, r.w, r.h);
-  label('T-BONUS', r.x, r.y+r.h*0.04, r.w, C.purple, Math.max(6,r.h*0.14));
 
   const cleanVal  = piecePot  ? Math.round(piecePot/100)  : 0;
   const tetrisVal = tetrisPot ? Math.round(tetrisPot/100) : 0;
 
   // Split box into two equal halves vertically
-  const halfH = r.h * 0.43;
-  const topY  = r.y + r.h * 0.20;
+  const halfH = r.h * 0.46;
+  const topY  = r.y + r.h * 0.06;
   const botY  = topY + halfH;
   const ax    = r.x + 2;
   const aw    = r.w - 4;
 
-  // CLEAN label (DM font, cyan) — top 28% of each half
+  // Row labels
   const wordH = halfH * 0.30;
-  _dmWordLabel(CTX, 'CLEAN',  ax, topY,         aw, wordH, '#00ffff');
-  _dmWordLabel(CTX, 'TETRIS', ax, botY,         aw, wordH, C.orange);
+  _dmWordLabel(CTX, 'BONUS',  ax, topY,         aw, wordH, '#00ffff');
+  _dmWordLabel(CTX, 'TBONUS', ax, botY,         aw, wordH, C.orange);
 
   // LED digits — 3 digits for CLEAN (yellow), 4 for TETRIS (orange)
   const numH = halfH * 0.62;
@@ -2125,8 +2108,9 @@ function handleTap(tx, ty){
   // DEBUG: record tap (shown only when debugMode on)
   ui._dbgTap = {tx,ty,id:id||'canvas',t:AT};
 
-  // Game-over state: only fire buttons if actually dead
+  // Game-over state: buttons inactive for 1 second after death
   if(dead){
+    if(performance.now() - _deadAt < 1000) return;
     if(ui._receiptBtnW && tx>=ui._receiptBtnX && tx<=ui._receiptBtnX+ui._receiptBtnW &&
        ty>=ui._receiptBtnY && ty<=ui._receiptBtnY+ui._receiptBtnH){
       showReceipt(); return;
@@ -2141,6 +2125,8 @@ function handleTap(tx, ty){
     }
     // Also allow the corner RECEIPT hit zone while dead
     if(id === 'receipt'){ showReceipt(); return; }
+    // Pause box doubles as GAME OVER / play-again while dead
+    if(id === 'pause'){ restart(false); return; }
     return;
   }
 
@@ -5891,8 +5877,10 @@ function fanfare(tetrisPoints){
 }
 
 // ─── GAME OVER ────────────────────────────────────────────────────────────────
+let _deadAt = 0;
 function triggerDead(){
-  dead=true;stopDrop();stopSelTimer();
+  dead=true; _deadAt = performance.now();
+  stopDrop();stopSelTimer();
   sndGameOver();
   // Finalize hole-free run — if player died still hole-free, that run counts
   if(hfRun > hfBest) hfBest = hfRun;
@@ -5985,15 +5973,14 @@ function init(){
   nxt=mkPiece();spawn();scheduleDrop();
 }
 // ─── IDENTITY & LEDGER ───────────────────────────────────────────────────────
-const _ID_CHARSET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 32 unambiguous chars
-let _currentPlayer = null; // {name, qrc} set after identity modal
+let _currentPlayer = null; // {name} set after identity modal
+let _namePreFilled = false; // true when slots were auto-populated; first tap clears
 
-function _genQRC() {
-  let c = '';
-  const arr = new Uint8Array(4);
+function _genRandomName() {
+  const pool = 'ABCDEFGHJKLMNPQRSTUVWXYZ0123456789';
+  const arr = new Uint8Array(3);
   crypto.getRandomValues(arr);
-  for (let i = 0; i < 4; i++) c += _ID_CHARSET[arr[i] % 32];
-  return c;
+  return Array.from(arr, b => pool[b % pool.length]);
 }
 
 function _getStoredIdentity() {
@@ -6049,6 +6036,10 @@ function _buildCharGrid() {
 }
 
 function _pickChar(ch) {
+  if (_namePreFilled) {
+    _nameChars = [];
+    _namePreFilled = false;
+  }
   if (_nameChars.length >= 3) return;
   _nameChars.push(ch);
   _updateNameDisplay();
@@ -6062,82 +6053,44 @@ function _updateNameDisplay() {
     slot.className = 'id-slot' + (_nameChars[i] ? ' filled' : '');
   }
   const ok = document.getElementById('id-name-ok');
-  if (ok) ok.disabled = (_nameChars.length < 3);
+  if (ok) ok.disabled = false;
 }
 
 function _showIdentityModal(onComplete) {
   const overlay = document.getElementById('id-overlay');
   const stored = _getStoredIdentity();
 
-  function _showView(id) {
-    ['id-returning','id-new','id-qrc-reveal'].forEach(v => {
-      document.getElementById(v).style.display = (v === id) ? 'flex' : 'none';
-    });
-  }
-
   function _dismiss() {
     overlay.classList.remove('show');
     onComplete();
   }
 
-  function _openNewPlayer() {
-    _nameChars = [];
-    _buildCharGrid();
-    _updateNameDisplay();
-    _showView('id-new');
-  }
+  // Pre-populate: use stored name, or generate a random one
+  const pre = stored && stored.name ? Array.from(stored.name) : _genRandomName();
+  _nameChars = pre.slice(0, 3);
+  _namePreFilled = true;
+  _buildCharGrid();
+  _updateNameDisplay();
+  overlay.classList.add('show');
 
-  if (stored && stored.name) {
-    // Returning player — show confirm view
-    document.getElementById('id-ret-name').textContent = stored.name;
-    _showView('id-returning');
-    overlay.classList.add('show');
-
-    document.getElementById('id-ret-play').onclick = () => {
-      // Recognized by name display (not QRC entry) — rotate QRC for next session
-      const newQrc = _genQRC();
-      const updated = { name: stored.name, qrc: newQrc };
-      _saveIdentity(updated);
-      _currentPlayer = updated;
-      document.getElementById('id-qrc-display').textContent = newQrc;
-      _showView('id-qrc-reveal');
-    };
-
-    document.getElementById('id-ret-other').onclick = () => _openNewPlayer();
-
-  } else {
-    // New player — char picker
-    _openNewPlayer();
-    overlay.classList.add('show');
-  }
-
-  // Backspace
   document.getElementById('id-backspace').onclick = () => {
+    _namePreFilled = false;
     if (_nameChars.length > 0) { _nameChars.pop(); _updateNameDisplay(); }
   };
 
-  // Name confirm
   document.getElementById('id-name-ok').onclick = () => {
-    if (_nameChars.length < 3) return;
+    // If they tapped PLAY mid-selection, pad with random chars
+    while (_nameChars.length < 3) _nameChars.push(_genRandomName()[_nameChars.length]);
     const checked = _checkBadWord(_nameChars);
     const name = checked.join('');
-    const qrc = _genQRC();
-    const id = { name, qrc };
-    _saveIdentity(id);
-    _currentPlayer = { name, qrc };
-    document.getElementById('id-qrc-display').textContent = qrc;
-    _showView('id-qrc-reveal');
+    _namePreFilled = false;
+    _saveIdentity({ name });
+    _currentPlayer = { name };
+    _dismiss();
   };
-
-  document.getElementById('id-qrc-ok').onclick = _dismiss;
 }
 
 function startGame(){
-  // Gate on identity — show modal first if no current player
-  if (!_currentPlayer) {
-    _showIdentityModal(() => startGame());
-    return;
-  }
   ui.gameStarted = true;
   // Belt-and-suspenders: always hide the overlay when game starts
   try{
@@ -6977,6 +6930,8 @@ window.addEventListener('DOMContentLoaded', function(){
     _syncAutoUI();
     dbg('init done, starting loop');
     requestAnimationFrame(loop);
+    // Show welcome/identity screen immediately — no tap required to get here
+    _showIdentityModal(() => startGame());
   } catch(e) {
     // Last resort — draw error directly on canvas
     const cv2 = document.getElementById('cv');
