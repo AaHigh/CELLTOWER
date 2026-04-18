@@ -7288,6 +7288,12 @@ function _startReplayPlay(){
     cx=pw===4?3:pw===2?4:3; cy=0;
   }
   stopDrop();
+  // Replace all four ghost slots with just the single destination — the computed
+  // AI ghosts belong to the pre-override piece type and are meaningless here.
+  const destCells=NRS[p.k][p.rot].map(r=>[...r]);
+  placements=[{c:destCells,x:p.x,rotation:p.rot,dropY:p.drop_y,sc:0},null,null,null];
+  selectedPlacementIdx=0;
+  for(let i=0;i<4;i++) drawPrevBtn(i,placements[i]);
   _navigateAndLock(p.k,{x:p.x,rotation:p.rot,dropY:p.drop_y},_REPLAY_MOVE_MS);
 }
 
