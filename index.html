@@ -2402,6 +2402,13 @@ function handleTap(tx, ty){
     // Also allow the corner RECEIPT hit zone while dead (disabled during replay)
     if(id === 'receipt' && !_replaySource){ showReceipt(); return; }
     if(id === 'pause'){
+      if(_replaySource){
+        // Returning to human play after replay — restore pre-replay identity
+        if(_preReplayPlayer){ _currentPlayer=_preReplayPlayer; _preReplayPlayer=null; }
+        _replaySource=null;
+        restart(false);
+        return;
+      }
       if(performance.now()-_deadAt >= 3000) _showIdentityCanvas(()=>restart(false));
       else restart(false);
       return;
