@@ -257,7 +257,7 @@ var _replayPaused=false;      // replay-only pause — never touches game `pause
 var _replayMeta={score:0,lines:0,level:0,pieces:0};
 var _pendingReplayStream=null, _replayPromptVisible=false;
 var _replaySource=null;       // stream that finished — enables restart
-var _preReplayPlayer=null;    // player identity saved before replay, restored on stop
+var _replayDisplayName=null;  // name shown in badge during replay — never touches _currentPlayer
 // Screen shake — 4 independent sinusoidal channels, normalized so total energy=1
 // Each channel: {phx, phy, fx, fy, mx, my} — random phase & freq per axis per layer
 var _shakeT=0, _shakeDur=0, _shakeAmp=0;
@@ -1252,7 +1252,8 @@ function drawIdentityScreen(t) {
 }
 
 function drawPlayerBadge(t){
-  if(!_currentPlayer || !_currentPlayer.name) return;
+  const displayName = _replayMode ? _replayDisplayName : (_currentPlayer && _currentPlayer.name);
+  if(!displayName) return;
   const r = R.lTicker;
   const nameSz = Math.round(r.h * 0.14);
   const tx2 = r.x + 3;
@@ -1263,19 +1264,17 @@ function drawPlayerBadge(t){
   CTX.textAlign = 'left';
   CTX.textBaseline = 'alphabetic';
 
-  // Pass 1: broad black stroke — gives the outline that makes white pop
   CTX.lineJoin = 'round';
   CTX.lineWidth = Math.max(3, nameSz * 0.22);
   CTX.strokeStyle = '#000000';
-  CTX.strokeText(_currentPlayer.name, tx2, ty2);
+  CTX.strokeText(displayName, tx2, ty2);
 
-  // Pass 2: white fill + soft drop-shadow
   CTX.shadowColor = 'rgba(0,0,0,0.80)';
   CTX.shadowBlur = nameSz * 0.30;
   CTX.shadowOffsetX = nameSz * 0.18;
   CTX.shadowOffsetY = nameSz * 0.22;
   CTX.fillStyle = '#ffffff';
-  CTX.fillText(_currentPlayer.name, tx2, ty2);
+  CTX.fillText(displayName, tx2, ty2);
 
   CTX.restore();
 }
@@ -2403,10 +2402,9 @@ function handleTap(tx, ty){
     if(id === 'receipt' && !_replaySource){ showReceipt(); return; }
     if(id === 'pause'){
       if(_replaySource){
-        if(_preReplayPlayer){ _currentPlayer=_preReplayPlayer; _preReplayPlayer=null; }
         _replaySource=null;
-        if(_currentPlayer && _currentPlayer.name) restart(false);
-        else _showIdentityCanvas(()=>restart(false));
+        _replayDisplayName=null;
+        _showIdentityCanvas(()=>restart(false));
         return;
       }
       if(performance.now()-_deadAt >= 3000) _showIdentityCanvas(()=>restart(false));
@@ -7283,8 +7281,7 @@ function _startReplayMode(streamText){
   _replayMeta={score:parsed.score,lines:parsed.lines,level:parsed.level,
                pieces:parsed.pieces.length};
   _replaySource=streamText;
-  _preReplayPlayer=_currentPlayer?{name:_currentPlayer.name}:null;
-  if(parsed.playerName) _currentPlayer={name:parsed.playerName};
+  _replayDisplayName=parsed.playerName||null;
   startGame(); // full board/score reset; spawn() → startSelTimer() → _startReplayPlay()
   autoUsed=true; // prevent replay score from overwriting human hi score
 }
@@ -7343,7 +7340,7 @@ function _stopReplayMode(){
   clearTimeout(_replayTimer); _replayTimer=null;
   stopSelTimer(); stopDrop();
   dead=false; ui.gameStarted=false;
-  if(_preReplayPlayer){ _currentPlayer=_preReplayPlayer; _preReplayPlayer=null; }
+  _replayDisplayName=null;
 }
 
 function _toggleReplayPause(){
