@@ -6842,7 +6842,119 @@ function buildReceiptDOM() {
   const SP = (px)   => A(dmSpacer(px));
   const HR = (c,n)  => L((c||'=').repeat(n||DM_COLS));
 
-  // \u2500\u2500 HEADER \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  // ── ZERO SCORE RECEIPTS ──────────────────────────────────────────────────────
+  if(score === 0){
+    const _header = () => {
+      SP(10);
+      L(center('\x01 THE \x02 CELLTOWER \x03 DISTRICT \x01'), {inv:true, bold:true});
+      SP(2);
+      L(center('777 OLIVE AVE · FRESNO CA'));
+      SP(4);
+      HR('=');
+    };
+
+    if(piecesPlaced < 20){
+      // Embarrassingly short game — joke receipt
+      const _jokes = [
+        ['PIECES PLACED: '+piecesPlaced+'.  SCORE: ZERO.','YOU PLAYED YOURSELF.'],
+        ['YOU DROPPED '+piecesPlaced+' PIECES.','STRAIGHT DOWN. INTO THE VOID.','RECEIPT ISSUED ANYWAY.'],
+        ['THANK YOU FOR TESTING','THE FLOOR DETECTION CODE.','IT WORKS. YOU MAY GO.'],
+        ['GAME OVER IN '+piecesPlaced+' MOVES.','THAT IS TECHNICALLY PLAYING.','WE GUESS.'],
+        ['PARTICIPATION TROPHY: DENIED.','TRY PLACING A PIECE SIDEWAYS.','REVOLUTIONARY IDEA.'],
+        ['TETRIS? NO.  LINES? NO.','SCORE? ALSO NO.','VERY CONSISTENT THOUGH.'],
+        ['THE AI WATCHED THIS.','IT IS EMBARRASSED FOR YOU.','AND FOR ITSELF.'],
+        [''+piecesPlaced+' PIECES. ZERO POINTS.','YOU HAVE DISCOVERED THE FLOOR.','IT WAS ALREADY THERE.'],
+        ['THE PIECES DID NOT ASK','TO BE DROPPED LIKE THAT.','THEY HAVE FEELINGS.'],
+        ['SPEED RUN: FAIL%.','RECORD: NOBODY CARES.','THE BOARD HAS NOTED THIS.'],
+        ['WE WILL NOT VERIFY THIS.','THERE IS NOTHING TO VERIFY.','GOOD DAY.'],
+        ['SHORTEST CELLTOWER GAME','IN RECORDED HISTORY. PROBABLY.','THE BAR IS ON THE FLOOR.'],
+      ];
+      const _j = _jokes[Math.floor(Math.random() * _jokes.length)];
+      _header();
+      SP(3);
+      _j.forEach(line => L(center(line)));
+      SP(3);
+      HR('=');
+      SP(2);
+      L(center('COME BACK AND TRY HARDER.'));
+      SP(4);
+      HR('~');
+      SP(8);
+
+    } else {
+      // Tried but scored nothing — coaching receipt
+      _header();
+      L(center('\x04 ZERO SCORE REPORT \x05'));
+      L(center(new Date().toLocaleTimeString()));
+      HR('=');
+      SP(2);
+      L('  PIECES PLACED:  '+piecesPlaced, {bold:true});
+      L('  LINES CLEARED:  0');
+      L('  SCORE:          0');
+      SP(4);
+      HR('-');
+      L('  ** WHAT HAPPENED **', {bold:true});
+      HR('-');
+      SP(2);
+      L('  YOU STACKED '+piecesPlaced+' PIECES AND');
+      L('  DID NOT CLEAR A SINGLE LINE.');
+      SP(2);
+      L('  THAT MEANS EVERY PIECE ADDED');
+      L('  HEIGHT WITHOUT CLEARING SPACE.');
+      L('  THE BOARD FILLED. GAME OVER.');
+      SP(4);
+      HR('-');
+      L('  ** WHAT TO FOCUS ON NEXT **', {bold:true});
+      HR('-');
+      SP(2);
+      L('  1. AVOID HOLES.');
+      SP(1);
+      L('     A HOLE IS ANY EMPTY CELL');
+      L('     WITH A BLOCK ABOVE IT.');
+      L('     HOLES ARE PERMANENT DEBT.');
+      L('     THEY CANNOT BE FILLED.');
+      L('     THEY KILL YOUR MULTIPLIER.');
+      SP(2);
+      L('  2. KEEP THE STACK FLAT.');
+      SP(1);
+      L('     UNEVEN TOWERS TRAP HOLES.');
+      L('     STACK LIKE BRICKS.');
+      L('     BUILD A WALL, NOT A SKYLINE.');
+      SP(2);
+      L('  3. LEAVE A WELL ON ONE SIDE.');
+      SP(1);
+      L('     ONE COLUMN EMPTY = TETRIS.');
+      L('     4 LINES AT ONCE = BIG SCORE.');
+      L('     THAT IS THE WHOLE GAME.');
+      SP(4);
+      HR('-');
+      L('  ** THE GOAL **', {bold:true});
+      HR('-');
+      SP(2);
+      L('  NOT: SCORE 100 POINTS AT ONCE.');
+      SP(1);
+      L('  YES: STACK CLEAN FOR 20 PIECES.');
+      L('       THEN TETRIS.');
+      L('       THEN DO IT AGAIN.');
+      SP(2);
+      L('  THE T-BONUS REWARDS YOU FOR');
+      L('  DOING TWO TETRISES IN A ROW.');
+      L('  THAT IS THE MULTIPLIER.');
+      L('  THAT IS HOW BIG SCORES HAPPEN.');
+      SP(4);
+      HR('=');
+      SP(2);
+      L(center('WATCH THE GHOST PIECES.'));
+      L(center('TAP 1 FOR THE AI\'S TOP PICK.'));
+      L(center('TRUST THE NUMBERS.'));
+      SP(4);
+      HR('~');
+      SP(8);
+    }
+    return;
+  }
+
+  // ── HEADER \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
   SP(10);
   L(center('\x01 THE \x02 CELLTOWER \x03 DISTRICT \x01'), {inv:true, bold:true});
   SP(2);
@@ -6930,20 +7042,21 @@ function buildReceiptDOM() {
   HR('=');
   // ── TOTALS SUMMARY ──────────────────────────────────────────────────────────
   if(lines > 0) L(dmRow('  LINES CLEARED', String(lines)));
-  L(dmRow('  LEVEL REACHED',   String(level)));
+  if(level >= 2)  L(dmRow('  LEVEL REACHED', String(level)));
   L(dmRow('  PIECES PLACED',   String(piecesPlaced)));
-  // Hole-free run — "perfect game" requires hole-free AND T-bonus (streak ≥2 once)
-  const _isPerfect = _neverHoled && piecesPlaced > 0 && _maxTetrisStreak >= 2;
-  if(_isPerfect){
-    L(dmRow('  HOLE-FREE STREAK', 'PERFECT GAME! '+piecesPlaced+'CS'), {bold:true});
-  } else if(_neverHoled && piecesPlaced > 0){
-    L(dmRow('  HOLE-FREE STREAK', piecesPlaced+'CS  NO HOLES'), {bold:false});
-  } else if(hfBest >= piecesPlaced && piecesPlaced > 0 && currentScoringHoles===0){
-    L(dmRow('  HOLE-FREE STREAK', piecesPlaced+'CS  CLEAN EXIT!'));
-  } else if(hfBest > 0){
-    L(dmRow('  HOLE-FREE STREAK', hfBest+'CS'));
-  }
+  // Hole-free streak only meaningful if lines were cleared
+  // "Perfect game" requires: hole-free AND T-bonus (streak ≥2 at least once)
   if(lines > 0){
+    const _isPerfect = _neverHoled && _maxTetrisStreak >= 2;
+    if(_isPerfect){
+      L(dmRow('  HOLE-FREE STREAK', 'PERFECT GAME! '+piecesPlaced+'CS'), {bold:true});
+    } else if(_neverHoled){
+      L(dmRow('  HOLE-FREE STREAK', piecesPlaced+'CS  NO HOLES'));
+    } else if(hfBest >= piecesPlaced && currentScoringHoles===0){
+      L(dmRow('  HOLE-FREE STREAK', piecesPlaced+'CS  CLEAN EXIT!'));
+    } else if(hfBest > 0){
+      L(dmRow('  HOLE-FREE STREAK', hfBest+'CS'));
+    }
     const _tetrisPct = Math.round(_tetrisLines / lines * 100);
     L(dmRow('  TETRIS %', _tetrisPct+'%  ('+_tetrisLines+' of '+lines+' lines)'));
   }
@@ -7020,8 +7133,8 @@ function buildReceiptDOM() {
     SP(2);
   }
 
-  // Verification receipt code
-  const _rc = (typeof G !== 'undefined' && G.receiptCode && G.receiptCode !== '-----') ? G.receiptCode : null;
+  // Verification receipt code — only meaningful if a score was actually earned
+  const _rc = (score > 0 && typeof G !== 'undefined' && G.receiptCode && G.receiptCode !== '-----') ? G.receiptCode : null;
   if (_rc) {
     HR('-');
     L(center('VERIFICATION CODE'));
