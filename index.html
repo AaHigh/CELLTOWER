@@ -2496,7 +2496,7 @@ function _boardToWords(b) {
 // drop_y: final resting row of the piece. boardWords: 50-byte post-placement board state.
 // Record format matches stream.md spec: 6 bytes placement + 50 bytes board = 56 bytes.
 async function _advanceHashChain(k, rot, x, drop_y, spawnT, slot, boardWords) {
-  const ms = Math.min(65535, Math.round(performance.now() - spawnT));
+  const ms = Math.min(8463, Math.round(performance.now() - spawnT));
   _gameHistory.push({k, slot: slot||0, rot, x, drop_y, ms});
   // I-frame snapshot every 30 pieces — copy boardWords so the reference stays stable.
   if(_gameHistory.length % 30 === 0 && boardWords) {
