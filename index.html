@@ -2847,7 +2847,6 @@ let _seedBytes    = null;            // Uint8Array(16), fixed per game
 let _stripeBytes  = null;            // Uint8Array(50): seed+hash+count, render cache
 let _spawnT           = 0;     // performance.now() when current piece spawned
 let _gameHistory      = [];    // [{k, slot}] one entry per locked piece, oldest first
-let _iFrames          = [];    // [{pieceNum, words}] board snapshots every 30 pieces
 let _killScreenActive = false; // true during the 2.5s kill screen animation
 let _killScreenT      = 0;     // performance.now() when kill screen started
 let _wasKillScreen    = false; // true if this game ended via kill screen
@@ -2939,10 +2938,6 @@ function _boardToWords(b) {
 async function _advanceHashChain(k, rot, x, drop_y, spawnT, slot, boardWords) {
   const ms = Math.min(8463, Math.round(performance.now() - spawnT));
   _gameHistory.push({k, slot: slot||0, rot, x, drop_y, ms});
-  // I-frame snapshot every 30 pieces — copy boardWords so the reference stays stable.
-  if(_gameHistory.length % 30 === 0 && boardWords) {
-    _iFrames.push({pieceNum: _gameHistory.length, words: Uint8Array.from(boardWords)});
-  }
   // AI games have no verifiable input — skip hash chain and leave receipt invalid.
   if(autoUsed) return;
   const PIECE_ORDER = ['I','O','T','S','Z','J','L'];
@@ -6252,7 +6247,7 @@ function init(){
   const _sv = crypto.getRandomValues(new Uint8Array(16));
   _seedBytes = _sv;
   G.gameSeed = Array.from(_sv).map(b=>b.toString(16).padStart(2,'0')).join('');
-  G.hashChain = ''; G.receiptCode = '-----'; _stripeBytes = null; _spawnT = performance.now(); _gameHistory = []; _iFrames = [];
+  G.hashChain = ''; G.receiptCode = '-----'; _stripeBytes = null; _spawnT = performance.now(); _gameHistory = [];
   _killScreenActive = false; _wasKillScreen = false;
   autoUsed = AUTO_PLAY;
   // Version hash: SHA-256 of the live game file. Computed once, reused every game.
@@ -6693,7 +6688,7 @@ function _txSection(evType) {
 // ── Stream assembly ────────────────────────────────────────────────────────
 // Builds the full base-92 replay stream as defined in stream.md.
 // Returns a string ready for zlib compression and QR encoding.
-// Safe to call at any time — reads _gameHistory, _iFrames, _hashChainBuf, _seedBytes.
+// Safe to call at any time — reads _gameHistory, _hashChainBuf, _seedBytes.
 function _buildStream() {
   if(!_hashChainBuf || !_seedBytes || _gameHistory.length === 0) return null;
 
@@ -6727,34 +6722,11 @@ function _buildStream() {
     placements += _toB92(posIdx, 2) + _toB92(Math.min(ms, 92**2-1), 2);
   }
 
-  // ── Snapshots (RLE-compressed) ──────────────────────────────────────────
-  // Row-words for a 10-col board max at 1023 = B92 "--", so both chars are
-  // always index 0-11 (`!` through `-`). Backtick (B92 index 61) is free to
-  // use as an escape: `N means N+1 consecutive zero (empty) rows.
-  const snapParts = _iFrames.map(f => {
-    const pn = _toB92(Math.min(f.pieceNum, 92**2-1), 2);
-    let rows = '';
-    let r = 0;
-    while (r < 25) {
-      const word = (f.words[r*2] << 8) | f.words[r*2+1];
-      if (word === 0) {
-        let run = 1;
-        while (r + run < 25 && ((f.words[(r+run)*2] << 8) | f.words[(r+run)*2+1]) === 0) run++;
-        rows += '`' + _toB92(run - 1, 1); // `` ` `` + count (0-based B92 digit)
-        r += run;
-      } else {
-        rows += _toB92(word, 2);
-        r++;
-      }
-    }
-    return pn + rows; // 2 + compressed row data (< 50 chars when board is sparse)
-  });
-
   // ── Terminal hash ────────────────────────────────────────────────────────
   const termHash = Array.from(new Uint8Array(_hashChainBuf))
     .map(b=>b.toString(16).padStart(2,'0')).join('');
 
-  return `${header};${placements};${snapParts.join(';')};${termHash}`;
+  return `${header};${placements};${termHash}`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -6843,28 +6815,6 @@ async function _verifyStream(streamText) {
     const placementsBlock = sections[1];
     const termHashHex     = sections[sections.length - 1];
 
-    // Parse snapshots — supports both legacy fixed-52-char and RLE-compressed formats.
-    // RLE: backtick (`) followed by a B92 digit N means N+1 consecutive empty rows.
-    // Safe because legitimate row-words (10-col board, max 1023) only use B92 indices
-    // 0-11 (`!` through `-`); backtick (index 61) never appears in a real row-word.
-    const snapMap = new Map();
-    for (const snap of sections.slice(2, -1).filter(s => s.length >= 4)) {
-      const pieceNum = _vFromB92(snap.slice(0, 2));
-      const words = new Uint8Array(50); // zero-initialized = empty rows
-      let r = 0, pos = 2;
-      while (r < 25 && pos < snap.length) {
-        if (snap[pos] === '`') {
-          r += _vFromB92(snap[pos + 1]) + 1; // skip N+1 empty rows (already zero)
-          pos += 2;
-        } else {
-          const word = _vFromB92(snap.slice(pos, pos + 2));
-          words[r*2] = (word >> 8) & 0xFF; words[r*2+1] = word & 0xFF;
-          r++; pos += 2;
-        }
-      }
-      snapMap.set(pieceNum, words);
-    }
-
     // Reconstruct seed bytes from first 32 hex chars of seedHex
     const seedBytes = new Uint8Array(16);
     for (let i = 0; i < 16; i++) seedBytes[i] = parseInt(seedHex.slice(i*2, i*2+2), 16);
@@ -6892,34 +6842,6 @@ async function _verifyStream(streamText) {
       _vApply(board, typeIdx, rot, x, drop_y);
       const boardWords = _vBoardToWords(board);
 
-      // Snapshot integrity check
-      if (snapMap.has(n + 1)) {
-        const snap = snapMap.get(n + 1);
-        let mismatch = false;
-        const diffs = [];
-        for (let i = 0; i < 50; i++) {
-          if (boardWords[i] !== snap[i]) {
-            mismatch = true;
-            const row = Math.floor(i / 2), isHi = (i % 2 === 0);
-            diffs.push(`row${row} ${isHi?'hi':'lo'}: verifier=0x${boardWords[i].toString(16).padStart(2,'0')} snap=0x${snap[i].toString(16).padStart(2,'0')}`);
-          }
-        }
-        if (mismatch) {
-          // Log last 5 placements before the mismatch to help diagnose
-          const recent = [];
-          for (let j = Math.max(0, n-4); j <= n; j++) {
-            const chunk2 = placementsBlock.slice(j*4, j*4+4);
-            const pi = _vFromB92(chunk2.slice(0,2));
-            const ty = Math.floor(pi/1160);
-            const ro = Math.floor((pi%1160)/290);
-            const xx = Math.floor((pi%290)/29);
-            const dy = (pi%29)-4;
-            recent.push(`p${j+1}:${_V_PIECE_ORDER[ty]}r${ro}x${xx}y${dy}`);
-          }
-          return { valid: false, error: `snapshot mismatch at piece ${n+1}\n  diffs: ${diffs.join(', ')}\n  recent placements: ${recent.join(' ')}` };
-        }
-      }
-
       // H_n = SHA-256(H_{n-1} || record)
       const prev = new Uint8Array(H);
       const msg  = new Uint8Array(88);  // 32 + 56
@@ -6932,7 +6854,6 @@ async function _verifyStream(streamText) {
     return {
       valid,
       piecesReplayed: nPieces,
-      snapshotsChecked: snapMap.size,
       error: valid ? null : `hash mismatch\n  computed: ${computedHex}\n  stream:   ${termHashHex}`
     };
   } catch(e) {
