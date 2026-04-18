@@ -1394,35 +1394,48 @@ function drawNextPiece(t){
       if(cc[row][col]) drawCell(CTX, ox+col*s, oy+row*s, s, nxt.rgb, t);
 }
 
+// Draw pause-box icon (⏸ or ↺) with white fill + black stroke for legibility
+function _drawPauseIcon(sym, cx2, cy2, sz){
+  CTX.save();
+  CTX.font = F(FONT_VAL, sz);
+  CTX.textAlign = 'center'; CTX.textBaseline = 'middle';
+  CTX.lineJoin = 'round';
+  CTX.lineWidth = Math.max(2, sz * 0.18);
+  CTX.strokeStyle = '#000000';
+  CTX.strokeText(sym, cx2, cy2);
+  CTX.fillStyle = '#ffffff';
+  CTX.fillText(sym, cx2, cy2);
+  CTX.restore();
+}
+
 function drawPauseBox(t){
   const r = R.rPause;
+  const icX = r.x + r.w/2, icSz = Math.max(10, r.h*0.38);
   if(dead && _replaySource){
-    // Replay just finished — offer to watch again
+    // Replay finished — "REPLAY" label, replay icon
     panel(r.x, r.y, r.w, r.h, '#002233');
-    label('WATCH', r.x, r.y+r.h*0.04, r.w, '#00ccff', Math.max(5,r.h*0.20));
-    label('AGAIN', r.x, r.y+r.h*0.28, r.w, '#00ccff', Math.max(5,r.h*0.20));
-    val('↺', r.x, r.y+r.h*0.62, r.w, 'rgba(0,204,255,0.90)', Math.max(10,r.h*0.38));
+    label('REPLAY', r.x, r.y+r.h*0.08, r.w, '#00ccff', Math.max(5,r.h*0.20));
+    _drawPauseIcon('↺', icX, r.y+r.h*0.72, icSz);
   } else if(dead){
     panel(r.x, r.y, r.w, r.h, '#330000');
     label('GAME OVER', r.x, r.y+r.h*0.06, r.w, '#ff4444', Math.max(5,r.h*0.20));
-    val('▶', r.x, r.y+r.h*0.72, r.w, 'rgba(255,255,255,0.85)', Math.max(10,r.h*0.38));
+    _drawPauseIcon('▶', icX, r.y+r.h*0.76, icSz);
   } else if(paused){
     panel(r.x, r.y, r.w, r.h, C.green);
     const blinkOn = Math.floor(t * 2) % 2 === 0;
     const resumeColor = blinkOn ? C.green : 'rgba(0,255,136,0.60)';
     label('RESUME', r.x, r.y+r.h*0.08, r.w, resumeColor, Math.max(7,r.h*0.22));
-    val('▶', r.x, r.y+r.h*0.65, r.w, 'rgba(255,255,255,0.75)', Math.max(10,r.h*0.35));
+    _drawPauseIcon('▶', icX, r.y+r.h*0.68, Math.max(10,r.h*0.35));
   } else if(_replayMode){
-    // Active replay — show progress counter and pause affordance
+    // Active replay — label + piece counter + pause icon
     panel(r.x, r.y, r.w, r.h, '#003344');
     label('REPLAY', r.x, r.y+r.h*0.08, r.w, '#00ccff', Math.max(5,r.h*0.20));
-    const progStr = _replayIdx+'/'+_replayPlacements.length;
-    val(progStr, r.x, r.y+r.h*0.56, r.w, 'rgba(0,180,220,0.80)', Math.max(7,r.h*0.28));
-    val('⏸', r.x, r.y+r.h*0.82, r.w, 'rgba(0,180,220,0.55)', Math.max(7,r.h*0.20));
+    val(_replayIdx+'/'+_replayPlacements.length, r.x, r.y+r.h*0.56, r.w, 'rgba(0,180,220,0.80)', Math.max(7,r.h*0.26));
+    _drawPauseIcon('⏸', icX, r.y+r.h*0.82, Math.max(7,r.h*0.20));
   } else {
     panel(r.x, r.y, r.w, r.h, C.border);
     label('PAUSE', r.x, r.y+r.h*0.08, r.w, C.purple, Math.max(7,r.h*0.22));
-    val('⏸', r.x, r.y+r.h*0.65, r.w, C.white, Math.max(10,r.h*0.35));
+    _drawPauseIcon('⏸', icX, r.y+r.h*0.68, Math.max(10,r.h*0.35));
   }
 }
 
@@ -7293,7 +7306,17 @@ function _startReplayPlay(){
   // Wipe AI-computed ghosts immediately — they belong to the pre-override piece type
   placements=[null,null,null,null];
   for(let i=0;i<4;i++) drawPrevBtn(i,null);
-  if(_replayIdx>=_replayPlacements.length)return; // last piece locked; wait for triggerDead
+  if(_replayIdx>=_replayPlacements.length){
+    // All recorded pieces exhausted — end the replay cleanly
+    _replayMode=false;
+    stopSelTimer(); stopDrop(); cur=null;
+    dead=true; _deadAt=performance.now();
+    const _gov=document.getElementById('gov');
+    if(_gov) _gov.style.display='flex';
+    const _fst=document.getElementById('fst');
+    if(_fst) _fst.textContent='REPLAY COMPLETE';
+    return;
+  }
   const p=_replayPlacements[_replayIdx++];
   // Substitute recorded piece type — RNG seed differs, piece order will diverge otherwise
   if(cur.k!==p.k){
