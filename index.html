@@ -43,6 +43,41 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
   </div>
 </div>
 
+<!-- ── IDENTITY OVERLAY ── -->
+<div id="id-overlay">
+  <!-- Returning player view -->
+  <div id="id-returning" class="id-view">
+    <div class="id-title">CELLTOWER</div>
+    <div class="id-sub">THE HIGH TOWER DISTRICT</div>
+    <div class="id-label" id="id-ret-name"></div>
+    <button class="id-btn id-btn-primary" id="id-ret-play">PLAY AS THIS PLAYER</button>
+    <button class="id-btn id-btn-ghost" id="id-ret-other">SOMEONE ELSE</button>
+  </div>
+  <!-- New player / name entry view -->
+  <div id="id-new" class="id-view" style="display:none">
+    <div class="id-title">CHOOSE YOUR NAME</div>
+    <div class="id-sub">PICK 3 CHARACTERS</div>
+    <div class="id-name-display">
+      <span class="id-slot" id="id-slot-0">_</span>
+      <span class="id-slot" id="id-slot-1">_</span>
+      <span class="id-slot" id="id-slot-2">_</span>
+    </div>
+    <div class="id-char-grid" id="id-char-grid"></div>
+    <div class="id-picker-row">
+      <button class="id-btn id-btn-ghost" id="id-backspace">⌫</button>
+      <button class="id-btn id-btn-primary" id="id-name-ok" disabled>ENTER THE TOWER</button>
+    </div>
+  </div>
+  <!-- QRC reveal view -->
+  <div id="id-qrc-reveal" class="id-view" style="display:none">
+    <div class="id-title">YOUR QUICK RETURN CODE</div>
+    <div class="id-sub">WRITE THIS DOWN</div>
+    <div class="id-qrc" id="id-qrc-display"></div>
+    <div class="id-qrc-hint">Next time you play, enter this 4-letter code<br>to identify yourself instantly.</div>
+    <button class="id-btn id-btn-primary" id="id-qrc-ok">GOT IT — LET'S PLAY</button>
+  </div>
+</div>
+
 <style>
 #receipt-overlay{
   position:fixed;top:0;left:0;right:0;bottom:0;
@@ -98,6 +133,118 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
   image-rendering:pixelated;
   image-rendering:crisp-edges;
   display:block;
+}
+#id-overlay{
+  position:fixed;top:0;left:0;right:0;bottom:0;
+  background:#080018;
+  z-index:600;
+  display:none;
+  flex-direction:column;
+  align-items:center;
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  padding:24px 24px 40px 24px;
+  box-sizing:border-box;
+}
+#id-overlay.show{display:flex}
+.id-view{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  width:100%;
+  max-width:360px;
+  gap:10px;
+  padding-top:16px;
+}
+.id-title{
+  font-family:'Courier New',monospace;
+  font-size:1.5rem;font-weight:900;
+  color:#ff8800;
+  letter-spacing:.15em;
+  text-align:center;
+}
+.id-sub{
+  font-family:'Courier New',monospace;
+  font-size:.7rem;font-weight:700;
+  color:#00ffcc;
+  letter-spacing:.2em;
+  text-align:center;
+  margin-top:-8px;
+}
+.id-label{
+  font-family:'Courier New',monospace;
+  font-size:1.3rem;font-weight:900;
+  color:#ffffff;
+  letter-spacing:.1em;
+  text-align:center;
+  margin:8px 0;
+}
+.id-btn{
+  width:100%;
+  padding:14px 0;
+  font-family:'Courier New',monospace;
+  font-size:.85rem;font-weight:900;
+  letter-spacing:.15em;
+  border:none;cursor:pointer;
+  border-radius:3px;
+}
+.id-btn-primary{background:#ff8800;color:#000;}
+.id-btn-primary:disabled{background:#553300;color:#886644;cursor:default;}
+.id-btn-ghost{background:transparent;color:#888;border:1px solid #444;}
+.id-name-display{
+  display:flex;gap:12px;margin:4px 0 8px 0;
+}
+.id-slot{
+  font-family:'Courier New',monospace;
+  font-size:2.4rem;font-weight:900;
+  width:60px;height:60px;
+  display:flex;align-items:center;justify-content:center;
+  border:2px solid #444;color:#444;
+  border-radius:4px;
+}
+.id-slot.filled{border-color:#ff8800;color:#ff8800;}
+.id-char-grid{
+  display:grid;
+  grid-template-columns:repeat(10,1fr);
+  gap:3px;
+  width:100%;
+  margin:4px 0;
+}
+.id-char-btn{
+  font-family:'Courier New',monospace;
+  font-size:.85rem;font-weight:700;
+  background:#111;
+  color:#00ffcc;
+  border:1px solid #222;
+  border-radius:3px;
+  padding:7px 0;
+  cursor:pointer;
+  text-align:center;
+  -webkit-tap-highlight-color:transparent;
+  user-select:none;
+}
+.id-char-btn:active{background:#333;color:#ff8800;}
+.id-picker-row{
+  display:flex;gap:10px;width:100%;
+}
+.id-picker-row .id-btn{flex:1;}
+.id-picker-row .id-btn-ghost{flex:0 0 60px;}
+.id-qrc{
+  font-family:'Courier New',monospace;
+  font-size:3rem;font-weight:900;
+  color:#ff8800;
+  letter-spacing:.3em;
+  padding:16px 24px;
+  border:2px solid #ff8800;
+  margin:8px 0;
+}
+.id-qrc-hint{
+  font-family:'Courier New',monospace;
+  font-size:.65rem;
+  color:#666;
+  text-align:center;
+  line-height:1.6;
+  letter-spacing:.05em;
 }
 </style>
 
@@ -1057,7 +1204,8 @@ function drawNextPiece(t){
   label('NEXT', r.x, r.y + r.h*0.05, r.w, C.purple, Math.max(7,r.h*0.15));
   if(!nxt) return;
   const cc = nxt.c;
-  const s = Math.min(Math.floor(r.w*0.7/Math.max(cc.length,cc[0].length)), Math.floor(r.h*0.65/cc.length));
+  // Fixed 4×4 reference so every piece renders at identical cell size
+  const s = Math.min(Math.floor(r.w * 0.70 / 4), Math.floor(r.h * 0.65 / 4));
   const ox = r.x + (r.w - cc[0].length*s)/2;
   const oy = r.y + r.h*0.28 + (r.h*0.65 - cc.length*s)/2;
   for(let row=0;row<cc.length;row++)
@@ -1067,7 +1215,13 @@ function drawNextPiece(t){
 
 function drawPauseBox(t){
   const r = R.rPause;
-  if(paused){
+  const pName = _currentPlayer ? _currentPlayer.name : null;
+  if(dead){
+    panel(r.x, r.y, r.w, r.h, '#330000');
+    label('GAME OVER', r.x, r.y+r.h*0.04, r.w, '#ff4444', Math.max(5,r.h*0.18));
+    if(pName) val(pName, r.x, r.y+r.h*0.50, r.w, '#ff8800', Math.max(8,r.h*0.24));
+    val('▶', r.x, r.y+r.h*0.82, r.w, 'rgba(255,255,255,0.80)', Math.max(10,r.h*0.28));
+  } else if(paused){
     panel(r.x, r.y, r.w, r.h, C.green);
     const blinkOn = Math.floor(t * 2) % 2 === 0;
     const resumeColor = blinkOn ? C.green : 'rgba(0,255,136,0.60)';
@@ -1075,8 +1229,13 @@ function drawPauseBox(t){
     val('▶', r.x, r.y+r.h*0.65, r.w, 'rgba(255,255,255,0.75)', Math.max(10,r.h*0.35));
   } else {
     panel(r.x, r.y, r.w, r.h, C.border);
-    label('PAUSE', r.x, r.y+r.h*0.08, r.w, C.purple, Math.max(7,r.h*0.22));
-    val('⏸', r.x, r.y+r.h*0.65, r.w, C.white, Math.max(10,r.h*0.35));
+    if(pName){
+      val(pName, r.x, r.y+r.h*0.32, r.w, '#ff8800', Math.max(8,r.h*0.24));
+      val('⏸', r.x, r.y+r.h*0.78, r.w, C.white, Math.max(8,r.h*0.26));
+    } else {
+      label('PAUSE', r.x, r.y+r.h*0.08, r.w, C.purple, Math.max(7,r.h*0.22));
+      val('⏸', r.x, r.y+r.h*0.65, r.w, C.white, Math.max(10,r.h*0.35));
+    }
   }
 }
 
@@ -1423,18 +1582,8 @@ function drawPieceRow(t){
     addHit('piece'+i, r.x + i*(PW2+GAP2), r.y, PW2, r.h);
   }
 
-  // Pre-compute uniform scale: find minimum s across all valid slots so every
-  // piece and orientation renders at the same size regardless of bounding box.
-  let _uniS = Infinity;
-  for(let i=0;i<4;i++){
-    const p2 = placements ? placements[i] : null;
-    if(p2 && cur){
-      const cc2 = p2.c;
-      const s2 = Math.min(Math.floor(PW2*0.65/Math.max(cc2[0].length,4)), Math.floor(r.h*0.65/cc2.length));
-      if(s2 >= 2) _uniS = Math.min(_uniS, s2);
-    }
-  }
-  if(_uniS === Infinity) _uniS = 2;
+  // Fixed 4×4 reference so all pieces and rotations render at identical cell size
+  const _uniS = Math.max(2, Math.min(Math.floor(PW2 * 0.60 / 4), Math.floor(r.h * 0.75 / 4)));
 
   for(let i=0;i<4;i++){
     const px = r.x + i*(PW2+GAP2);
@@ -2003,7 +2152,7 @@ function handleTap(tx, ty){
       return;
     }
     switch(id){
-      case 'pause':        if(!dead) togglePause(); break;
+      case 'pause':        if(dead) restart(false); else togglePause(); break;
       case 'auto_toggle':  toggleAutoPlay(); break; // allow turning OFF
       case 'receipt':      if(paused||dead) showReceipt(); break;
       case 'receipt_close':hideReceipt(); break;
@@ -2018,7 +2167,7 @@ function handleTap(tx, ty){
     return;
   }
   switch(id){
-    case 'pause':     if(ui.gameStarted&&!dead) togglePause(); break;
+    case 'pause':     if(dead) restart(false); else if(ui.gameStarted) togglePause(); break;
     case 'piece0': case 'piece1': case 'piece2': case 'piece3':
       choose(parseInt(id[5])); break;
     case 'tetris':    chooseTetris(); break;
@@ -5835,7 +5984,160 @@ function init(){
   // Always spawn — start screen gated by ui.gameStarted in renderer
   nxt=mkPiece();spawn();scheduleDrop();
 }
+// ─── IDENTITY & LEDGER ───────────────────────────────────────────────────────
+const _ID_CHARSET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 32 unambiguous chars
+let _currentPlayer = null; // {name, qrc} set after identity modal
+
+function _genQRC() {
+  let c = '';
+  const arr = new Uint8Array(4);
+  crypto.getRandomValues(arr);
+  for (let i = 0; i < 4; i++) c += _ID_CHARSET[arr[i] % 32];
+  return c;
+}
+
+function _getStoredIdentity() {
+  try { return JSON.parse(localStorage.getItem('ct_identity') || 'null'); } catch(e) { return null; }
+}
+
+function _saveIdentity(id) {
+  try { localStorage.setItem('ct_identity', JSON.stringify(id)); } catch(e) {}
+}
+
+function _getLedger() {
+  try { return JSON.parse(localStorage.getItem('ct_ledger') || '[]'); } catch(e) { return []; }
+}
+
+function _addToLedger(entry) {
+  try {
+    const ledger = _getLedger();
+    ledger.push(entry);
+    localStorage.setItem('ct_ledger', JSON.stringify(ledger));
+  } catch(e) {}
+}
+
+// B92 character set: ASCII 33-126 excluding comma(44) and semicolon(59)
+const _B92_CHARS = Array.from({length: 94}, (_, i) => String.fromCharCode(33 + i))
+                       .filter(c => c !== ',' && c !== ';');
+
+// Bad word list — letters only, uppercase. Matches case-insensitively against letters in the name.
+const _BAD_WORDS = ['ASS'];
+
+function _checkBadWord(chars) {
+  // Extract just the letter characters, uppercased, for comparison
+  const letters = chars.map(c => /[a-zA-Z]/.test(c) ? c.toUpperCase() : c).join('');
+  if (_BAD_WORDS.includes(letters)) {
+    console.log('[CELLTOWER] KA-CHING! Nice try. A$$ it is.');
+    return ['A', '$', '$'];
+  }
+  return chars;
+}
+
+let _nameChars = [];
+
+function _buildCharGrid() {
+  const grid = document.getElementById('id-char-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  _B92_CHARS.forEach(ch => {
+    const btn = document.createElement('button');
+    btn.className = 'id-char-btn';
+    btn.textContent = ch;
+    btn.addEventListener('click', () => _pickChar(ch));
+    grid.appendChild(btn);
+  });
+}
+
+function _pickChar(ch) {
+  if (_nameChars.length >= 3) return;
+  _nameChars.push(ch);
+  _updateNameDisplay();
+}
+
+function _updateNameDisplay() {
+  for (let i = 0; i < 3; i++) {
+    const slot = document.getElementById('id-slot-' + i);
+    if (!slot) continue;
+    slot.textContent = _nameChars[i] || '_';
+    slot.className = 'id-slot' + (_nameChars[i] ? ' filled' : '');
+  }
+  const ok = document.getElementById('id-name-ok');
+  if (ok) ok.disabled = (_nameChars.length < 3);
+}
+
+function _showIdentityModal(onComplete) {
+  const overlay = document.getElementById('id-overlay');
+  const stored = _getStoredIdentity();
+
+  function _showView(id) {
+    ['id-returning','id-new','id-qrc-reveal'].forEach(v => {
+      document.getElementById(v).style.display = (v === id) ? 'flex' : 'none';
+    });
+  }
+
+  function _dismiss() {
+    overlay.classList.remove('show');
+    onComplete();
+  }
+
+  function _openNewPlayer() {
+    _nameChars = [];
+    _buildCharGrid();
+    _updateNameDisplay();
+    _showView('id-new');
+  }
+
+  if (stored && stored.name) {
+    // Returning player — show confirm view
+    document.getElementById('id-ret-name').textContent = stored.name;
+    _showView('id-returning');
+    overlay.classList.add('show');
+
+    document.getElementById('id-ret-play').onclick = () => {
+      // Recognized by name display (not QRC entry) — rotate QRC for next session
+      const newQrc = _genQRC();
+      const updated = { name: stored.name, qrc: newQrc };
+      _saveIdentity(updated);
+      _currentPlayer = updated;
+      document.getElementById('id-qrc-display').textContent = newQrc;
+      _showView('id-qrc-reveal');
+    };
+
+    document.getElementById('id-ret-other').onclick = () => _openNewPlayer();
+
+  } else {
+    // New player — char picker
+    _openNewPlayer();
+    overlay.classList.add('show');
+  }
+
+  // Backspace
+  document.getElementById('id-backspace').onclick = () => {
+    if (_nameChars.length > 0) { _nameChars.pop(); _updateNameDisplay(); }
+  };
+
+  // Name confirm
+  document.getElementById('id-name-ok').onclick = () => {
+    if (_nameChars.length < 3) return;
+    const checked = _checkBadWord(_nameChars);
+    const name = checked.join('');
+    const qrc = _genQRC();
+    const id = { name, qrc };
+    _saveIdentity(id);
+    _currentPlayer = { name, qrc };
+    document.getElementById('id-qrc-display').textContent = qrc;
+    _showView('id-qrc-reveal');
+  };
+
+  document.getElementById('id-qrc-ok').onclick = _dismiss;
+}
+
 function startGame(){
+  // Gate on identity — show modal first if no current player
+  if (!_currentPlayer) {
+    _showIdentityModal(() => startGame());
+    return;
+  }
   ui.gameStarted = true;
   // Belt-and-suspenders: always hide the overlay when game starts
   try{
@@ -6355,6 +6657,18 @@ async function _selfCheck() {
   const ms = Math.round(performance.now() - t0);
   if (result.valid) {
     console.log(`[SELFCHECK] ✓ PASS — ${result.piecesReplayed} pieces, ${result.snapshotsChecked} snapshots, ${ms}ms`);
+    if (_currentPlayer) {
+      _addToLedger({
+        player: _currentPlayer.name,
+        score,
+        lines,
+        level,
+        pieces: result.piecesReplayed,
+        date: new Date().toISOString(),
+        stream: _buildStream()
+      });
+      console.log(`[SELFCHECK] ledger entry saved for ${_currentPlayer.name}`);
+    }
   } else {
     console.error(`[SELFCHECK] ✗ FAIL — ${result.error}`);
   }
