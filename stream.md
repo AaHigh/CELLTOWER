@@ -1,5 +1,5 @@
 # CELLTOWER Replay Stream Format
-## Specification v1.3
+## Specification v1.4
 
 ---
 
@@ -41,6 +41,82 @@ The player's phone runs the game. A tournament official can photograph the playe
 ### Architecture Implications
 
 No server infrastructure is required during development. The game runs as a static HTML file on GitHub Pages. The validator is a completely independent codebase that only needs to know this stream format spec. The two applications share one spec and one codec implementation — nothing else.
+
+---
+
+## Dual Transport Architecture
+
+The game must deliver a complete, verifiable game record from the player's device to a validator. Two transport paths are being developed in parallel. They are not mutually exclusive during development — both may be active simultaneously. When one proves clearly superior in all relevant cases, the other is disabled. The goal is convergence on the best solution, not premature commitment.
+
+---
+
+### Path A: Text Stream via Share Sheet / Clipboard
+
+**Status: Implemented.**
+
+At game-over, the game compresses the replay stream with zlib and makes it available via `navigator.share()` (iOS share sheet) or clipboard. The player taps a SHARE button and the stream goes wherever they direct it — AirDrop, Messages, email, a validator app.
+
+**Strengths:**
+- Mathematically complete. The stream contains the full hash chain, all placements, all board snapshots, and the terminal hash. Verification is deterministic and unambiguous.
+- No visual decoding required. The stream is text — paste it anywhere.
+- Trivially small. A 600-piece kill-screen game compresses to ~2,530 bytes. Fits in a text message.
+- No dependencies in the game itself. Compression via native `CompressionStream` (Safari 16.4+).
+
+**Weaknesses:**
+- Requires an active share action by the player. It is not passively present in a screenshot.
+- The validator must exist as a separate application to receive and verify the stream.
+- The stream alone without a screenshot is a less compelling physical artifact than an image.
+
+---
+
+### Path B: Custom Visual Matrix (High Tower District Format)
+
+**Status: Design phase.**
+
+A proprietary dense visual encoding rendered on the game canvas — conceptually descended from the data matrix family but owned entirely by the High Tower District. It encodes the same stream (or a compact derivative) as a grid of visual symbols that can be read by a CELLTOWER validator application from a screenshot.
+
+This is not a QR code and is not intended to be readable by any generic camera or QR scanner. The format spec is open and documented here (legal transparency), but the toolchain is part of the High Tower District platform. No external standard, no external library, no external authority.
+
+**Design intent:**
+- The matrix appears on the game canvas at game-over, rendered by the game itself — zero dependencies, pure canvas drawing.
+- A screenshot of the game-over screen is the complete artifact: the receipt code, the verification stripe, the board state, and the matrix are all present in a single image.
+- A validator app reads the matrix from a screenshot image (not from a live camera feed — screen-to-camera transfer is not a goal). The validator decodes the matrix, inflates the stream, and runs the hash chain verification.
+- Visual design is High Tower District branded. The matrix looks like something from this world, not from a generic tool.
+
+**What the format needs to specify (not yet finalized):**
+- Grid dimensions and cell size relative to canvas layout
+- Symbol set: number of distinct symbols, visual encoding of each (color, shape, luminance, or combination)
+- Error detection: the hash chain already provides integrity — the matrix format may not need independent error correction
+- Alignment markers: how the validator locates and orients the matrix within a screenshot
+- Capacity target: must encode ~2,530 bytes (600-piece game) at a cell density achievable in the canvas area available
+
+**Candidate approaches:**
+- **Color grid:** Each cell is one of N colors, encoding log₂(N) bits. At 16 colors (4 bits/cell), a 40×40 grid (1,600 cells) carries 800 bytes — not sufficient alone. At 256 colors (8 bits/cell), same grid carries 1,600 bytes.  Combining with luminance levels doubles capacity.
+- **Binary dot matrix:** Two-symbol (black/white) cells, high spatial density. Requires large grid or very small cells. Equivalent to a traditional data matrix in structure, with custom alignment and framing.
+- **Hybrid:** Use the verification stripe (already implemented) as the primary visual record for human inspection, and a compact high-density matrix for machine-readable verification. The stripe is the human receipt. The matrix is the machine receipt. Both are in every screenshot.
+
+**Legal transparency constraint:** Regardless of how proprietary the format and toolchain are, the encoding algorithm must be fully documented in this specification. Anyone must be able to implement a validator independently. The High Tower District owns the format; no one else is obligated to use it — but no one can be blocked from verifying it. This is the same principle as open-source cryptographic primitives: the algorithm is public, the product is owned.
+
+---
+
+### Convergence Criteria
+
+One path will eventually be disabled. The decision will be made on the following criteria:
+
+| Criterion | Path A (Text Stream) | Path B (Custom Matrix) |
+|-----------|---------------------|----------------------|
+| Game is dependency-free | Yes | Yes (canvas-only rendering) |
+| Screenshot is complete artifact | No (stream is separate) | Yes (matrix is in the image) |
+| Validator complexity | Low (text parsing) | Medium (image decoding) |
+| Human-readable artifact | No | No (requires validator) |
+| Works offline | Yes (clipboard) | Yes (screenshot) |
+| Tamper-evident from image alone | No | Yes |
+| Tournament chain of custody | Requires share action | Screenshot sufficient |
+| Legal auditability | Full | Full (if spec is open) |
+
+If Path B achieves sufficient data density and the validator app is built, it is the stronger solution for tournament play — the screenshot becomes the sole artifact and no share action is required. Path A remains simpler to implement and simpler to verify independently.
+
+Both paths are active until the matrix format is finalized and the density question is answered. If the matrix cannot encode a 600-piece game at a visually acceptable cell size, Path A wins by default.
 
 ---
 
@@ -478,5 +554,5 @@ A screenshot taken at game-over carries: full piece type sequence, full slot seq
 
 ---
 
-*Format version: 1.3*
+*Format version: 1.4*
 *April 2026*
