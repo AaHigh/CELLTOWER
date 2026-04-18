@@ -258,6 +258,7 @@ var _replayMeta={score:0,lines:0,level:0,pieces:0};
 var _pendingReplayStream=null, _replayPromptVisible=false;
 var _replaySource=null;       // stream that finished — enables restart
 var _replayDisplayName=null;  // name shown in badge during replay — never touches _currentPlayer
+var _replayInterruptedIdentity=false; // true if CTRL-V fired while name-entry screen was open
 // Screen shake — 4 independent sinusoidal channels, normalized so total energy=1
 // Each channel: {phx, phy, fx, fy, mx, my} — random phase & freq per axis per layer
 var _shakeT=0, _shakeDur=0, _shakeAmp=0;
@@ -7341,6 +7342,9 @@ function _stopReplayMode(){
   stopSelTimer(); stopDrop();
   dead=false; ui.gameStarted=false;
   _replayDisplayName=null;
+  const backToIdentity=_replayInterruptedIdentity;
+  _replayInterruptedIdentity=false;
+  if(backToIdentity) _showIdentityCanvas(()=>startGame());
 }
 
 function _toggleReplayPause(){
@@ -7480,7 +7484,7 @@ window.addEventListener('DOMContentLoaded', function(){
       if(ui.gameStarted&&!dead)return; // real game in progress
       e.preventDefault();
       // Dismiss identity/name-entry screen if showing, then immediately start replay
-      if(_identityScreen){ _identityScreen=false; _idOnComplete=null; }
+      if(_identityScreen){ _replayInterruptedIdentity=true; _identityScreen=false; _idOnComplete=null; }
       _startReplayMode(text.trim());
     });
     // Show canvas welcome/identity screen immediately — no tap required
