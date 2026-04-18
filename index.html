@@ -5229,7 +5229,7 @@ function chooseTetris(){
   const tc=_findTetrisCand();
   if(!tc)return;
   stopSelTimer();stopDrop();
-  cur.c=tc.c;cx=tc.x;cy=tc.dropY;
+  cur.c=tc.c; cur.rot=tc.rotation||0; cx=tc.x; cy=tc.dropY;
   sndTetrisBlip();
   lock();
 }
@@ -5263,7 +5263,7 @@ function choose(i){
 
   // If player already manually moved/rotated, or speed is 11, teleport directly
   if(playerHasMoved || AUTO_SPEED >= 11){
-    cur.c=p.c;cx=p.x;cy=p.dropY;
+    cur.c=p.c; cur.rot=p.rotation||0; cx=p.x; cy=p.dropY;
     lock();
     return;
   }
@@ -5295,7 +5295,7 @@ function _animatePlacement(p, bestIdx){
 
   if(!path.length){
     // No moves recorded — snap directly (should only happen for already-grounded pieces)
-    cur.c=p.c; cx=p.x; cy=p.dropY; lock(); return;
+    cur.c=p.c; cur.rot=p.rotation||0; cx=p.x; cy=p.dropY; lock(); return;
   }
 
   // msPerMove is NOT captured here — read live each step so slider takes effect immediately.
