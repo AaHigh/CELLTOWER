@@ -2413,9 +2413,10 @@ const G = (() => {
   def(g,'ui', ()=>ui, v=>{Object.assign(ui,v);});
 
   // ── Hash chain state (verification system — new fields) ───────────
-  g.hashChain   = '';      // hex string, updated async after each lock()
-  g.receiptCode = '-----'; // 5-char base-40 live display code
-  g.gameSeed    = '';      // committed before game start, revealed after
+  g.hashChain    = '';      // hex string, updated async after each lock()
+  g.receiptCode  = '-----'; // 5-char base-40 live display code
+  g.gameSeed     = '';      // committed before game start, revealed after
+  g.versionHash  = '';      // SHA-256 of index.html, computed once at first game start
 
   // ── Snapshot — hash-relevant fields only, JSON-serializable ───────
   g.snapshot = function() {
@@ -5790,6 +5791,14 @@ function init(){
   G.hashChain = ''; G.receiptCode = '-----'; _stripeBytes = null; _spawnT = performance.now(); _gameHistory = []; _iFrames = [];
   _killScreenActive = false; _wasKillScreen = false;
   autoUsed = AUTO_PLAY;
+  // Version hash: SHA-256 of the live game file. Computed once, reused every game.
+  if(!G.versionHash) {
+    fetch(location.href).then(r=>r.arrayBuffer()).then(buf=>
+      crypto.subtle.digest('SHA-256', buf)
+    ).then(h=>{
+      G.versionHash = Array.from(new Uint8Array(h)).map(b=>b.toString(16).padStart(2,'0')).join('');
+    }).catch(()=>{});  // silently skip if fetch fails (file:// protocol etc.)
+  }
   _chainPromise = crypto.subtle.digest('SHA-256', _sv).then(buf => {
     _hashChainBuf = buf;
     if(autoUsed) return;  // AI game — no valid receipt
