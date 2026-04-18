@@ -1,5 +1,5 @@
 # CELLTOWER Replay Stream Format
-## Specification v1.1
+## Specification v1.3
 
 ---
 
@@ -7,7 +7,7 @@
 
 CELLTOWER ends at a kill screen at level 20. Level 20 requires clearing 200 lines. Each cleared line is 10 cells wide, giving 2,000 cleared cells over the game's lifetime. The visible playfield at game-over is 10 × 25 = 250 occupied cells. Total cell budget: 2,250 cells. At 4 cells per piece, that is 562.5 pieces — rounded to **600 pieces** as the design ceiling.
 
-All capacity estimates, size budgets, and QR version targets in this document are sized to handle a 600-piece game. A game that reaches the kill screen will always fit within this budget.
+All capacity estimates and size budgets in this document are sized to handle a 600-piece game. A game that reaches the kill screen will always fit within this budget.
 
 ---
 
@@ -18,25 +18,29 @@ All capacity estimates, size budgets, and QR version targets in this document ar
 3. **Zero whitespace in the minified form.** The pre-compression representation contains no spaces, tabs, newlines, or carriage returns. Every character is either data or a structural delimiter.
 4. **Compression-optimized.** The encoding is designed to compress well under zlib (deflate). The format exploits character-level patterns that LZ77 dictionaries match efficiently.
 5. **Self-contained.** One stream = one complete game. Seed, version, placements, board snapshots, terminal hash — everything needed to verify.
-6. **Air-gapped validation.** The game and the validator are separate applications on separate devices. The only channel between them is visual — a QR code rendered on the game canvas, captured by a camera on the validator device. No network API, no WebSocket, no server.
+6. **Screenshot as proof artifact.** A screenshot of the game canvas is the primary verification artifact. The visual encoding channels (verification stripe, timing strip) embedded in the canvas carry the full game history — piece types, slot choices, rotations, and timing — in every frame. The compressed text stream is a secondary channel, shareable via the device share sheet or clipboard.
 
 ---
 
-## Transport: Camera-Only Interface
+## Transport: Screenshot-Primary Interface
 
-The game outputs the compressed replay stream as a QR code on the HTML5 canvas at game-over. The validator application reads that QR code using a device camera. This is the entire interface contract between the two systems.
+The game canvas is the proof artifact. Every screenshot of the game in progress — or at game-over — is a partial or complete receipt. The verification stripe running around the playfield perimeter encodes the full piece history visually, frame by frame. No secondary application, camera, or decoding step is required to establish that the game was played as displayed.
 
-### Tournament Mode (Two-Phone)
+### Primary Channel: Screenshot
 
-The player's phone runs the game. A second device (tournament official's phone or observer's phone) points its camera at the player's screen and captures the QR code. The player never touches the validation device. Chain of custody is physical and visible — the QR is scanned directly from the game screen in real time. No opportunity to inject a fabricated stream between game and validator.
+The player finishes a game and screenshots the game-over screen. The screenshot carries: the live receipt code (5-character base-40, visible on canvas), the full verification stripe (piece type, slot, rotation, timing), and the board state. This is the chain of custody. The image is the record.
 
-### Casual Mode (Screenshot)
+### Secondary Channel: Text Stream
 
-The player finishes a game, screenshots the game-over screen (which includes the QR code), and submits the image to the validator app. The validator decodes the QR from the screenshot. This path has weaker chain of custody (a screenshot could theoretically be doctored) but is acceptable for leaderboards that are not distributing cash prizes.
+At game-over the game also makes the compressed text stream available via the device share sheet (`navigator.share()`) or clipboard. This stream can be pasted into a validator application for mathematical verification of the hash chain. It is a supplement to the screenshot, not a replacement.
+
+### Tournament Mode
+
+The player's phone runs the game. A tournament official can photograph the player's screen directly, capturing the verification stripe in real time. Chain of custody is physical and visible. Optionally, the official receives the shared text stream from the player's device for hash-chain verification.
 
 ### Architecture Implications
 
-No server infrastructure is required during development. The game runs as a static HTML file on GitHub Pages. The validator is a completely independent codebase that only needs to know this stream format spec and how to decode a QR code from a camera feed. The two applications share one spec and one codec implementation — nothing else.
+No server infrastructure is required during development. The game runs as a static HTML file on GitHub Pages. The validator is a completely independent codebase that only needs to know this stream format spec. The two applications share one spec and one codec implementation — nothing else.
 
 ---
 
@@ -238,7 +242,7 @@ Five base-40 characters encode 40^5 = 102,400,000 values from 4 bytes (2^32 = 4,
 
 ## Compression
 
-The minified stream is compressed with zlib (deflate) level 9 for storage, transmission, and QR code encoding.
+The minified stream is compressed with zlib (deflate) level 9 for storage and transmission.
 
 **Why zlib:** Empirical testing across seven compression algorithms (zlib levels 1/6/9, bz2 levels 1/9, lzma levels 6/9) on simulated game data at multiple sizes confirmed that zlib consistently produces the smallest output at this data scale. bz2 and lzma are designed for large files and add 6-12% overhead on kilobyte-scale streams.
 
@@ -246,31 +250,23 @@ zlib is also the most universally available compression algorithm — built into
 
 ### Empirical Size Results
 
-| Game Size | Minified | Compressed (zlib-9) | Ratio | QR Version |
-|-----------|----------|---------------------|-------|------------|
-| 50 pcs    | 459 B    | 357 B               | 77.8% | v7         |
-| 100 pcs   | 765 B    | 546 B               | 71.4% | v10        |
-| 150 pcs   | 1,071 B  | 739 B               | 69.0% | v13        |
-| 200 pcs   | 1,324 B  | 919 B               | 69.4% | v13        |
-| 250 pcs   | 1,630 B  | 1,116 B             | 68.5% | v15        |
-| 300 pcs   | 1,936 B  | 1,324 B             | 68.4% | v17        |
-| 400 pcs   | 2,495 B  | 1,729 B             | 69.3% | v20        |
-| 500 pcs   | 3,054 B  | 2,142 B             | 70.1% | v25        |
-| **600 pcs** | **3,666 B** | **~2,530 B**    | **69.0%** | **v26**    |
+| Game Size | Minified | Compressed (zlib-9) | Ratio |
+|-----------|----------|---------------------|-------|
+| 50 pcs    | 459 B    | 357 B               | 77.8% |
+| 100 pcs   | 765 B    | 546 B               | 71.4% |
+| 150 pcs   | 1,071 B  | 739 B               | 69.0% |
+| 200 pcs   | 1,324 B  | 919 B               | 69.4% |
+| 250 pcs   | 1,630 B  | 1,116 B             | 68.5% |
+| 300 pcs   | 1,936 B  | 1,324 B             | 68.4% |
+| 400 pcs   | 2,495 B  | 1,729 B             | 69.3% |
+| 500 pcs   | 3,054 B  | 2,142 B             | 70.1% |
+| **600 pcs** | **3,666 B** | **~2,530 B**    | **69.0%** |
 
-Compression ratio stabilizes at approximately 69% regardless of game length. All game sizes up to the 600-piece kill screen ceiling fit in a single QR code (v26 capacity: 2,672 bytes).
+Compression ratio stabilizes at approximately 69% regardless of game length. A full kill-screen game compresses to approximately 2,530 bytes — trivially small for share-sheet or clipboard transport.
 
 ### Key Finding
 
 Base-92 text compresses to a smaller size than equivalent raw binary data after zlib compression. At 300 pieces, the text format compresses to 1,324 bytes versus raw binary at 1,339 bytes — text is 1.1% smaller. This occurs because base-92 character encoding creates byte-level repetition patterns that zlib's LZ77 dictionary matches more efficiently than the bit-level patterns in packed binary. The text encoding provides human readability at zero compression cost.
-
----
-
-## QR Code Encoding
-
-The compressed stream (zlib output) is encoded into a QR code in binary mode. The game renders this QR code on the canvas at game-over. The validator app captures it via camera.
-
-Error correction level L (7% recovery) is used. The hash chain already provides integrity detection — any corruption that survives QR error correction will be caught by the hash chain verification. Level L maximizes data capacity per QR version.
 
 ---
 
@@ -358,7 +354,7 @@ function verify(compressed_data, revealed_seed):
 ### Game Client (JavaScript, browser)
 
 ```javascript
-// Compress stream for QR encoding
+// Compress stream for sharing
 const encoder = new TextEncoder();
 const raw = encoder.encode(minifiedStream);
 const cs = new CompressionStream('deflate');
@@ -367,20 +363,25 @@ writer.write(raw);
 writer.close();
 const compressed = await new Response(cs.readable).arrayBuffer();
 
-// Render QR code on canvas
-qrcode.generate(new Uint8Array(compressed), {mode: 'byte', ecLevel: 'L'});
+// Share via device share sheet (primary) or clipboard (fallback)
+const blob = new Blob([compressed], {type: 'application/octet-stream'});
+const file = new File([blob], 'celltower-receipt.bin', {type: blob.type});
+if (navigator.canShare && navigator.canShare({files: [file]})) {
+    await navigator.share({files: [file], title: 'CELLTOWER Receipt'});
+} else {
+    // Fallback: base64 text to clipboard
+    const b64 = btoa(String.fromCharCode(...new Uint8Array(compressed)));
+    await navigator.clipboard.writeText(b64);
+}
 ```
 
-### Validator App (separate device, camera input)
+### Validator App (receives shared stream)
 
 ```javascript
-// Capture QR from camera → compressed bytes
-const compressed = qrScanner.decode(cameraFrame);
-
-// Decompress
+// Decompress received bytes
 const ds = new DecompressionStream('deflate');
 const writer = ds.writable.getWriter();
-writer.write(compressed);
+writer.write(receivedBytes);
 writer.close();
 const raw = await new Response(ds.readable).arrayBuffer();
 const streamText = new TextDecoder().decode(raw);
@@ -409,7 +410,6 @@ Delimiters:        3 chars  (3 semicolons between sections)
 Minified total: 1,936 chars
 
 Compressed:    ~1,324 bytes  (zlib-9)
-QR version:    17            (1,556 byte capacity, 232 bytes spare)
 ```
 
 ### 600-piece game (kill screen ceiling)
@@ -424,16 +424,15 @@ Delimiters:        3 chars  (3 semicolons between sections)
 Minified total: 3,666 chars
 
 Compressed:    ~2,530 bytes  (zlib-9)
-QR version:    26            (2,672 byte capacity, 142 bytes spare)
 ```
 
 ---
 
 ## In-Frame Visual Encoding
 
-The QR code is the primary verification channel. The following visual encoding channels are secondary — they are embedded directly in the game canvas on every frame, including during active play and in any screenshot. Together they allow a single screenshot to carry substantially all game history data, independent of QR decoding.
+The visual encoding channels embedded in the game canvas are the **primary verification interface**. They are present in every frame — during active play, at game-over, and in any screenshot. Together they allow a single screenshot to carry substantially all game history data.
 
-These channels are not part of the stream format and are not verified by the validator. They serve transparency, leaderboard screenshot verification, and the broader design principle: every frame of the game is a partial receipt.
+These channels are not part of the stream format and are not verified by the hash-chain validator. They serve transparency, leaderboard screenshot verification, and the core design principle: every frame of the game is a receipt.
 
 ### Channel 1: Verification Stripe (Piece History Tape)
 
@@ -479,5 +478,5 @@ A screenshot taken at game-over carries: full piece type sequence, full slot seq
 
 ---
 
-*Format version: 1.2*
+*Format version: 1.3*
 *April 2026*

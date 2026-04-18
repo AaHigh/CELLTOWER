@@ -92,7 +92,7 @@ The verification stream is a compact binary format consisting of four frame type
 
 ### Stream Size
 
-A typical 300-piece game produces approximately 1,200 bytes total: 1 M-frame (48 bytes) + 300 P-frames (~900 bytes) + 10 I-frame keyframes (~200 bytes) + 10 H-frames (40 bytes). This fits within a single QR code (QR version 15 holds approximately 1,800 bytes in binary mode).
+A typical 300-piece game produces approximately 1,200 bytes total: 1 M-frame (48 bytes) + 300 P-frames (~900 bytes) + 10 I-frame keyframes (~200 bytes) + 10 H-frames (40 bytes). This compresses to approximately 1,324 bytes — trivially small for share-sheet or clipboard transport.
 
 ### The Hash Chain
 
@@ -158,7 +158,7 @@ This verification architecture descends from linked-cabinet tournament systems d
 
 The wolfMAME replay verification community independently validated the same approach: deterministic replay files that reproduce gameplay frame-by-frame, with any modification to inputs producing a divergent outcome detectable by hash comparison.
 
-CELLTOWER applies these proven principles to modern web technology, using standard cryptographic primitives (SHA-256) and compact binary encoding to produce verification records small enough to fit in a QR code — making the proof portable, shareable, and independently verifiable by anyone with a web browser.
+CELLTOWER applies these proven principles to modern web technology, using standard cryptographic primitives (SHA-256) and compact binary encoding to produce verification records small enough to share via the device share sheet or clipboard — making the proof portable, shareable, and independently verifiable by anyone with a web browser.
 
 ---
 
