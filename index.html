@@ -6291,8 +6291,28 @@ async function _verifyStream(streamText) {
       // Snapshot integrity check
       if (snapMap.has(n + 1)) {
         const snap = snapMap.get(n + 1);
+        let mismatch = false;
+        const diffs = [];
         for (let i = 0; i < 50; i++) {
-          if (boardWords[i] !== snap[i]) return { valid: false, error: `snapshot mismatch at piece ${n+1} byte ${i}` };
+          if (boardWords[i] !== snap[i]) {
+            mismatch = true;
+            const row = Math.floor(i / 2), isHi = (i % 2 === 0);
+            diffs.push(`row${row} ${isHi?'hi':'lo'}: verifier=0x${boardWords[i].toString(16).padStart(2,'0')} snap=0x${snap[i].toString(16).padStart(2,'0')}`);
+          }
+        }
+        if (mismatch) {
+          // Log last 5 placements before the mismatch to help diagnose
+          const recent = [];
+          for (let j = Math.max(0, n-4); j <= n; j++) {
+            const chunk2 = placementsBlock.slice(j*4, j*4+4);
+            const pi = _vFromB92(chunk2.slice(0,2));
+            const ty = Math.floor(pi/1000);
+            const ro = Math.floor((pi%1000)/250);
+            const xx = Math.floor((pi%250)/25);
+            const dy = (pi%25)-4;
+            recent.push(`p${j+1}:${_V_PIECE_ORDER[ty]}r${ro}x${xx}y${dy}`);
+          }
+          return { valid: false, error: `snapshot mismatch at piece ${n+1}\n  diffs: ${diffs.join(', ')}\n  recent placements: ${recent.join(' ')}` };
         }
       }
 
