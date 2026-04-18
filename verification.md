@@ -2,7 +2,7 @@
 ## Cryptographic Score Authentication for Skill-Based Competition
 
 ### A Design Document by Aaron Hightower
-### Hightower District · Fresno, California
+### the High Tower District · Fresno, California
 
 ---
 

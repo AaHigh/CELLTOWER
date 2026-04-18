@@ -3,7 +3,7 @@ Expand this to a lesson using 1000 words"
 #
 # The Cure for Anxiety Is the Present Moment
 
-*by Aaron High / Hightower District — produced with Anthropic Claude AI*
+*by Aaron High / the High Tower District — produced with Anthropic Claude AI*
 
 -----
 

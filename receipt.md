@@ -142,6 +142,6 @@ If you want to contribute to CELLTOWER or build on this receipt system:
 ## Author
 
 Aaron Hightower  
-Hightower District — Fresno, CA  
+the High Tower District — Fresno, CA  
 Former: Silicon Graphics, Nintendo (Pilotwings 64), Naughty Dog (Jak 3), Atari (San Francisco Rush 2049)  
 [aahigh.github.io](https://aahigh.github.io)

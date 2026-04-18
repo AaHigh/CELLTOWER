@@ -48,7 +48,7 @@ This is piece one of a larger puzzle.
 - ✅ **HOLES counter** — live penalty tracking, real-time
 - ✅ **Score event ticker** — left panel shows every scoring event as it happens (lines cleared, Tetris!, clean streak fire/ice combos)
 - ✅ **AUTO mode** — watch the AI demo optimal play (scores don’t count toward high score)
-- ✅ **Transaction Receipt** — tap RECEIPT to see your full scoring history printed as a thermal paper readout from Hightower District, 777 Olive Ave, Fresno CA
+- ✅ **Transaction Receipt** — tap RECEIPT to see your full scoring history printed as a thermal paper readout from the High Tower District, 777 Olive Ave, Fresno CA
 - ✅ Touch controls tuned for iPhone 16
 - ✅ Runs from a single `index.html` — no build step, no dependencies, no framework
 
@@ -87,7 +87,7 @@ The receipt printout at the end of each game shows every transaction — what yo
 
 ## The Bigger Picture
 
-CELLTOWER is one module in a larger project being developed under the **Hightower District** creative umbrella — an intersection of retro gaming, music production, AI tooling, and Fresno culture.
+CELLTOWER is one module in a larger project being developed under the **the High Tower District** creative umbrella — an intersection of retro gaming, music production, AI tooling, and Fresno culture.
 
 More pieces of the puzzle coming. This is just the playfield.
 
