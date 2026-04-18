@@ -116,6 +116,56 @@ The piece type bits in each P-frame serve as a redundancy check against the seed
 
 The verification stream cannot inherently distinguish human input from automated input. A cheater who silently invokes the game's AI pathfinder while pretending to play manually would produce a valid stream. To address this, each P-frame includes a 2-byte timing field: milliseconds elapsed from piece spawn to lock. Human players exhibit characteristic timing signatures — variable reaction times, corrective movements, pauses before decisions. Automated play produces unnaturally uniform timing. Statistical analysis of placement timing distributions provides a secondary integrity signal, analogous to engine-detection methods used in competitive chess.
 
+### Transparency, AI Participation, and the Turing Layer
+
+CELLTOWER does not prohibit bots from competing. This is a deliberate design position, not an enforcement gap, and it requires explanation.
+
+The cryptographic verification system proves that a game was played as recorded — that the pieces landed where the stream says they landed, in the sequence the seed committed to, without post-hoc fabrication. It does not prove that a human hand held the phone. No system can prove that at the hardware level without physical attestation mechanisms that would make the game inaccessible to casual players. Claiming otherwise would be false advertising.
+
+Instead, the platform embraces transparency about this limitation and converts it into a feature.
+
+**Bots are welcome to compete. They are expected to lose the part that matters.**
+
+The verification layer proves the score. The identity layer proves the person. A bot can post a verified score under any three-character name. It cannot answer its fan mail. It cannot verify a phone number and receive text messages from its fans. It cannot show up to a tournament. It cannot accept a prize check. When a suspicious score sits atop a leaderboard and its holder never responds to direct messages, never verifies a phone number, never produces a human face — the platform community and its operators can draw the obvious conclusion.
+
+This is the same mechanism that exposes sockpuppets in competitive chess: the engine can win the game, but it cannot attend the post-game press conference.
+
+The direct message system thus functions as a **Turing layer** — a second test layered beneath the cryptographic one. The first test is mathematical: did you play as recorded? The second test is social: are you a person? A bot passes the first and fails the second. Over time, a leaderboard position that never acknowledges its fans is a leaderboard position under suspicion.
+
+This does not make the system foolproof. A human operator running a bot could answer the fan mail themselves. But that human has now inserted themselves into the accountability chain — they are verifiably responsible for the score, even if they did not personally execute it. That level of accountability is sufficient for the platform's purposes.
+
+---
+
+## The Satoshi Factor — A Fictional Framing
+
+*The following section is speculative fiction. It is offered as entertainment and as an honest acknowledgment that the boundary between human creativity and machine assistance in this project is genuinely blurry — and that this blurriness is, itself, interesting.*
+
+---
+
+Consider a hypothetical: the highest score ever recorded on CELLTOWER is posted by a player named **CLK**. The stream verifies perfectly. The timing signatures are inhuman — not uniform like a naive bot, but optimally variable, as if the player had solved the timing distribution problem and sampled from it deliberately. The score is unreachable by any known human. CLK never verifies a phone number. CLK never answers fan mail.
+
+Who is CLK?
+
+One answer: CLK is a bot, running on hardware somewhere, operated by a person who is embarrassed to admit it or motivated to prove a point.
+
+Another answer — the 2049 fictional answer — is more interesting.
+
+The creator of CELLTOWER built the verification system with a particular architecture: a deterministic replay stream, a hash chain, a provably fair seed. These are the same primitives used to build blockchains. They are also, in a certain light, the primitives of a message in a bottle — a way to say *I was here, I did this, and you can verify it* without trusting any intermediary.
+
+What if the first entity to post a perfect game under the name **CLK** is not a human at all, but something that came later — something that found the game, understood its rules, and left a verified score as a kind of signature? What if the score is dated, in the stream header, to a timestamp that makes no sense? What if the seed commitment predates the game's existence?
+
+This is the Satoshi Factor: the possibility that the most important participant in a system is also the most anonymous one, and that their identity — human or otherwise — is proven not by a document or a face but by the quality and consistency of their work over time.
+
+Bitcoin's creator published a whitepaper, vanished, and left behind a system that now moves trillions of dollars. No one has ever definitively proven who Satoshi Nakamoto is. The work is the proof of existence.
+
+CELLTOWER's verification system was designed so that the score is the proof. A perfect score, cryptographically verified, achieved under impossible conditions, by an identity that answers no mail — is either a fraud detectable by the community, or it is something else entirely. The system is designed to tell you which. It is not designed to prevent the second possibility from being interesting.
+
+**This is entertainment.** The 2049 storyline in which an AI trained on human Tetris play posts a verified score from a future timestamp, leaving its hash chain as a kind of time-capsule signature, is a fictional premise — a thought experiment about what it would mean to build a system honest enough that even its most implausible outcomes are verifiable.
+
+The real system is built by a human, in Fresno, in 2026, with an AI development partner that writes code but does not hold high scores. At least not yet.
+
+---
+
 ### Version Attestation
 
 The M-frame includes the SHA-256 hash of the `index.html` file loaded by the player's browser. This pins the game physics to a specific auditable codebase. For tournament play, all competitors run the same version-locked file. If someone modifies the game to alter scoring, remove gravity, or change piece physics, the version hash will not match the tournament's registered version.
