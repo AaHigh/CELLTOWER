@@ -2102,9 +2102,8 @@ function drawTipBubble(t){
 
 
 function drawPauseOverlay(){
-  // During autoplay: no darkening — robot doesn't need the hint blackout,
-  // and the board should remain visible at all times.
-  if(AUTO_PLAY) return;
+  // During autoplay / replay: no darkening — board should remain visible.
+  if(AUTO_PLAY||_replayMode) return;
   // Human pause: near-blackout so position isn't memorised
   CTX.fillStyle='rgba(0,0,0,0.92)';
   CTX.fillRect(R.gx, R.gy, R.gw, R.gh);
@@ -2363,9 +2362,9 @@ function handleTap(tx, ty){
     return;
   }
 
-  // ── AUTO_PLAY GUARD: robot owns all piece movement — block all piece controls ──
-  // Only pause, receipt, and speed_slider are allowed when autoplay is active.
-  if(AUTO_PLAY && ui.gameStarted && !dead){
+  // ── AUTO_PLAY / REPLAY GUARD: robot owns piece movement ──────────────────────
+  // Only pause and receipt allowed when autoplay or replay is active.
+  if((AUTO_PLAY||_replayMode) && ui.gameStarted && !dead){
     if(!id){
       // Tap on canvas (ghost selection) — blocked in autoplay
       return;
@@ -2427,7 +2426,7 @@ function handleSlider(tx){
 // Hold-repeat for left/right
 let _holdId=null, _holdIv=null;
 function startHold(id){
-  if(AUTO_PLAY) return; // robot owns movement — ignore hold repeats
+  if(AUTO_PLAY||_replayMode) return;
   stopHold();
   _holdId=id;
   handleTap(0,0); // won't match - call direct
@@ -2435,7 +2434,7 @@ function startHold(id){
   if(id==='ctrl_left') mhz(-1);
   else if(id==='ctrl_right') mhz(1);
   _holdIv=setInterval(()=>{
-    if(AUTO_PLAY){ stopHold(); return; } // safety: abort if autoplay toggled mid-hold
+    if(AUTO_PLAY||_replayMode){ stopHold(); return; }
     if(id==='ctrl_left') mhz(-1);
     else if(id==='ctrl_right') mhz(1);
   },80);
@@ -5708,7 +5707,7 @@ function _gravStep(){
 
 function scheduleDrop(){
   stopDrop();
-  if(dead||AUTO_PLAY) return;
+  if(dead||AUTO_PLAY||_replayMode) return;
   const nesMs = NES_SP[Math.min(level-1, NES_SP.length-1)];
   _dropDeadline = performance.now() + nesMs;
   _dropRafId = setTimeout(_gravStep, nesMs);
@@ -5738,7 +5737,7 @@ function startSelTimer(){
     timerLeft-=100;
     // Only auto-place on timeout during AUTO_PLAY — in human mode just let the
     // gravity timer handle piece movement, never force-drop on selection timeout.
-    if(timerLeft<=0){ stopSelTimer(); if(!dead&&!clearAnimating&&AUTO_PLAY) autoChooseBest(); }
+    if(timerLeft<=0){ stopSelTimer(); if(!dead&&!clearAnimating){ if(_replayMode) _startReplayPlay(); else if(AUTO_PLAY) autoChooseBest(); } }
   },100);
 
   // Initial delay: 500ms at speed 1, 0ms at speed 11
@@ -5746,19 +5745,16 @@ function startSelTimer(){
   const startDelay = AUTO_SPEED >= 11 ? 0 : Math.round(500 * (1 - (AUTO_SPEED-1)/10));
   if(AUTO_SPEED >= 11){
     requestAnimationFrame(()=>{
-      // Ensure placements are fresh for this piece before autoplay picks
-      if(!dead&&!paused&&!clearAnimating&&cur&&AUTO_PLAY){
-        // calcPlacements already ran in spawn(), but re-run applyNextOptions
-        // to guarantee _proofCorrectCand is injected into placements[]:
-        if(puzzleActive && window._proofCorrectCand === null) calcPlacements(true);
+      if(!dead&&!paused&&!clearAnimating&&cur&&(AUTO_PLAY||_replayMode)){
+        if(AUTO_PLAY&&puzzleActive&&window._proofCorrectCand===null) calcPlacements(true);
         _startAutoPlay();
       }
     });
   } else if(startDelay <= 0){
-    if(!dead&&!paused&&!clearAnimating&&cur&&AUTO_PLAY) _startAutoPlay();
+    if(!dead&&!paused&&!clearAnimating&&cur&&(AUTO_PLAY||_replayMode)) _startAutoPlay();
   } else {
     setTimeout(()=>{
-      if(!dead&&!paused&&!clearAnimating&&cur&&AUTO_PLAY) _startAutoPlay();
+      if(!dead&&!paused&&!clearAnimating&&cur&&(AUTO_PLAY||_replayMode)) _startAutoPlay();
     }, startDelay);
   }
 }
@@ -5931,6 +5927,7 @@ function _animatePlacement(p, _bestIdx){
 }
 
 function _startAutoPlay(){
+  if(_replayMode){ _startReplayPlay(); return; }
   if(!cur||dead||paused||clearAnimating)return;
   let bestIdx=0, bestSc=-Infinity;
   for(let i=0;i<4;i++){ const p=placements[i]; if(p&&p.sc>bestSc){bestSc=p.sc;bestIdx=i;} }
@@ -6172,11 +6169,13 @@ function togglePause(){
     }
   } else {
     _gameTotalPauseMs += performance.now() - _gamePauseStartT;
-    // Resume autoplay if it was running
+    // Resume autoplay / replay if it was running
     if(AUTO_PLAY && ui.gameStarted && !dead && cur){
       calcPlacements(false);
       _startAutoPlay();
-    } else if(!AUTO_PLAY){
+    } else if(_replayMode && ui.gameStarted && !dead && cur){
+      _startReplayPlay();
+    } else if(!AUTO_PLAY && !_replayMode){
       scheduleDrop();
     }
   }
@@ -6865,6 +6864,7 @@ async function _verifyStream(streamText) {
 // against an independent replay. Result goes to console only.
 async function _selfCheck() {
   await _chainPromise;
+  if (_replayMode) { console.log('[SELFCHECK] skipped — replay mode'); return; }
   if (autoUsed) { console.log('[SELFCHECK] skipped — AUTO game, hash chain suppressed'); return; }
   const stream = _buildStream();
   if (!stream) { console.warn('[SELFCHECK] no stream (game too short or not initialized)'); return; }
@@ -7255,7 +7255,10 @@ function _txDesc(tx) {
 }
 
 // ── CLIPBOARD REPLAY ENGINE ──────────────────────────────────────────────────
-const _REPLAY_STEP_MS = 110;
+// Replay routes through the game engine's own state machine — same spawn(),
+// lock(), scoring, line-clear animations, particles, and ticker as live play.
+// _startAutoPlay() dispatches to _startReplayPlay() when _replayMode is true.
+const _REPLAY_MOVE_MS = 55; // ms per nav step — controls visible slide/rotate speed
 
 function _startReplayMode(streamText){
   const parsed=_parseStreamForReplay(streamText);
@@ -7265,49 +7268,33 @@ function _startReplayMode(streamText){
   _replayPlacements=parsed.pieces;
   _replayIdx=0;
   _replayMeta={score:parsed.score,lines:parsed.lines,level:parsed.level,
-               pieces:parsed.pieces.length,_linesCleared:0};
-  board=Array.from({length:ROWS},()=>Array(COLS).fill(null));
-  score=0;level=1;lines=0;dead=false;paused=false;
-  cur=null;cx=0;cy=0;nxt=null;
-  particles=[];explodedCells.clear();
-  ui.gameStarted=true;
-  _replayStep();
+               pieces:parsed.pieces.length};
+  startGame(); // full board/score reset; spawn() → startSelTimer() → _startReplayPlay()
+  autoUsed=true; // prevent replay score from overwriting human hi score
 }
 
-function _replayStep(){
-  if(!_replayMode)return;
-  if(_replayIdx>=_replayPlacements.length){
-    cur=null; _replayMode=false; dead=true; _deadAt=performance.now();
-    return;
+// Called by _startAutoPlay() when _replayMode. Overrides the spawned piece type
+// with the recorded type, then delegates to _navigateAndLock() for the animation.
+function _startReplayPlay(){
+  if(!cur||dead||paused||clearAnimating)return;
+  if(_replayIdx>=_replayPlacements.length)return; // last piece already locked; wait for triggerDead
+  const p=_replayPlacements[_replayIdx++];
+  // Substitute recorded piece type — RNG seed differs, piece order will diverge otherwise
+  if(cur.k!==p.k){
+    cur.k=p.k; cur.rot=0;
+    cur.c=NRS[p.k][0].map(r=>[...r]);
+    cur.rgb=[...PTYPES[p.k].rgb];
+    const pw=cur.c[0].length;
+    cx=pw===4?3:pw===2?4:3; cy=0;
   }
-  const p=_replayPlacements[_replayIdx];
-  const cells=NRS[p.k][p.rot].map(r=>[...r]);
-  cur={k:p.k,rot:p.rot,c:cells,rgb:[...PTYPES[p.k].rgb]};
-  cx=p.x; cy=p.drop_y;
-  _replayTimer=setTimeout(_replayLock,_REPLAY_STEP_MS);
-}
-
-function _replayLock(){
-  if(!_replayMode||!cur)return;
-  placeOn(board,cur.c,cx,cy,cur.rgb);
-  cur=null;
-  let cleared=0;
-  for(let r=ROWS-1;r>=0;r--){
-    if(board[r].every(v=>v)){
-      board.splice(r,1);
-      board.unshift(Array(COLS).fill(null));
-      r++;cleared++;
-    }
-  }
-  _replayMeta._linesCleared+=cleared;
-  _replayIdx++;
-  _replayStep();
+  stopDrop();
+  _navigateAndLock(p.k,{x:p.x,rotation:p.rot,dropY:p.drop_y},_REPLAY_MOVE_MS);
 }
 
 function _stopReplayMode(){
   _replayMode=false;
-  if(_replayTimer){clearTimeout(_replayTimer);_replayTimer=null;}
-  cur=null; dead=false; ui.gameStarted=false;
+  clearTimeout(_replayTimer); _replayTimer=null;
+  dead=false; ui.gameStarted=false;
 }
 
 function _drawReplayHUD(){
