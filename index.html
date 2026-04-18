@@ -3449,6 +3449,7 @@ let _txDrainTO = null;
 
 function _tickerInit(){
   _txQueue=[]; _txBuf=[]; _txHueNext=0; _txNow=0;
+  ui.tickers=[];
   clearTimeout(_txDrainTO); _txDrainTO=null;
   if(_txRAF){ cancelAnimationFrame(_txRAF); _txRAF=null; }
   const cv=document.getElementById('ticker-canvas');
