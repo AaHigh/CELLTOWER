@@ -2403,10 +2403,10 @@ function handleTap(tx, ty){
     if(id === 'receipt' && !_replaySource){ showReceipt(); return; }
     if(id === 'pause'){
       if(_replaySource){
-        // Returning to human play after replay — restore pre-replay identity
         if(_preReplayPlayer){ _currentPlayer=_preReplayPlayer; _preReplayPlayer=null; }
         _replaySource=null;
-        restart(false);
+        if(_currentPlayer && _currentPlayer.name) restart(false);
+        else _showIdentityCanvas(()=>restart(false));
         return;
       }
       if(performance.now()-_deadAt >= 3000) _showIdentityCanvas(()=>restart(false));
