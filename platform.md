@@ -1,9 +1,9 @@
 # CELLTOWER Platform Architecture
-## Multi-Game Score Space, Smart Contract Tournaments, and Replay Verification
+## Multi-Game Score Space, Peer-Deployed Tournament Contracts, and Replay Verification
 
 ### Design document by Aaron Hightower with AI assistance (Claude, Anthropic)
 ### the High Tower District · Fresno, California
-### Version 0.1 · April 2026
+### Version 0.2 · April 2026
 
 ---
 
@@ -30,36 +30,39 @@ Every verified game produces a **Score Record** — a compact, self-describing o
 ```
 ScoreRecord {
   // Identity
-  record_id:    hex32          // SHA-256 of (game_id + stream + timestamp)
-  player_name:  string[3]      // 3-char B92 name (public routing address)
-  player_count: uint8          // 1 = solo, 2+ = multi
+  record_id:       hex32          // SHA-256 of (game_id + stream + timestamp)
+  player_name:     string[3]      // 3-char B92 name (public routing address)
+  player_count:    uint8          // 1 = solo, 2+ = multi
 
   // Game coordinates
-  game_id:      string         // "CELLTOWER" | "ASTEROIDS" | ...
-  game_version: hex32          // SHA-256 of game file (version lock)
-  mode_id:      string         // "STANDARD" | "MARATHON" | "PUZZLE" | "CLASSIC" | ...
-  session_type: enum           // HUMAN | AUTO | ASSISTED
+  game_id:         string         // "CELLTOWER" | "ASTEROIDS" | ...
+  game_version:    hex32          // SHA-256 of game file (version lock)
+  mode_id:         string         // "STANDARD" | "MARATHON" | "PUZZLE" | ...
+  session_type:    enum           // HUMAN | AUTO | ASSISTED
 
   // Result
-  score:        uint32         // final score
-  duration_ms:  uint32         // wall-clock game duration
-  pieces/events: uint16        // game-specific action count
+  score:           uint32         // final score
+  duration_ms:     uint32         // wall-clock game duration
+  pieces/events:   uint16         // game-specific action count
 
   // Verification
-  stream:       base92-string  // compact replay (see §1.4)
-  terminal_hash: hex64         // SHA-256 chain terminal value
-  seed_commit:  hex64          // pre-game seed commitment
-  seed_reveal:  hex32          // post-game seed (verifies commit)
-  verified:     bool           // local self-check passed
+  stream:          base92-string  // compact replay (see §1.4)
+  terminal_hash:   hex64          // SHA-256 chain terminal value
+  seed_commit:     hex64          // pre-game seed commitment
+  seed_reveal:     hex32          // post-game seed (verifies commit)
+  verified:        bool           // local self-check passed
 
   // Context
-  timestamp:    iso8601
-  tournament_id: string?       // null for casual play
-  chain_id:     uint32?        // EVM chain if tournament entry
+  timestamp:       iso8601
+  contract_id:     string?        // null for casual play
+  admission_id:    string[3]?     // required player_name under an admission ticket
+  chain_id:        uint32?        // EVM chain if tournament entry
 }
 ```
 
 The `record_id` is the primary key. It is deterministic: the same game played identically produces the same record_id. This makes deduplication trivial and fraud detectable (two records with the same stream but different scores cannot both be valid).
+
+When `admission_id` is present on a Score Record, the player's displayed `player_name` during play MUST equal `admission_id`. The screen grab and the replay stream both bind to this value (see §2.4). Records whose player_name does not equal their admission_id are automatically rejected by the contract.
 
 ---
 
@@ -69,21 +72,21 @@ Each game registers a **Game Descriptor** that the platform uses to understand, 
 
 ```
 GameDescriptor {
-  game_id:        string          // unique short identifier
-  display_name:   string          // "CELLTOWER" | "ASTEROIDS" etc.
-  version_hash:   hex32           // current live version
-  max_duration_s: uint16          // max expected game length (≤600 for platform)
-  replay_format:  ReplayFormat    // see §1.4
+  game_id:         string          // unique short identifier
+  display_name:    string          // "CELLTOWER" | "ASTEROIDS" etc.
+  version_hash:    hex32           // current live version
+  max_duration_s:  uint16          // max expected game length (≤600 for platform)
+  replay_format:   ReplayFormat    // see §1.4
   modes: [
     ModeDescriptor {
-      mode_id:        string      // "STANDARD" | "MARATHON" | "CLASSIC" etc.
-      display_name:   string
-      player_counts:  uint8[]     // [1] | [1,2] | [2,4] etc.
-      score_axis:     string      // "SCORE" | "TIME" | "DISTANCE" | "SURVIVAL"
-      min_skill_proof: string?    // e.g. "TETRIS_BONUS_ONCE" for CELLTOWER
+      mode_id:         string      // "STANDARD" | "MARATHON" | "CLASSIC" etc.
+      display_name:    string
+      player_counts:   uint8[]     // [1] | [1,2] | [2,4] etc.
+      score_axis:      string      // "SCORE" | "TIME" | "DISTANCE" | "SURVIVAL"
+      min_skill_proof: string?     // e.g. "TETRIS_BONUS_ONCE" for CELLTOWER
     }
   ]
-  verify_fn:      string          // name of registered verification function
+  verify_fn:       string          // name of registered verification function
 }
 ```
 
@@ -101,11 +104,13 @@ Stream layout (base92-encoded, semicolon-delimited sections):
   HEADER ; PAYLOAD ; [SNAPSHOT ...] ; TERMINAL_HASH
 
 HEADER (comma-delimited):
-  seed_hex      — 32 hex bytes (256-bit commit/reveal seed)
-  version_hex   — 32 hex bytes (game file SHA-256)
-  stats         — game-specific summary (score, duration, event count, etc.)
-  game_id       — ASCII game identifier
-  mode_id       — ASCII mode identifier
+  seed_hex         — 32 hex bytes (256-bit commit/reveal seed)
+  version_hex      — 32 hex bytes (game file SHA-256)
+  stats            — game-specific summary (score, duration, event count, etc.)
+  game_id          — ASCII game identifier
+  mode_id          — ASCII mode identifier
+  admission_id?    — optional 3-char B92 admission name (if playing an admission-ticket contract)
+  player_name      — 3-char B92 displayed name (must equal admission_id if present)
 
 PAYLOAD:
   Variable-length sequence of action records.
@@ -114,26 +119,25 @@ PAYLOAD:
   Actions are ordered chronologically.
 
 SNAPSHOT (one or more, emitted every N actions):
-  piece_num     — 2 base92 chars (action index at snapshot time)
-  state         — game-specific state encoding (board, positions, etc.)
-  Minimum: 52 chars. Used for random-access verification.
+  piece_num        — 2 base92 chars (action index at snapshot time)
+  state            — game-specific state encoding (board, positions, etc.)
 
 TERMINAL_HASH:
   64 hex chars — SHA-256 of the full hash chain (H_final)
 ```
 
 **Hash chain rule (universal):**
-- H_0 = SHA-256(seed_bytes)
+- H_0 = SHA-256(seed_bytes || admission_id || player_name)
 - H_n = SHA-256(H_{n-1} || action_record_n || state_after_n)
 
-This rule is identical for every game. Only the definition of "action_record" and "state_after" differ.
+Mixing `admission_id` and `player_name` into H_0 binds the replay to the identity under which it was played. Re-submitting the same replay under a different identity produces a different terminal hash — the stream cannot be laundered across tournaments.
 
 **Stream size budget:**
 For a 10-minute game at 1 action per second, a 4-char action record produces 2,400 base92 characters (~2.4KB). At 10 actions per second (fast arcade play): 24KB. Both fit comfortably in a clipboard paste, QR code (with compression), or single HTTP POST.
 
 ---
 
-### 1.5 CELLTOWER Action Record (existing, for reference)
+### 1.5 CELLTOWER Action Record
 
 ```
 posIdx: uint16 (2 base92 chars)   — type*1160 + rot*290 + x*29 + (drop_y+4)
@@ -145,298 +149,430 @@ Total:  4 base92 chars per piece placement
 
 ### 1.6 ASTEROIDS Action Record (proposed)
 
-Asteroids gameplay decomposes into per-frame or per-event records. For a 10-minute game at ~30 events/second:
+Asteroids gameplay decomposes into per-event records. For a typical 3-minute game at ~10 events/second:
 
 ```
-Option A — Frame-based (dense, exact replay):
-  frame_idx:  uint24               — frame number since game start
-  inputs:     uint8 bitmask        — bits: THRUST|LEFT|RIGHT|FIRE|SHIELD
-  Total: 5 bytes per frame → 90KB for 10min@30fps (compress to ~15KB)
-
-Option B — Event-based (sparse, human-readable):
+Event-based (sparse, human-readable):
   event_type: 4 bits               — THRUST_START|THRUST_END|LEFT|RIGHT|FIRE|KILL|LEVEL|DEATH
   event_data: 12 bits              — rotation (9 bits) + flags (3 bits)
   ms_delta:   16 bits              — ms since last event
-  Total: 4 bytes per event → ~2KB for a typical game
-
-Option B is preferred for the platform: smaller stream, same verifiability,
-and timing deltas enable bot detection via the same statistical analysis as CELLTOWER.
+  Total: 4 bytes per event → ~7KB for a typical game
 ```
 
-The verifier reconstructs ship position, velocity, and asteroid field deterministically from the seed, then replays events. The terminal hash pins the result.
+The verifier reconstructs ship position, velocity, and asteroid field deterministically from the seed, then replays events. The terminal hash pins the result. Timing deltas enable bot detection via the same statistical analysis as CELLTOWER.
 
 ---
 
 ### 1.7 Multi-Player Score Records
 
-For 2-player competitive play, each player produces an independent Score Record with a shared `tournament_id`. The platform links them by `tournament_id` rather than merging them into one record. This keeps the replay format simple (one player per stream) and allows each player's record to be independently verified.
+For 2-player competitive play, each player produces an independent Score Record with a shared `contract_id`. The platform links them by `contract_id` rather than merging them into one record. This keeps the replay format simple (one player per stream) and allows each player's record to be independently verified.
 
-For co-operative play (two players, one score), the stream contains interleaved action records tagged by player index. The state after each action is the joint state. Both players must sign the terminal hash (or both phone-verify) for the record to count.
-
----
-
-## Part II — Smart Contract Tournament Layer
-
-### 2.1 What the System Does
-
-The CELLTOWER client can connect to any **Tournament Server** — a URL the player pastes in. The server publishes a list of available **Challenges**: skill-based competitions with entry fees and prize pools managed by smart contracts on a public blockchain.
-
-The CELLTOWER client is a **UI intermediary only**. It:
-- Displays available challenges and their terms
-- Explains the legal landscape in plain language
-- Guides the player through wallet connection and entry fee payment
-- Submits the player's verified game stream to the contract after play
-- Displays the outcome
-
-The CELLTOWER client does **not**:
-- Hold funds at any time
-- Adjudicate disputes
-- Guarantee prize delivery
-- Act as a party to any contract
+For co-operative play (two players, one score), the stream contains interleaved action records tagged by player index. The state after each action is the joint state. Both players must sign the terminal hash for the record to count.
 
 ---
 
-### 2.2 Tournament Server Protocol
+## Part II — The Peer Piggy-Bank Contract Model
 
-The server exposes a simple REST API. Any party can run a compliant server.
+### 2.1 Core Analogy: The California Cardroom
+
+In a California cardroom:
+- The **dealer** is paid a fee to move cards around — they do not play for the pot.
+- The **players** stake money against each other — the outcome is between them.
+- The **cardroom** provides the table, the rules, and the physical infrastructure — the cardroom is not a player.
+
+On the CELLTOWER platform:
+- The **verification oracle** (dealer) is paid a fee to verify replays — it does not win or lose.
+- The **players** stake entry fees that distribute to the best performer(s) — the outcome is between them.
+- The **High Tower District** (cardroom) provides the game client, registry, and optional oracle service — HTD is not a player and takes no share of the prize pool.
+
+The critical legal fact in the cardroom analogy is that **no corporation stands between the players and the pot**. A player can deploy a contract that acts, in effect, as their own self-capitalized tournament — the contract is the piggy bank, not a corporate treasury.
+
+### 2.2 The Piggy-Bank Contract
+
+Any player can deploy a **piggy-bank contract**: a self-contained tournament that holds funds, admits entrants according to creator-specified terms, distributes prizes to verified winners, and **refunds any remainder to the creator on expiration**. Each contract is:
+
+- **Single-purpose**: one tournament, one deployment, one lifecycle
+- **Creator-bounded**: the creator sets every parameter at deploy time; nothing changes afterward
+- **Self-refunding**: if the tournament expires without valid entries or valid winners, all funds return to the creator's wallet
+- **Peer-symmetric**: the creator has no privileged role *during play* beyond what they disclosed at deploy time
+
+The contract is the player's own piggy bank. They may seed it with their own funds (creating a free-entry bounty), require entry fees from others (creating a pool they may compete for), or structure it as a guaranteed prize with fixed admission (see §2.8). Each of these structures is legal under different framings — and the contract must declare its framing at deploy time so entrants know what they are entering.
+
+### 2.3 Why Per-Tournament Deployment
+
+Each tournament is a fresh contract deployment, not an entry in a shared registry. This choice is deliberate:
+
+- **Legal isolation**: each tournament stands on its own terms. A flaw in one does not taint another.
+- **Parameter immutability**: a deployed contract cannot be amended. Creators cannot silently change the rules after entries arrive.
+- **Piggy-bank semantics**: the contract *is* the piggy bank. On expiration, it releases its contents to the creator and becomes inert. A registry model would couple lifecycles.
+- **Creator accountability**: each creator's contracts are visibly tied to their deploying address. Bad actors build a public record; honest creators build reputation.
+
+A future optimization layer may batch multiple related contracts behind a factory (gas efficiency) or a meta-contract (aggregated distribution), but the semantic unit remains one tournament = one contract.
+
+### 2.4 Admission Tickets and Allowlists
+
+Some tournaments are open to all. Others restrict entry. The platform supports three allowlist modes, in increasing order of restrictiveness:
+
+**OPEN** — Anyone may enter by paying the entry fee. The player_name on the submitted Score Record may be any B92 3-char string.
+
+**ENUMERATED** — The contract embeds a list of specific wallet addresses permitted to enter. Straightforward but requires the creator to know addresses in advance.
+
+**ADMISSION-TICKET** — The creator specifies a seed and a participant count N. The seed deterministically samples N three-character B92 IDs from the full 92³ = 778,688 name space. These N IDs are the **admission tickets** for the tournament.
+
+To enter an admission-ticket tournament, a player:
+1. Pays the entry fee to the contract.
+2. Receives an admission ticket — one of the N IDs, assigned by the contract via a password-and-ticket handshake (the creator may pre-distribute admission codes; the player redeems a code for their randomly-drawn ticket).
+3. Plays qualifying games under that ticket's 3-character ID as their `player_name`.
+4. Submits the replay stream with `admission_id` set to the ticket.
+
+Because `admission_id` is mixed into H_0 of the hash chain and displayed on-screen during play (burned into the screen grab as the player's 3-letter name), a performance under ticket `XQ7` cannot be re-submitted under ticket `KKM` or under a non-tournament identity. The replay either verifies under `XQ7` or it doesn't verify at all.
+
+**Grouped qualification.** Multiple sibling contracts may accept the same admission-ticket ID. A player who purchases ticket `XQ7` valid for a grouped event ("April sprint" + "April monthly" + "rookie bracket") can submit a single qualifying run to all three. This is not a loophole — it is how the creator designed the group.
+
+### 2.5 Interview-Driven Contract Creation
+
+Free-form contract text is a fraud vector: creators can write ambiguous rules, hide clauses, or trap entrants with adversarial language. Instead, the CELLTOWER client constructs contracts through a **structured interview**. The creator answers a sequence of questions; the client composes a well-formed contract from templated language.
+
+The interview covers, at minimum:
 
 ```
-GET  /challenges
-     Returns: ChallengeList
-
-GET  /challenges/{challenge_id}
-     Returns: ChallengeDetail
-
-POST /challenges/{challenge_id}/enter
-     Body: { player_name, wallet_address, tx_hash }
-     Returns: { entry_id, deadline, submit_url }
-
-POST /challenges/{challenge_id}/submit
-     Body: { entry_id, stream, terminal_hash, score }
-     Returns: { accepted, verification_status }
+  [GAME]           Which game? (CELLTOWER | ASTEROIDS | ...)
+  [MODE]           Which mode? (STANDARD | MARATHON | CLASSIC | ...)
+  [PLAYER_COUNT]   1 | 2 | more
+  [DURATION]       Tournament open from/until. Entry window vs. play window.
+  [ADMISSION]      OPEN | ENUMERATED | ADMISSION-TICKET. If ticket: seed, count,
+                   distribution method.
+  [ENTRY_FEE]      Amount and currency. Zero allowed (creator-funded bounty).
+  [CREATOR_FUNDING] Amount creator seeds into the pool (can be zero).
+  [MIN_ENTRIES]    Below this, entries refund and creator funding returns.
+  [MAX_ENTRIES]    Cap on participants (relevant for admission-ticket mode).
+  [CREATOR_PLAY]   May the creator enter their own tournament? (see §3.1)
+  [DISTRIBUTION]   How is the pool split? (winner-take-all | top-3 | top-N | percentile)
+  [TIEBREAK]       Earliest submission wins | most recent wins | split
+  [ORACLE]         Which verification oracle? (HTD | independent | multi-oracle)
+  [FEE_ORACLE_BPS] Oracle's per-verification fee, in basis points of pool
+  [FEE_LISTING]    Flat fee paid to the server listing this tournament
+  [EXPIRATION]     Hard deadline after which the creator can sweep refunds
+  [AGE_GATE]       Is this tournament restricted to 18+? (see §3.9)
+  [TAX_REPORTING]  Winners crossing US $600 must provide W-9 (see §3.8)
 ```
 
-**ChallengeDetail schema:**
-```json
-{
-  "challenge_id":   "uuid",
-  "title":          "CELLTOWER FRIDAY OPEN",
-  "game_id":        "CELLTOWER",
-  "mode_id":        "STANDARD",
-  "player_count":   1,
-  "entry_fee_wei":  "1000000000000000",    // 0.001 ETH
-  "prize_pool_wei": "10000000000000000",   // 0.01 ETH (grows with entries)
-  "distribution":   [60, 25, 15],         // % to 1st/2nd/3rd
-  "contract_address": "0x...",
-  "chain_id":       8453,                 // Base mainnet
-  "deadline_iso":   "2026-04-25T23:59:59Z",
-  "min_entries":    4,                    // cancel if fewer enter
-  "operator_fee_bps": 500,               // 5% of pool to operator (pre-specified)
-  "tos_hash":       "sha256:...",         // hash of terms accepted at entry
-  "required_version": "sha256:..."        // game version lock
-}
+Each answer is bounded — enums where applicable, numeric limits where sensible, strings restricted to the B92 alphabet. The resulting contract is a deterministic composition of templates: no free text, no hidden fields.
+
+The interview also produces a **plain-English summary** that appears on the entry screen. The creator cannot publish a tournament whose summary contradicts the contract bytecode — the summary is generated from the same answers.
+
+### 2.6 The Creator as a Peer
+
+By default, the creator **may** play their own tournament, but must disclose it. Three stances are available:
+
+- **CREATOR_PLAYS_AS_PEER**: the creator enters under the same terms and fee as any other player. The contract treats their Score Record identically. This is the cleanest peer model.
+- **CREATOR_DOES_NOT_PLAY**: the creator is excluded from entry. The tournament is between other players only. The creator may still earn a listing fee but takes no prize share.
+- **CREATOR_BOUNTY**: the creator seeds the pool and does not compete. Other players vie for the creator's bounty. This edges close to sweepstakes territory and is subject to §3.2.
+
+The chosen stance is part of the contract and appears prominently on the entry screen. A `CREATOR_PLAYS_AS_PEER` tournament where the creator finishes first still looks suspect to third parties — the only defense is cryptographic transparency: the replay is public, the bot-detection heuristics are public, and observers can audit the win.
+
+### 2.7 Lifecycle: The Piggy-Bank Contract from Deploy to Sweep
+
+```
+t0: DEPLOY
+    Creator signs deployment transaction.
+    Contract parameters locked.
+    Creator funds (if any) and listing fee deposited.
+    Contract STATE = OPEN_FOR_ENTRY
+
+t0 .. t1: ENTRY WINDOW
+    Players pay entry fee, receive admission ticket (if applicable).
+    Contract STATE = OPEN_FOR_ENTRY
+
+t1 .. t2: PLAY WINDOW
+    No more entries accepted.
+    Players play qualifying games under their admission IDs.
+    Streams are submitted to the contract with oracle signatures.
+    Contract STATE = PLAY_OPEN
+
+t2: PLAY_CLOSE
+    No more submissions accepted.
+    Verification grace period begins.
+    Contract STATE = VERIFYING
+
+t2 .. t3: VERIFICATION GRACE
+    Oracle finishes verifying submitted streams.
+    Disputes may be raised by any party.
+    Contract STATE = VERIFYING
+
+t3: DISTRIBUTE
+    Any party may call distribute() and pay the gas.
+    If min_entries met and verified winners exist:
+      → Pool splits by creator's declared distribution.
+      → Oracle fee and listing fee are disbursed.
+    If min_entries NOT met:
+      → All entry fees refunded to entrants.
+      → Creator funding returned to creator.
+    Contract STATE = DISTRIBUTED
+
+t4: EXPIRATION SWEEP (t3 + sweep_delay)
+    Any unclaimed balance (failed distributions, dust, unclaimed prizes)
+    can be swept to the creator's address.
+    Contract STATE = EXPIRED
 ```
 
-The `operator_fee_bps` field specifies the platform operator's take, expressed in basis points, baked into the contract at creation time. This is a **listing fee structure** — the operator is paid for providing the infrastructure, not for the outcome of play. This distinction matters legally (see Part III).
+The separation of **entry window** (t0..t1) from **play window** (t1..t2) is critical. It eliminates entry-sniping: nobody can see a leading score and then decide to enter. The roster is locked before anyone plays.
+
+The grace period between play close and distribution (t2..t3) exists for oracle verification time and for dispute windows. This is a known pattern in optimistic rollups and escrow contracts.
+
+`distribute()` is callable by anyone. The gas cost is charged to the caller. In practice the winner or the creator will typically call it; for small pools, a keeper or the oracle itself can be configured to call it in exchange for a gas rebate (declared in the contract).
+
+### 2.8 Creator-Funded Bounties and Sweepstakes Framing
+
+A tournament with **zero entry fee** and **creator-provided funding** is economically a bounty. Legally, depending on structure, it may read as:
+
+- A **skill contest**: winner takes prize based on skill. Legal in all US states.
+- A **sweepstakes**: free entry + prize + chance element. Governed by §17539 et seq. in California.
+- A **gift**: creator unilaterally rewards a performance. Depends on formality.
+
+To stay clearly on the skill-contest side:
+- Entry must be open to anyone meeting declared skill-neutral criteria.
+- The winner must be determined by performance, not by lottery.
+- The creator must not retain discretion over the outcome.
+
+The interview in §2.5 captures these criteria. Creators selecting `CREATOR_BOUNTY` receive a prompt explaining the sweepstakes boundary and are required to affirm skill-contest structure before deployment.
 
 ---
 
-### 2.3 Smart Contract Architecture
+## Part III — Design Problems and Mitigations
 
-The prize contract is a simple escrow with deterministic payout logic:
+This section catalogs the failure modes of the peer piggy-bank model and the mitigations baked into the design. The whole system rests on the premise that *every failure mode is publicly visible and publicly auditable* — transparency is the only real guarantee.
 
-```solidity
-// Pseudocode — not production-ready
+### 3.1 Creator Advantage in Own Tournament
 
-contract SkillChallenge {
-  address public operator;       // High Tower District or any operator
-  uint256 public entryFee;
-  uint256 public operatorFeeBps; // set at deploy, cannot change
-  uint256 public deadline;
-  uint256 public minEntries;
-  bytes32 public gameVersionHash;
-  bytes32 public modeId;
-  uint8[3] public distribution;  // [60, 25, 15] = pct to top 3
+**Problem.** If the creator plays their own `CREATOR_PLAYS_AS_PEER` tournament and wins, outside observers may suspect collusion, bot assistance, or rule-gaming.
 
-  mapping(address => Entry) public entries;
-  Entry[] public leaderboard;    // sorted by verified score
+**Mitigation.**
+- Creator participation is mandatory-disclosed on the entry screen.
+- All replay streams, including the creator's, are public and verifiable under the same rules.
+- Bot-detection heuristics (timing statistics, input entropy) apply equally to the creator.
+- The creator cannot change the tournament rules after deploy.
+- Tournaments where the creator has a structural advantage (e.g., authored the mode-specific level seed) must disclose the relationship. A creator who also authored the mode bears reputational risk if they consistently win.
+- Players who believe a tournament is rigged can simply not enter. Reputation is the primary filter.
 
-  struct Entry {
-    address player;
-    bytes32 terminalHash;        // submitted post-game
-    uint32  score;               // submitted post-game
-    bool    verified;            // set by on-chain or oracle verification
-    uint256 paidIn;
-  }
+### 3.2 Sweepstakes Framing for Creator-Funded Bounties
 
-  // Player enters before deadline
-  function enter(bytes32 playerName) external payable { ... }
+**Problem.** Zero-entry-fee tournaments with creator funding can look like sweepstakes and attract §17539 regulation.
 
-  // Player submits verified stream after game
-  // Verification: either on-chain (expensive) or via trusted oracle
-  // Oracle is the Tournament Server — its signed attestation that
-  // the stream replays to the claimed score.
-  function submitScore(bytes32 terminalHash, uint32 score, bytes calldata oracleSig) external { ... }
+**Mitigation.**
+- The interview in §2.5 separates `CREATOR_BOUNTY` as its own stance with explicit affirmations:
+  - Entry is open to all players meeting skill-neutral criteria.
+  - Winner is determined solely by verified performance.
+  - No chance element.
+- Bounty tournaments carry a "SKILL CONTEST — NOT A SWEEPSTAKES" banner on the entry screen.
+- Bounty contracts cannot use admission-ticket restrictions that are not skill-derived (e.g., a random drawing to select eligible players would be a sweepstakes; an admission ticket purchased with an entry fee is not).
+- HTD publishes a short legal guidance note with the interview explaining where the skill/sweepstakes line sits.
 
-  // Anyone can call after deadline + verification window
-  function distribute() external {
-    // Sort entries by score
-    // Pay top 3 their distribution percentage
-    // Pay operator operatorFeeBps of total pool
-    // Refund if minEntries not met
-  }
-}
-```
+### 3.3 Entry Sniping
 
-**Key properties:**
-- Funds move directly from players to contract to winners
-- Operator fee is fixed at deploy time, visible to all entrants before they pay
-- If `minEntries` is not reached, all entry fees are refunded
-- The contract is open-source and auditable; no party needs to trust the operator
+**Problem.** A player who watches live scores could enter a tournament after the leader posts a strong score and attempt to beat it with infinite retries.
+
+**Mitigation.** The strict separation of entry window and play window. Once the entry window closes, the roster is locked. No player can see any score and then decide to enter.
+
+Additionally, for admission-ticket tournaments, all players are bound to a specific 3-letter ID for the duration of play. A player who wants multiple attempts would need multiple admission tickets, each requiring a separate paid entry.
+
+### 3.4 Creator Withdrawal Before Entries Arrive
+
+**Problem.** A creator could seed funding, wait to see if anyone enters, and then cancel if entry patterns look unfavorable.
+
+**Mitigation.**
+- Creator funding is locked in the contract at deploy time. The creator has no withdrawal function.
+- The only withdrawal path is the **expiration sweep** at t4, which executes after the tournament has fully resolved. At that point, the only remaining funds are unclaimed dust or explicit refunds.
+- If `min_entries` is met, the tournament proceeds regardless of the creator's wishes. The distribution runs and creator funding flows to winners.
+- If `min_entries` is NOT met, all fees refund automatically, and the creator's own seed funds return to them. This is the only refund path — it is symmetric and automatic.
+
+### 3.5 Allowlist of Unknown Identities
+
+**Problem.** The creator wants to restrict entry but does not know the wallet addresses of the eligible participants.
+
+**Mitigation.** The admission-ticket mechanism (§2.4). The contract commits to a seed at deploy; the seed deterministically generates N three-character IDs. These IDs are transferable admission tickets, sold or gifted by the creator through an out-of-band channel (email invites, in-person passwords, QR codes on a poster). Only players holding an admission ticket can submit a valid Score Record. The tickets never touch the wallet address — they bind to the `player_name` the player uses during qualifying play, which is cryptographically pinned into the hash chain.
+
+This gives the creator full control over who participates without requiring advance knowledge of wallet addresses. It also gives participants pseudonymity — they play under the ticket's 3-letter ID, not under their wallet's public address.
+
+### 3.6 Oracle as Single Point of Failure
+
+**Problem.** If the verification oracle is compromised, offline, or malicious, the contract cannot determine winners.
+
+**Mitigation.**
+- Every contract specifies its oracle(s) at deploy time. Players see the oracle identity on the entry screen.
+- The contract can require **multi-oracle** confirmation (e.g., 2-of-3 independent signatures) for high-stakes tournaments. Oracles are public keys registered on-chain; any party can run one.
+- Oracles publish their verification logic as open source (it is just the portable `_verifyStream()` function from the game client).
+- In the event an oracle becomes unavailable, the contract's grace period (t2..t3) extends. If no oracle signature arrives within the configured timeout, the contract enters **disputed state** and refunds all entries. This is a fail-safe default.
+- Oracle malfeasance is publicly visible: any third party can run the same verification on the public stream and show that the oracle's attestation disagrees with the math. This is reputationally fatal for the oracle.
+
+### 3.7 Gas Cost of Distribution
+
+**Problem.** `distribute()` must be called by someone; that someone pays gas. For small pools, the gas cost can exceed any individual winner's share.
+
+**Mitigation.**
+- The contract tracks a configurable `distribution_gas_rebate` at deploy. The caller of `distribute()` receives this rebate from the pool before winners are paid.
+- For small pools (below a configured threshold), the contract may specify a **keeper oracle** that calls `distribute()` as part of its normal operation, in exchange for a larger rebate declared at deploy time.
+- Winners may call `distribute()` themselves — they have the strongest incentive.
+- The grace period is bounded; after expiration, anyone (including non-entrants) may call `distribute()` with the rebate as their payment. In pathological edge cases where gas exceeds the rebate, the contract sits in VERIFYING indefinitely and all funds eventually return to the creator via the expiration sweep.
+
+### 3.8 US $600+ Tax Reporting (1099)
+
+**Problem.** US tax law requires payers who distribute $600 or more in prizes to file Form 1099-MISC with the IRS. A peer-deployed contract has no entity responsible for issuing the form.
+
+**Mitigation.**
+- Tournaments with a **maximum single prize** at or above US $600 must enable the `TAX_REPORTING` interview flag.
+- When enabled, the admission process requires winners to provide a W-9 (US taxpayer info) before they can claim their prize. Non-US entrants provide a W-8BEN equivalent.
+- The contract holds winning funds in an escrow sub-pool until tax documentation is collected, then releases funds along with metadata that the creator (or an appointed reporter) uses to file 1099s.
+- HTD offers an optional **1099 service** (fee-for-service) that handles filing on behalf of creators whose tournaments trigger reporting thresholds. Creators electing this service pay a per-winner fee at distribution time.
+- For pools whose maximum single prize is below US $600, the flag may be left off — but the creator must affirm they understand the threshold. The interview surfaces the requirement explicitly.
+- Tournaments denominated in crypto are still subject to IRS reporting at USD-equivalent value at time of distribution. The interview notes this.
+
+### 3.9 Age Verification (18+)
+
+**Problem.** Skill-based cash-prize competitions in California and elsewhere are generally restricted to adults.
+
+**Mitigation.**
+- Every cash-prize tournament requires the creator to set an `AGE_GATE` value. The default is 18+.
+- Players entering such a tournament must pass an age verification step before their wallet is connected to the contract. The verification provider is pluggable; HTD's default integration uses a third-party KYC-lite service that returns a zero-knowledge age attestation.
+- The age attestation is tied to the entry transaction, not to the wallet. Each new cash-prize entry requires re-attestation (or a cached attestation within a reasonable window).
+- Free-entry skill contests (CREATOR_BOUNTY with zero entry fee) may skip age gating if the creator affirms the prize is below regulatory thresholds — but the interview surfaces this and requires explicit confirmation.
+- HTD does not store the underlying identity data. The attestation service does; HTD receives only a pass/fail flag for the age check.
+
+### 3.10 Player-Name Collision in Admission Tickets
+
+**Problem.** A player's preferred `player_name` (say, `ACE`) may collide with their assigned admission ticket. The Score Record would display the ticket name, not the preferred name, potentially confusing casual leaderboards.
+
+**Mitigation.**
+- Score Records carry both `player_name` and (when present) `admission_id`. They are the same string when an admission ticket is in use. The platform displays `admission_id` for tournament leaderboards and the casual name for casual leaderboards.
+- A player can hold a top casual score under `ACE` and simultaneously hold a tournament winner slot under admission ticket `XQ7`. The two do not conflict.
+- The DM routing system (see `tos.md`) routes to the holder of the name on the leaderboard being addressed. Casual DMs go to casual-ACE; tournament DMs go to tournament-XQ7.
 
 ---
 
-### 2.4 Verification Oracle
+## Part IV — The High Tower District's Legal Position
 
-Full on-chain replay verification of a Tetris game is computationally expensive. The platform uses a **lightweight oracle model**:
+### 4.1 HTD's Role
 
-1. The Tournament Server acts as the verification oracle for challenges it lists
-2. After a player submits a stream, the server runs `_verifyStream()` (the same portable verification core embedded in the game)
-3. If valid, the server signs the result: `oracle_sig = ECDSA(server_privkey, hash(challenge_id + player_address + score + terminal_hash))`
-4. The player submits `oracle_sig` to the smart contract
-5. The contract verifies the oracle's signature (trusting the registered oracle for this challenge)
-
-**Oracle trust model:**
-The oracle's public key is embedded in the contract at deploy time. Anyone can run their own oracle and deploy their own challenges. The High Tower District's oracle is one option; it is not the only one. Disputes about oracle honesty are disputes between the operator of that oracle and the players who chose to enter that operator's challenge — not disputes involving the game client.
-
-For high-stakes challenges, a **multi-oracle** model can require 2-of-3 independent verifiers to agree before a score is accepted. This is a future enhancement; the protocol supports it by making `oracleSig` an array.
-
----
-
-## Part III — Legal Architecture and Liability
-
-### 3.1 The High Tower District's Legal Position
-
-The High Tower District (HTD) occupies a specific and limited role in the tournament ecosystem:
+The High Tower District occupies a clearly bounded role:
 
 **What HTD does:**
-- Develops and publishes the game client software
-- Operates one instance of a Tournament Server (optionally)
-- Charges operators a listing fee for publishing challenges on HTD's server (a flat or percentage fee paid at challenge creation, not from player losses)
-- Provides the verification oracle service
+- Develops and publishes the game client software.
+- Maintains the platform registry (game descriptors, mode descriptors, replay format specs).
+- Operates optional infrastructure services for a fee: a verification oracle, a tournament listing server, a 1099 filing service.
+- Hosts documentation, example contracts, and the interview templates.
 
 **What HTD does not do:**
-- Hold player funds
-- Set or guarantee prize amounts
-- Determine winners
-- Serve as a party to any player-to-player or player-to-contract transaction
+- Hold player funds at any time.
+- Deploy or operate tournament contracts on behalf of players.
+- Set or guarantee prize amounts.
+- Determine winners.
+- Adjudicate disputes between peers.
 
-This structure is analogous to a **marketplace or exchange operator** rather than a gaming operator. The relevant legal precedent is closer to eBay's relationship to auction outcomes than to a casino's relationship to gambling results.
+This structure is a **marketplace or exchange operator** role — closer to eBay's relationship to auction outcomes than to a casino's relationship to gambling results. HTD earns fees for infrastructure and services, not from the outcome of any contest.
 
----
-
-### 3.2 California Legal Framework
+### 4.2 California Legal Framework
 
 #### The Dominant Factor Test (Reiterated)
 
-As described in `verification.md`, California uses the dominant factor test to distinguish skill contests from gambling. CELLTOWER qualifies as skill-dominant. The smart contract tournament layer does not change this analysis — it changes only the payment and prize distribution mechanism, not the nature of the underlying competition.
+California uses the dominant factor test to distinguish skill contests from gambling. CELLTOWER qualifies as skill-dominant (see `verification.md`). The peer piggy-bank layer does not change this — it changes only the payment and prize distribution mechanism.
 
-#### Entry Fees and Prize Pools
+#### Penal Code §337 — Banking and Percentage Games
 
-California permits entry-fee skill competitions under multiple frameworks:
+§337 prohibits banking games (house against all players) and percentage games (house takes a cut of the action).
 
-- **Penal Code §337**: "Banking or percentage games" are prohibited. CELLTOWER tournaments are not banking games — no participant profits systematically from other players' losses. The house does not play.
+- HTD takes no share of any prize pool. The piggy-bank contract moves funds peer-to-peer.
+- HTD's infrastructure fees are fixed, disclosed, and collected at contract creation or verification time — not computed as a percentage of losses.
+- The creator is not the "house" in the cardroom sense. In `CREATOR_PLAYS_AS_PEER` mode, the creator is a player. In `CREATOR_BOUNTY` mode, the creator is an entrant-free-of-charge skill-contest sponsor, not a banker.
 
-- **Business & Professions Code §17539 et seq.**: Promotional contests and sweepstakes rules. CELLTOWER tournaments are skill contests, not promotions — the winner is determined by performance, not random selection.
+#### §330.5 — Skill-Based Amusement Exemption
 
-- **AB 831 (effective January 1, 2026)**: Prohibits dual-currency casino-simulation sweepstakes. CELLTOWER is not a casino simulation and does not use a dual-currency model. AB 831 does not apply.
+§330.5 exempts legitimate skill competitions. CELLTOWER's peer tournaments fall within this exemption when structured as skill contests with no chance element in the prize determination.
 
-#### The Operator Fee
+#### AB 831 (Effective January 1, 2026)
 
-The HTD operator fee, collected at challenge creation time, is a **service fee for infrastructure provision** — comparable to a tournament entry platform charging a listing fee. It is not:
-- A rake (percentage of losses)
-- A house edge (built-in mathematical advantage)
-- A percentage game (profit from player outcomes)
+AB 831 prohibits dual-currency casino-simulation sweepstakes. CELLTOWER is not a casino simulation, does not use a dual-currency model, and does not simulate any chance game. AB 831 does not apply.
 
-The fee is fixed, public, and collected before any player enters. All parties can see exactly what the operator earns before committing funds. This structure does not trigger §337's prohibition on percentage games.
+#### B&P §17539 et seq. — Contests and Sweepstakes
 
-#### Smart Contract Dispute Resolution
+Peer-funded skill contests with skill-based winner determination are skill contests, not sweepstakes. The interview in §2.5 enforces skill-contest structure for `CREATOR_BOUNTY` tournaments.
 
-Smart contracts execute deterministically based on inputs. The inputs are:
-- Entry fees (paid voluntarily, on-chain, public)
-- Verified game scores (mathematically provable from replay streams)
-- The distribution formula (specified at contract creation, immutable)
+### 4.3 Informed Consent on Entry
 
-There is nothing to dispute in a properly functioning contract. The math runs. The prizes distribute.
-
-**In the event of a genuine dispute** (oracle malfunction, contract bug, chain reorganization), the dispute is between the parties to the contract — the players and the contract operator. HTD, as the game client developer, is not a party to the contract and has no obligation to adjudicate or compensate.
-
-The smart contract's source code, the oracle's public key, and the verification protocol are all public. Any qualified attorney or blockchain expert can audit the system without access to any private information held by HTD. This is the transparency guarantee that makes the legal position defensible: **the proof is public, the code is public, the math is public**.
-
----
-
-### 3.3 Absolving HTD from Contract Disputes
-
-When a player enters a tournament through the CELLTOWER client, they are presented with a confirmation screen that includes:
+When a player enters any tournament through the CELLTOWER client, they see:
 
 ```
 YOU ARE ABOUT TO ENTER A SKILL COMPETITION.
 
+GAME:          [game + mode]
 ENTRY FEE:     [amount and currency]
 PRIZE POOL:    [current pool amount]
-OPERATOR:      [operator name, not necessarily HTD]
+DISTRIBUTION:  [how the pool splits]
+CREATOR:       [wallet address — tap to view history]
+CREATOR PLAYS: [YES / NO / BOUNTY]
+ADMISSION:     [OPEN / ENUMERATED / ADMISSION-TICKET]
 CONTRACT:      [blockchain address — tap to view on explorer]
-ORACLE:        [oracle operator name and public key hash]
+ORACLE:        [oracle name(s) and public key hash(es)]
 CHAIN:         [network name]
+AGE GATE:      [18+ / NONE]
+TAX NOTE:      [maximum prize and 1099 applicability]
 
-THE HIGH TOWER DISTRICT BUILT THE GAME.
-THE HIGH TOWER DISTRICT IS NOT THE OPERATOR
-OF THIS COMPETITION AND IS NOT RESPONSIBLE
-FOR PRIZE DISTRIBUTION OR DISPUTES.
+THE HIGH TOWER DISTRICT BUILT THE GAME CLIENT.
+HTD IS NOT THE CONTRACT CREATOR. HTD DOES NOT
+HOLD YOUR FUNDS. HTD DOES NOT DECIDE WINNERS.
 
 YOUR ENTRY FEE IS SENT DIRECTLY TO A SMART
-CONTRACT. IT IS NOT HELD BY ANY PERSON.
-PRIZES ARE DISTRIBUTED AUTOMATICALLY BY
-THE CONTRACT BASED ON VERIFIED SCORES.
+CONTRACT. PRIZES ARE DISTRIBUTED AUTOMATICALLY
+BY THE CONTRACT BASED ON VERIFIED SCORES.
 
-DISPUTES ARE BETWEEN YOU AND THE CONTRACT
-OPERATOR. THE GAME CLIENT IS A TOOL —
-LIKE A BROWSER. THE BROWSER IS NOT LIABLE
-FOR WHAT WEBSITES DO.
+THE GAME CLIENT IS A TOOL — LIKE A BROWSER.
+THE BROWSER IS NOT LIABLE FOR WHAT WEBSITES DO.
+YOU ARE ENTERING A CONTRACT BETWEEN YOU AND
+THE CREATOR AND OTHER ENTRANTS.
 
 [ I UNDERSTAND. CONNECT WALLET AND ENTER. ]
 [ CANCEL ]
 ```
 
-This disclosure — combined with the public availability of all contract parameters — constitutes informed consent. The analogy to a browser is deliberately chosen: no court has held a browser developer liable for financial transactions conducted through websites the browser navigates to.
+The disclosure is generated from the contract's parameters. It cannot be edited by the creator — the client composes it from the on-chain facts.
+
+### 4.4 Dispute Resolution
+
+Smart contracts execute deterministically. Inputs are: entry fees (on-chain, public), verified game scores (mathematically provable from replay streams), and the distribution formula (immutable from deploy time). There is nothing in a functioning contract to dispute.
+
+For pathological cases — oracle malfeasance, contract bugs, chain reorganization — the dispute is between the parties to the contract: players and the contract creator. HTD is not a party and has no obligation to adjudicate or compensate.
+
+The smart contract source code, the oracle's public key, the verification protocol, and the replay streams are all public. Any qualified attorney or blockchain expert can audit the system. This is the transparency guarantee that makes the legal position defensible: **the proof is public, the code is public, the math is public**.
 
 ---
 
-## Part IV — Revenue Model for the High Tower District
+## Part V — Revenue Model for the High Tower District
 
-### 4.1 Sources of Revenue
+HTD generates revenue from infrastructure, never from player losses.
 
-HTD generates revenue through the following mechanisms, in increasing order of scale:
+1. **Oracle verification fee**: a per-verification fee paid to the oracle that signed a winning submission. Declared in the contract at deploy time in basis points.
 
-1. **Oracle service fee**: Challenges using HTD's verification oracle pay a per-verification fee. This is a pure service transaction — HTD does computational work (stream verification) and charges for it.
+2. **Listing fee**: a flat fee collected when a creator publishes a tournament on HTD's server. Paid at contract creation, independent of how the tournament resolves.
 
-2. **Listing fee**: Challenges published on HTD's Tournament Server pay a flat listing fee or a percentage of the operator fee collected at challenge creation. HTD earns this at listing time, before any player enters.
+3. **1099 filing service** (US): per-winner fee for creators whose tournaments trigger reporting thresholds.
 
-3. **First-party tournaments**: HTD may operate its own challenges, earning the operator fee as the challenge operator (not as the game developer). When HTD wears this hat, it is subject to the same rules as any operator.
+4. **Age-verification gateway**: per-attestation fee if the creator uses HTD's default age-verification partner.
 
-4. **DM system revenue** (see `tos.md`): Future per-message fees for the fan mail system.
+5. **DM system** (see `tos.md`): future per-message fees for fan mail routing.
 
-5. **Smart contract licensing**: Other game developers who implement the platform's verification protocol and registry may pay a licensing fee to use HTD's oracle infrastructure and Tournament Server listing.
+6. **Registry / licensing**: game developers who ship titles on the platform may pay a licensing fee for registry entry and oracle integration.
 
-### 4.2 What HTD Does Not Do
+HTD does not:
+- Take a percentage of any prize pool.
+- Guarantee any prize.
+- Hold or custody any player funds.
 
-HTD does not take a percentage of player losses. HTD does not operate as a "house." HTD does not hold player funds. These are not just legal protections — they are design principles. A platform that profits from player losses has an incentive to make the game worse. A platform that profits from infrastructure provision has an incentive to make the infrastructure better.
+These are design principles, not just legal protections. A platform that profits from player losses has an incentive to make the game worse. A platform that profits from infrastructure provision has an incentive to make the infrastructure better.
 
 ---
 
-## Part V — Future Games and Platform Extension
+## Part VI — Future Games and Platform Extension
 
-### 5.1 ASTEROIDS Clone (Next Game)
+### 6.1 ASTEROIDS Clone (Next Game)
 
 The second platform game is an Asteroids-style shooter. Score dimensions:
 
@@ -446,11 +582,11 @@ The second platform game is an Asteroids-style shooter. Score dimensions:
 | player_count | 1P · 2P cooperative |
 | session_type | HUMAN · AUTO |
 
-The replay stream uses the event-based format described in §1.6. A typical 3-minute CLASSIC game produces approximately 1,800 event records × 4 bytes = 7.2KB uncompressed. Well within the 10-minute platform budget.
+The replay stream uses the event-based format from §1.6. A typical 3-minute CLASSIC game produces approximately 1,800 event records × 4 bytes = 7.2KB uncompressed.
 
 Score verification: the verifier reconstructs ship physics from the seed-derived asteroid field, replays player inputs, and confirms the terminal hash. The asteroid RNG is seeded and deterministic — the same seed produces the same field every time.
 
-### 5.2 Leaderboard Query Model
+### 6.2 Leaderboard Query Model
 
 Leaderboard queries are compound key lookups:
 
@@ -466,33 +602,35 @@ Examples:
   */*/1/HUMAN                       — all solo human records (cross-game)
 ```
 
-The wildcard axis enables cross-game rankings (who is the best overall platform player?) and cross-mode rankings within a game (who plays the most CELLTOWER regardless of mode?).
+Tournament leaderboards key on `contract_id` instead of the game/mode axes — each contract is its own micro-leaderboard.
 
-### 5.3 Platform Score Identity
+### 6.3 Platform Score Identity
 
-The player's 3-character name is the routing address across all games and modes. A player named **ACE** has one name but may appear on multiple leaderboards. The identity system does not need to change — the name is just a label on the Score Record, and the Score Record carries the game/mode/count coordinates that place it in the right leaderboard.
+The player's 3-character name is the routing address across all games and modes. A player named `ACE` has one name but may appear on multiple leaderboards. The identity system does not need to change — the name is a label on the Score Record, and the Score Record carries the game/mode/count coordinates that place it in the right leaderboard.
 
-The fan DM system routes messages to the holder of `{game_id}/{mode_id}/{name}` — the best ACE in CELLTOWER Standard, the best ACE in Asteroids Classic, and so on. A player who excels across multiple games can hold multiple routing addresses simultaneously.
+For tournament play under admission tickets, the `admission_id` replaces the casual name for the duration of the tournament's leaderboard. The fan DM system routes messages to the holder of `{game_id}/{mode_id}/{name}` for casual play and `{contract_id}/{admission_id}` for tournament play.
 
 ---
 
 ## Summary
 
-The platform architecture provides:
+The platform provides:
 
-- A **universal Score Record schema** that accommodates any game, any mode, any player count
-- A **universal replay stream format** with game-specific payload encoding inside a common envelope
-- A **game registry** for adding new titles without changing the platform infrastructure
-- A **tournament server protocol** that any operator can implement
-- A **smart contract template** for skill-based cash-prize competitions
-- A **legal structure** that places HTD in the infrastructure provider role, not the gambling operator role
-- A **revenue model** based on service fees, not player losses
+- A **universal Score Record schema** that accommodates any game, any mode, any player count.
+- A **universal replay stream format** with game-specific payload encoding inside a common envelope, cryptographically bound to the player's identity.
+- A **game registry** for adding new titles without changing platform infrastructure.
+- A **peer piggy-bank contract model** where any player can deploy a self-contained tournament that holds funds, admits entrants, pays winners, and refunds the remainder on expiration.
+- **Interview-driven contract creation** that produces well-formed, auditable contracts from structured answers — never from free text.
+- **Admission-ticket allowlists** that restrict entry to creator-chosen participants without requiring advance knowledge of wallet addresses, and cryptographically pin performances to their tournament of origin.
+- **Nine design mitigations** for the predictable failure modes of peer-deployed tournaments: creator advantage, sweepstakes framing, entry sniping, creator withdrawal, unknown allowlist identities, oracle single-point-of-failure, distribution gas economics, US tax reporting, and age verification.
+- **A legal structure** that places HTD in the infrastructure-provider role, not the gambling-operator role.
+- **A revenue model** based on service fees — never on a percentage of any prize pool.
 
-The whole system is designed so that the proof is always public, the code is always auditable, and the money always moves between consenting parties through transparent mechanisms — not through an opaque house.
+The whole system is designed so that the proof is always public, the code is always auditable, and the money always moves between consenting peers through transparent mechanisms — not through an opaque house.
 
 ---
 
-*Platform Architecture v0.1 — Pre-implementation design document*
+*Platform Architecture v0.2 — Pre-implementation design document*
 *CELLTOWER · the High Tower District · Fresno, California*
 *AI design and drafting partner: Claude (Anthropic)*
 *This document does not constitute legal advice. Consult qualified legal counsel before implementing any tournament or prize distribution system.*
