@@ -6133,8 +6133,9 @@ function _buildStream() {
   const header = `${seedHex},${verHex},${statScore}${statLevel}${statLines}${statPieces}`;
 
   // ── Placements ──────────────────────────────────────────────────────────
-  // Each piece: 2 chars position (type*1000 + rot*250 + x*25 + drop_y) + 2 chars timing.
-  // Timing is not stored in _gameHistory — placeholder 0 until timing is wired through.
+  // Each piece: 2 chars position (type*1000 + rot*250 + x*25 + (drop_y+4)) + 2 chars timing.
+  // drop_y offset of +4 allows negative cy values (pieces rotating above row 0).
+  // Encoded range: drop_y -4..24 → stored 0..28. Max posIdx 7003 < 8464 (2-char B92 capacity).
   let placements = '';
   for(const rec of _gameHistory) {
     if(!rec.k) continue;  // skip any non-piece records
@@ -6143,7 +6144,7 @@ function _buildStream() {
     const x       = rec.x    !== undefined ? rec.x    : 0;
     const drop_y  = rec.drop_y !== undefined ? rec.drop_y : 0;
     const ms      = rec.ms   || 0;
-    const posIdx  = typeIdx * 1000 + rot * 250 + x * 25 + drop_y;
+    const posIdx  = typeIdx * 1000 + rot * 250 + x * 25 + (drop_y + 4);
     placements += _toB92(posIdx, 2) + _toB92(Math.min(ms, 92**2-1), 2);
   }
 
@@ -6204,12 +6205,15 @@ function _vBoardToWords(b) {
   return out;
 }
 
-// Apply one placement to the board, clear complete rows, return lines cleared
+// Apply one placement to the board, clear complete rows, return lines cleared.
+// Mirrors game's placeOn bounds check — cells above row 0 (drop_y+r < 0) are skipped.
 function _vApply(board, typeIdx, rot, x, drop_y) {
   const cells = _V_SHAPES[_V_PIECE_ORDER[typeIdx]][rot];
   for (let r = 0; r < cells.length; r++)
-    for (let c = 0; c < cells[r].length; c++)
-      if (cells[r][c]) board[(drop_y + r) * 10 + (x + c)] = 1;
+    for (let c = 0; c < cells[r].length; c++) {
+      const br = drop_y + r, bc = x + c;
+      if (cells[r][c] && br >= 0 && br < 25 && bc >= 0 && bc < 10) board[br * 10 + bc] = 1;
+    }
   let cleared = 0;
   for (let r = 24; r >= 0; r--) {
     let full = true;
@@ -6279,7 +6283,7 @@ async function _verifyStream(streamText) {
       const typeIdx = Math.floor(posIdx / 1000);
       const rot     = Math.floor((posIdx % 1000) / 250);
       const x       = Math.floor((posIdx % 250) / 25);
-      const drop_y  = posIdx % 25;
+      const drop_y  = (posIdx % 25) - 4;  // offset of 4 allows negative cy (pieces above row 0)
 
       _vApply(board, typeIdx, rot, x, drop_y);
       const boardWords = _vBoardToWords(board);
