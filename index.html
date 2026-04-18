@@ -2495,7 +2495,8 @@ function _boardToWords(b) {
 // drop_y: final resting row of the piece. boardWords: 50-byte post-placement board state.
 // Record format matches stream.md spec: 6 bytes placement + 50 bytes board = 56 bytes.
 async function _advanceHashChain(k, rot, x, drop_y, spawnT, slot, boardWords) {
-  _gameHistory.push({k, slot: slot||0});
+  const ms = Math.min(65535, Math.round(performance.now() - spawnT));
+  _gameHistory.push({k, slot: slot||0, rot, x, drop_y, ms});
   // I-frame snapshot every 30 pieces — copy boardWords so the reference stays stable.
   if(_gameHistory.length % 30 === 0 && boardWords) {
     _iFrames.push({pieceNum: _gameHistory.length, words: Uint8Array.from(boardWords)});
@@ -2503,7 +2504,6 @@ async function _advanceHashChain(k, rot, x, drop_y, spawnT, slot, boardWords) {
   // AI games have no verifiable input — skip hash chain and leave receipt invalid.
   if(autoUsed) return;
   const PIECE_ORDER = ['I','O','T','S','Z','J','L'];
-  const ms = Math.min(65535, Math.round(performance.now() - spawnT));
   const rec = new Uint8Array(56);
   rec[0] = PIECE_ORDER.indexOf(k) & 0xFF;
   rec[1] = rot & 0xFF;
@@ -6093,6 +6093,57 @@ function _txSection(evType) {
   if (evType.startsWith('line-'))      return 'LINE CLEAR AWARDS';
   if (evType === 'tetris')             return 'TETRIS BONUS';
   return 'MISC';
+}
+
+// ── Stream assembly ────────────────────────────────────────────────────────
+// Builds the full base-92 replay stream as defined in stream.md.
+// Returns a string ready for zlib compression and QR encoding.
+// Safe to call at any time — reads _gameHistory, _iFrames, _hashChainBuf, _seedBytes.
+function _buildStream() {
+  if(!_hashChainBuf || !_seedBytes || _gameHistory.length === 0) return null;
+
+  const PIECE_ORDER = ['I','O','T','S','Z','J','L'];
+
+  // ── Header ──────────────────────────────────────────────────────────────
+  const seedHex    = Array.from(_seedBytes).map(b=>b.toString(16).padStart(2,'0')).join('').padEnd(64,'0');
+  const verHex     = (G.versionHash || '').padEnd(64,'0');
+  const statScore  = _toB92(Math.min(score,  92**4-1), 4);
+  const statLevel  = _toB92(Math.min(level,  92**2-1), 2);
+  const statLines  = _toB92(Math.min(lines,  92**2-1), 2);
+  const statPieces = _toB92(Math.min(_gameHistory.length, 92**2-1), 2);
+  const header = `${seedHex},${verHex},${statScore}${statLevel}${statLines}${statPieces}`;
+
+  // ── Placements ──────────────────────────────────────────────────────────
+  // Each piece: 2 chars position (type*1000 + rot*250 + x*25 + drop_y) + 2 chars timing.
+  // Timing is not stored in _gameHistory — placeholder 0 until timing is wired through.
+  let placements = '';
+  for(const rec of _gameHistory) {
+    if(!rec.k) continue;  // skip any non-piece records
+    const typeIdx = PIECE_ORDER.indexOf(rec.k);
+    const rot     = rec.rot   || 0;
+    const x       = rec.x    !== undefined ? rec.x    : 0;
+    const drop_y  = rec.drop_y !== undefined ? rec.drop_y : 0;
+    const ms      = rec.ms   || 0;
+    const posIdx  = typeIdx * 1000 + rot * 250 + x * 25 + drop_y;
+    placements += _toB92(posIdx, 2) + _toB92(Math.min(ms, 92**2-1), 2);
+  }
+
+  // ── Snapshots ───────────────────────────────────────────────────────────
+  const snapParts = _iFrames.map(f => {
+    const pn = _toB92(Math.min(f.pieceNum, 92**2-1), 2);
+    let rows = '';
+    for(let r = 0; r < 25; r++) {
+      const word = (f.words[r*2] << 8) | f.words[r*2+1];
+      rows += _toB92(word, 2);
+    }
+    return pn + rows;  // 2 + 50 = 52 chars
+  });
+
+  // ── Terminal hash ────────────────────────────────────────────────────────
+  const termHash = Array.from(new Uint8Array(_hashChainBuf))
+    .map(b=>b.toString(16).padStart(2,'0')).join('');
+
+  return `${header};${placements};${snapParts.join(';')};${termHash}`;
 }
 
 // ── Build receipt DOM ──────────────────────────────────────────────────────
