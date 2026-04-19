@@ -273,6 +273,13 @@ var _pendingReplayStream=null, _replayPromptVisible=false;
 var _replaySource=null;       // stream that finished — enables restart
 var _replayDisplayName=null;  // name shown in badge during replay — never touches _currentPlayer
 var _replayInterruptedIdentity=false; // true if CTRL-V fired while name-entry screen was open
+var _hiStream=null;  // verified stream for current session/loaded hi score — click HIGH to replay
+
+// Built-in sample games selectable from the HIGH score display.
+// JSON-encoded so backslash/quote chars survive the JS string literal.
+const _SAMPLE_STREAMS=[
+  {label:'AAR · Demo', stream:"3Lw)K,\">\\K!(!`#0,AMH;q03{Zi):JaA@!y~~0hp{I-G7B2E3HM.9jP0#%}/lsC10rG2@Nf4{W8FHHH2Ej/1-[>.By#0'by)dfc(<LqdICF.YI}.4$J11g]?9v/XJc5:I>]/}HF*/0(9I0&3$$g/k$J8}MKNtB*^z&?--0g.7sv4:z4Dx'1?\\&p5Q&R~~C|6\\HB:kK15%/64/p(6(w=<#dC:3/4.ZA)KAn*5k@Swa/OwVMa5BrD0AYbDS@L4C/Ja!M$2H$J1BVS64Y^Bn/32o$J8\\G*7~0}47rG14/2-4l$5+$J^c&:9/w%@_ei-`ZB2?HE7&l$0~YH3/Z{1#vc9iM)=0N^4:$J?F@nC10b0|vd:AZ!3QMDb*$d`Dl#~~HD6M/J=7[97y0_<)$J8'[<@*B$B\\N\\5QH>64A|:20a3tNV5IMF8=fB8(0_Dx0]:sG&D]$J@&mT=?$g1]H<>|$J<}l*~~s!7TA~=zNX>T$fIP+A~~vI?$lxWMx{@bAJE@/K6=egwZYcDrN\"8`Ya<T$J5:yUBW$J5@s9<~$g5ryU@IY~<lY|B0N(4Uh[6~Gi8DZ_A/$J3`HGAyMFB]AM5dB'/qN%(6N#(UN!*+YP>o.v.3.u(tLW.3Lt*rY0@XY.-pY++R%B4</+6rNb+tk|0Dz/6jN`)z$I/(n44D%B1UA.2]NC)MM+(?0C*/NA)Ji0'C=!2m=\\&]zj)gZZ0>@h*n$^+Z192c0>(jdC-/YC4ix9*\\/&(qLe'tvA'l17*|$V+n$I:NFJ/~$H-^/~/`Y@+TJp.rie(^zf)+&K&WVN34VL+Io^$L;#?0s)s]Fq5:$_W}F{[t4wLZ(]\\&:g.<y<\\6?$3u%"},
+];
 // Screen shake — 4 independent sinusoidal channels, normalized so total energy=1
 // Each channel: {phx, phy, fx, fy, mx, my} — random phase & freq per axis per layer
 var _shakeT=0, _shakeDur=0, _shakeAmp=0;
@@ -443,6 +450,7 @@ function computeLayout(){
   addHit('auto_toggle', R.auto.x, R.auto.y, AUTO_BTN_W, R.auto.h);
   addHit('receipt',     R.auto.x + R.auto.w - RECEIPT_W, R.auto.y, RECEIPT_W, R.auto.h);
   addHit('marquee',     0, R.title.y, SW, R.title.h);
+  addHit('rHi',        R.rHi.x, R.rHi.y, R.rHi.w, R.rHi.h);
   // Slider zone
   const SLX = R.auto.x + AUTO_BTN_W + GAP;
   const SLW = R.auto.w - AUTO_BTN_W - RECEIPT_W - 2*GAP;
@@ -2377,6 +2385,11 @@ function handleTap(tx, ty){
        ty>=ui._startBtnY && ty<=ui._startBtnY+ui._startBtnH){
       startGame();
     }
+    // Allow HIGH tap on start screen to demo a sample replay
+    if(hitTest(tx,ty) === 'rHi'){
+      const _rs = _hiStream || (_SAMPLE_STREAMS.length ? _SAMPLE_STREAMS[0].stream : null);
+      if(_rs){ _startReplayMode(_rs); return; }
+    }
     return;
   }
 
@@ -2417,6 +2430,11 @@ function handleTap(tx, ty){
     }
     // Also allow the corner RECEIPT hit zone while dead (disabled during replay)
     if(id === 'receipt' && !_replaySource){ showReceipt(); return; }
+    // Tap HIGH score display → replay hi or first sample
+    if(id === 'rHi'){
+      const _rs = _hiStream || (_SAMPLE_STREAMS.length ? _SAMPLE_STREAMS[0].stream : null);
+      if(_rs){ _startReplayMode(_rs); return; }
+    }
     if(id === 'pause'){
       if(_replaySource){
         _replaySource=null;
@@ -6403,6 +6421,14 @@ function _genRandomName() {
   return Array.from(arr, b => pool[b % pool.length]);
 }
 
+function _saveHiScore(sc, stream, playerName) {
+  _hiStream = stream;
+  try { localStorage.setItem('ct_hi', JSON.stringify({score:sc, stream, playerName})); } catch(e) {}
+}
+function _loadHiScore() {
+  try { return JSON.parse(localStorage.getItem('ct_hi') || 'null'); } catch(e) { return null; }
+}
+
 function _getStoredIdentity() {
   try { return JSON.parse(localStorage.getItem('ct_identity') || 'null'); } catch(e) { return null; }
 }
@@ -7147,6 +7173,10 @@ async function _selfCheck() {
   if (result.valid) {
     const npfStr = result.npfFlag ? ` | ⚠ ${result.npfFlag} (${result.npfHits} hits, ratio=${result.npfRatio})` : '';
     console.log(`[SELFCHECK] ✓ PASS — ${result.piecesReplayed} pieces, ${ms}ms | HPS: ${result.hps !== null ? result.hps.toFixed(2) : 'N/A'} [${result.hpsLabel}] | Decades: ${result.blockLedger.length}${npfStr}`);
+    // Persist hi score with its verified stream so clicking HIGH replays it
+    if (!autoUsed && score >= hi && score > 0) {
+      _saveHiScore(score, stream, _currentPlayer ? _currentPlayer.name : '');
+    }
     // Live game DPC-based humanity verdict (uses exact AI scores, not verifier approximation)
     const vh = G.verifyHumanity();
     const dpcStr = vh.hps !== null ? ` DPC-HPS: ${vh.hps.toFixed(2)} [${vh.hpsLabel}]${vh.npfFlag?' ⚠ '+vh.npfFlag:''}` : '';
@@ -7739,6 +7769,13 @@ window.addEventListener('DOMContentLoaded', function(){
     resize();
     dbg('SW='+SW+' SH='+SH+' CELL='+CELL+' Rgx='+R.gx);
     layout();
+    // Restore persisted hi score
+    const _savedHi = _loadHiScore();
+    if (_savedHi && _savedHi.score > 0) {
+      hi = _savedHi.score;
+      _hiStream = _savedHi.stream || null;
+      document.getElementById('hv').textContent = hi;
+    }
     _syncAutoUI();
     dbg('init done, starting loop');
     requestAnimationFrame(loop);
