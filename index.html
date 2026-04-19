@@ -273,6 +273,7 @@ var _pendingReplayStream=null, _replayPromptVisible=false;
 var _replaySource=null;       // stream that finished — enables restart
 var _replayDisplayName=null;  // name shown in badge during replay — never touches _currentPlayer
 var _replayInterruptedIdentity=false; // true if CTRL-V fired while name-entry screen was open
+var _gameCommitted=false; // false until player's first input — piece hovers, timers hold, can exit freely
 var _hiStream=null;  // verified stream for current session/loaded hi score — click HIGH to replay
 
 // Built-in sample games selectable from the HIGH score display.
@@ -2106,12 +2107,15 @@ function drawAutoRow(t){
   }
   CTX.shadowBlur = 0;
 
-  // RECEIPT button — only interactive when paused or dead
+  // RECEIPT button — "READY" when game is uncommitted (hovering, no pieces placed)
   const RX = r.x + r.w - RECEIPT_W;
+  const _uncommitted = ui.gameStarted && !dead && !_gameCommitted && !_replayMode;
   const receiptAvail = paused || dead || !ui.gameStarted || _replayMode;
-  panel(RX, r.y, RECEIPT_W, r.h, receiptAvail ? '#aa6600' : '#442200');
-  _dmWordLabel(CTX, 'RECEIPT', RX+2, r.y + r.h*0.12, RECEIPT_W-4, r.h*0.76,
-    receiptAvail ? '#ffcc44' : '#664422');
+  const _receiptLabel = _uncommitted ? 'READY' : 'RECEIPT';
+  const _receiptBorder = _uncommitted ? '#003322' : (receiptAvail ? '#aa6600' : '#442200');
+  const _receiptColor  = _uncommitted ? '#00aa66' : (receiptAvail ? '#ffcc44' : '#664422');
+  panel(RX, r.y, RECEIPT_W, r.h, _receiptBorder);
+  _dmWordLabel(CTX, _receiptLabel, RX+2, r.y + r.h*0.12, RECEIPT_W-4, r.h*0.76, _receiptColor);
 }
 
 // ── Tip bubble: hints player about faster placement controls ─────────
@@ -2486,7 +2490,15 @@ function handleTap(tx, ty){
     case 'ctrl_hard': hdrop(); break;
     case 'ctrl_left': mhz(-1); break;
     case 'ctrl_right':mhz(1);  break;
-    case 'auto_toggle': if(ui.gameStarted&&!dead) toggleAutoPlay(); break;
+    case 'rHi': {
+      // Allow exit to replay any time game is uncommitted (no pieces placed yet)
+      if(!_gameCommitted){
+        const _rs=_hiStream||(_SAMPLE_STREAMS.length?_SAMPLE_STREAMS[0].stream:null);
+        if(_rs){_startReplayMode(_rs);return;}
+      }
+      break;
+    }
+    case 'auto_toggle': if(ui.gameStarted&&!dead&&_gameCommitted) toggleAutoPlay(); break;
     case 'receipt':        if(paused||dead||!ui.gameStarted) showReceipt(); break;
     case 'receipt_close':  hideReceipt(); break;
     case 'speed_slider': break;
@@ -5888,6 +5900,7 @@ function _gravStep(){
 function scheduleDrop(){
   stopDrop();
   if(dead||AUTO_PLAY||_replayMode) return;
+  if(!_gameCommitted) return;  // piece hovers until player's first input
   const nesMs = NES_SP[Math.min(level-1, NES_SP.length-1)];
   _dropDeadline = performance.now() + nesMs;
   _dropRafId = setTimeout(_gravStep, nesMs);
@@ -5913,7 +5926,7 @@ function startSelTimer(){
 
   // Countdown (for any external timer bar display)
   selIv=setInterval(()=>{
-    if(paused||dead||clearAnimating||(_replayMode&&_replayPaused))return;
+    if(paused||dead||clearAnimating||(_replayMode&&_replayPaused)||!_gameCommitted)return;
     timerLeft-=100;
     // Only auto-place on timeout during AUTO_PLAY — in human mode just let the
     // gravity timer handle piece movement, never force-drop on selection timeout.
@@ -6372,6 +6385,7 @@ function init(){
   particles=[];explodedCells.clear();clearAnimating=false;
   gapList=[];tetrisPrepActive=false;tetrisPrepCol=-1;
   piecePot=0;tetrisPot=0;piecesPlaced=0;_lastScoringHoleCheck=false;_p10Log=[];
+  _gameCommitted=false;
   tetrisStreak=0;tetrisMultiplier=1;
   currentScoringHoles=0;scoringDisabledSound=false;
   hfRun=0;hfBest=0;_tetrisLines=0;_maxTetrisStreak=0;_dirtyRun=0;_dirtyBest=0;_neverHoled=true;
@@ -6569,9 +6583,17 @@ function restart(asAuto){
 }
 
 // ─── KEYBOARD ────────────────────────────────────────────────────────────────
+function _ensureCommitted(){
+  if(!_gameCommitted && ui.gameStarted && !dead && !AUTO_PLAY && !_replayMode){
+    _gameCommitted=true;
+    scheduleDrop();
+  }
+}
+
 document.addEventListener('keydown',e=>{
   if(_replayMode||_replayPromptVisible)return;
   if(dead)return;
+  _ensureCommitted();
   if(e.key==='ArrowLeft')mhz(-1);
   else if(e.key==='ArrowRight')mhz(1);
   else if(e.key==='ArrowDown')sdrop();
@@ -6588,6 +6610,7 @@ document.addEventListener('keydown',e=>{
 // ─── CANVAS TAP / CLICK ──────────────────────────────────────────────────────
 function handleCanvasTap(clientX,clientY){
   if(dead||paused||!placements)return;
+  _ensureCommitted();
   const mx = clientX;
   const my = clientY;
   // Hit radius: 2.5 × cell — covers most of a 4-cell piece footprint
@@ -7811,7 +7834,7 @@ window.addEventListener('DOMContentLoaded', function(){
       if(_replayMode)return;
       const text=(e.clipboardData||window.clipboardData||{}).getData('text');
       if(!text||!_looksLikeStream(text))return;
-      if(ui.gameStarted&&!dead)return; // real game in progress
+      if(ui.gameStarted&&!dead&&_gameCommitted)return; // committed game in progress — block paste
       e.preventDefault();
       // Dismiss identity/name-entry screen if showing, then immediately start replay
       if(_identityScreen){ _replayInterruptedIdentity=true; _identityScreen=false; _idOnComplete=null; }
