@@ -1525,22 +1525,18 @@ function drawPlayfield(t){
     CTX.restore();
   }
 
-  drawVerificationStripe(gx - 5, gy - 5, gw + 10, gh + 10);
+  // Stripe sits 6px outside cells — background black fills the gap naturally.
+  drawVerificationStripe(gx - 6, gy - 6, gw + 12, gh + 12);
 
-  // 5-pixel concentric border outside cells: black-white-black-white-black (inside → out).
-  // Drawn after the stripe so it renders on top of stripe blocks along all edges.
+  // Two white pulsing rings at 1.5px and 3.5px outside cells.
+  // No explicit black rings — background shows through as black between and around them.
   {
     const bPulse = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(t * Math.PI * 0.5));
     CTX.save();
     CTX.lineWidth = 1;
-    for (let p = 0; p < 5; p++) {
-      const ofs = -(p + 0.5);
-      const isWhite = (p === 1 || p === 3);
-      CTX.strokeStyle = isWhite
-        ? `rgba(255,255,255,${bPulse.toFixed(3)})`
-        : 'rgba(0,0,0,1)';
-      CTX.strokeRect(gx + ofs, gy + ofs, gw - 2 * ofs, gh - 2 * ofs);
-    }
+    CTX.strokeStyle = `rgba(255,255,255,${bPulse.toFixed(3)})`;
+    CTX.strokeRect(gx - 1.5, gy - 1.5, gw + 3, gh + 3);
+    CTX.strokeRect(gx - 3.5, gy - 3.5, gw + 7, gh + 7);
     CTX.restore();
   }
 
