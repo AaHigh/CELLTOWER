@@ -315,10 +315,18 @@ t2: PLAY_CLOSE
     Verification grace period begins.
     Contract STATE = VERIFYING
 
-t2 .. t3: VERIFICATION GRACE
-    Oracle finishes verifying submitted streams.
-    Disputes may be raised by any party.
+t2 .. t2.5: VERIFICATION GRACE
+    Oracle finishes verifying submitted streams (hash chain validity check).
+    Valid Checksum confirmed for all qualifying submissions.
     Contract STATE = VERIFYING
+
+t2.5 .. t3: ANTI-FRAUD AUDIT WINDOW
+    Oracle computes Humanity Probability Scores for all verified streams (see §4.2).
+    Streams below the contract's HPS threshold are placed in AUDIT_HOLD.
+    Flagged holders are notified and have 48 hours to submit Human Attestation.
+    Attestations that pass lift AUDIT_HOLD; failures or non-responses void the submission.
+    Disputes may be raised by any party during this window.
+    Contract STATE = AUDIT_HOLD (for flagged submissions) / VERIFYING (for clean submissions)
 
 t3: DISTRIBUTE
     Any party may call distribute() and pay the gas.
@@ -469,9 +477,162 @@ This gives the creator full control over who participates without requiring adva
 
 ---
 
-## Part IV — The High Tower District's Legal Position
+---
 
-### 4.1 HTD's Role
+## Part IV — Prize Qualification Framework
+
+### 4.1 Tier Classification
+
+CELLTOWER recognition operates at two distinct tiers:
+
+**Tier 1 — Leaderboard Recognition**
+Any game record with a valid terminal hash qualifies for leaderboard listing. Automated
+play is not banned at this tier — the score is provably real, and the community decides
+what it means. Tier 1 imposes no requirement on the identity of the player.
+
+**Tier 2 — Cash Prize Eligibility**
+A Valid Checksum is **necessary but not sufficient**. A stream must additionally receive
+a passing Humanity Probability Score (§4.2) before the submitting holder becomes eligible
+for cash prize disbursement from a tournament contract.
+
+This two-tier structure is the formal expression of the platform's position: *the math
+proves the game; the human proves the player.* A bot may appear on any leaderboard. It
+may not collect a prize.
+
+---
+
+### 4.2 The Humanity Score — Proof of Human Effort
+
+#### Rationale
+
+The hash chain is a proof of record integrity, not a proof of human origin. These are
+distinct claims. For Tier 2 prize eligibility, evidence of the second claim is required.
+
+The platform does not claim to detect all automated play with certainty. It claims to
+make a statistically rigorous, publicly documented, good-faith determination — and to
+hold submitters contractually liable for misrepresentation regardless of detection outcome.
+
+#### The Humanity Probability Score
+
+The oracle computes a **Humanity Probability Score (HPS)** for every stream submitted to
+a Tier 2 contract. HPS is a value in [0.0, 1.0] derived from statistical analysis of the
+`timing_ms` field across all piece placements, correlated against board complexity at each
+placement moment.
+
+Board complexity factors used in the correlation:
+
+| Factor | Description |
+|--------|-------------|
+| Stack height | Rows with any occupied cell above the playfield midpoint |
+| Hole count | Occupied cells with empty cells directly above them |
+| Column height variance | Standard deviation of per-column stack heights |
+| Next-piece difficulty | Number of clean placement slots given current board topology |
+| Current level | Tighter timing windows at higher levels; human reaction times do not scale linearly |
+
+**The behavioral signal:** A human player under cognitive load — high stack, multiple
+holes, a difficult next piece — exhibits measurably longer placement times and elevated
+timing variance. On a clean board with an easy piece, the same player places quickly.
+This **context-sensitivity** is the fingerprint of human cognition applied to a real
+problem. It is not easy to fake, because faking it correctly requires solving the same
+board-evaluation problem the human is solving.
+
+Automated systems fail this test in one of two ways:
+
+- **Uniform Bot-Jitter:** Timing is consistent regardless of board state. Fast on easy
+  boards, fast on hard boards. No correlation with complexity.
+- **Synthetic Bot-Jitter:** Variance is introduced deliberately but is not correlated with
+  board complexity — random noise injected to look human, detectable because it does not
+  track the actual difficulty of each placement decision.
+
+Both patterns are statistically distinguishable from genuine human timing with sufficient
+sample size. A 300-piece game provides approximately 300 timing samples — sufficient for
+robust analysis.
+
+#### Bot-Jitter Definition
+
+> **Bot-Jitter** is defined as any timing distribution in a submitted game stream where
+> the `timing_ms` values are either (a) statistically uniform across varying board
+> complexity states, or (b) variable but with variance uncorrelated to board complexity
+> metrics. Either pattern constitutes grounds for HPS failure.
+>
+> A Humanity Probability Score below the contract's declared threshold, attributed to
+> Bot-Jitter detection, is grounds for **contract voidance** of that submission.
+
+The HPS threshold is a contract parameter declared at deploy time. Default: **0.72**.
+High-stakes contracts may require 0.85 or higher. Casual or exhibition contracts may
+lower the threshold or disable HPS entirely — but that choice is disclosed to all entrants
+on the entry screen (see §4.3).
+
+#### Financial Liability and Breach of Contract
+
+By submitting a game stream to any Tier 2 tournament contract, the submitting player
+represents and warrants that the stream was produced by an unaided human player. This
+representation is a **material term** of the entry agreement, accepted at the moment of
+wallet connection and entry fee payment.
+
+Submission of an automated or AI-assisted stream — regardless of whether its terminal
+hash verifies correctly — constitutes **breach of contract**. The financial consequences
+of that breach fall entirely on the player:
+
+- Entry fee is forfeited.
+- Prize eligibility is voided.
+- Withheld prize funds are redistributed to the next eligible finisher.
+- The voided stream and the basis for voidance are recorded on-chain and publicly visible.
+
+**The High Tower District's liability is bounded.** The platform commits to operating
+the HPS infrastructure in good faith, publishing its methodology and thresholds, and
+providing a documented dispute path for false-positive claims. The platform does not
+guarantee detection of all automated play, and its failure to detect a specific instance
+of fraud does not make the platform liable for the fraud — the player who committed it is.
+
+A player who uses automation and evades HPS detection has committed fraud. The platform's
+failure to catch them does not reduce their legal exposure. It only delays the community's
+awareness. When that awareness arrives — through social signals, community investigation,
+or a future audit — the on-chain record of their submission is permanent evidence.
+
+**In summary: the platform moves the financial and legal liability for bot-assisted play
+from the infrastructure provider to the player, through explicit contractual representation
+at entry. Detection is a tool. Contractual liability is the backstop.**
+
+---
+
+### 4.3 HPS Parameter Disclosure on Entry Screen
+
+Tournament entry screens must display the following HPS parameters declared by the
+contract creator, prior to entry fee payment:
+
+- Whether HPS checking is enabled for this contract
+- The HPS threshold in effect
+- The consequence of HPS failure (submission voided, entry fee forfeited, next eligible
+  finisher advances)
+- The 48-hour attestation option available to flagged submissions
+- The Board of Directors review path
+
+A player who pays an entry fee after reading this disclosure has accepted the HPS terms.
+No post-hoc claim of surprise about the HPS process is valid.
+
+---
+
+#### Dispute and Review Path
+
+A player who believes their submission was incorrectly flagged may:
+
+1. Request Board of Directors review within 48 hours of AUDIT_HOLD notification.
+2. Submit evidence of human play (video, attestation session, device logs).
+3. Receive a written determination within 5 business days.
+
+If the Board overturns the flag, the submission is restored, AUDIT_HOLD is lifted, and
+prize funds are released normally. If the Board upholds the flag, the submitter may seek
+independent arbitration as specified in the entry agreement.
+
+The Board's determination and its reasoning are published (anonymized where appropriate)
+as part of the platform's transparency commitment.
+
+---
+
+## Part V — The High Tower District's Legal Position
+
+### 5.1 HTD's Role
 
 The High Tower District occupies a clearly bounded role:
 
@@ -490,7 +651,7 @@ The High Tower District occupies a clearly bounded role:
 
 This structure is a **marketplace or exchange operator** role — closer to eBay's relationship to auction outcomes than to a casino's relationship to gambling results. HTD earns fees for infrastructure and services, not from the outcome of any contest.
 
-### 4.2 California Legal Framework
+### 5.2 California Legal Framework
 
 #### The Dominant Factor Test (Reiterated)
 
@@ -516,7 +677,7 @@ AB 831 prohibits dual-currency casino-simulation sweepstakes. CELLTOWER is not a
 
 Peer-funded skill contests with skill-based winner determination are skill contests, not sweepstakes. The interview in §2.5 enforces skill-contest structure for `CREATOR_BOUNTY` tournaments.
 
-### 4.3 Informed Consent on Entry
+### 5.3 Informed Consent on Entry
 
 When a player enters any tournament through the CELLTOWER client, they see:
 
@@ -555,7 +716,7 @@ THE CREATOR AND OTHER ENTRANTS.
 
 The disclosure is generated from the contract's parameters. It cannot be edited by the creator — the client composes it from the on-chain facts.
 
-### 4.4 Dispute Resolution
+### 5.4 Dispute Resolution
 
 Smart contracts execute deterministically. Inputs are: entry fees (on-chain, public), verified game scores (mathematically provable from replay streams), and the distribution formula (immutable from deploy time). There is nothing in a functioning contract to dispute.
 
@@ -565,7 +726,7 @@ The smart contract source code, the oracle's public key, the verification protoc
 
 ---
 
-## Part V — Revenue Model for the High Tower District
+## Part VI — Revenue Model for the High Tower District
 
 HTD generates revenue from infrastructure, never from player losses.
 
@@ -590,7 +751,7 @@ These are design principles, not just legal protections. A platform that profits
 
 ---
 
-## Part VI — Future Games and Platform Extension
+## Part VII — Future Games and Platform Extension
 
 ### 6.1 ASTEROIDS Clone (Next Game)
 

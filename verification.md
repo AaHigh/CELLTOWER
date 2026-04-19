@@ -32,6 +32,37 @@ AB 831 targets a specific structure: platforms where players purchase virtual cu
 
 CELLTOWER is none of the things AB 831 prohibits. It does not simulate casino-style gambling. It does not use a dual-currency model. It does not offer chance-based outcomes. It is a competitive skill game — a puzzle requiring spatial reasoning, pattern recognition, and manual dexterity — in the same legal category as chess tournaments, competitive puzzle solving, and eSports competitions.
 
+### Active Enforcement as Evidence of Skill-Contest Character
+
+A platform that merely claims to be a skill contest proves nothing. A platform that
+actively invests in distinguishing human skill from automated exploitation demonstrates,
+through its own architecture, that the distinction matters — which is precisely what the
+dominant factor test requires.
+
+The CELLTOWER Humanity Probability Score (HPS) system (documented in `platform.md §4.2`)
+is evidence of this character. The platform does not treat human and automated play as
+equivalent. It does not permit automated play to qualify for prize money, even when the
+hash chain verifies perfectly. It computes a statistical profile of each submission's
+timing behavior, correlates that profile against board complexity at every decision point,
+and requires a passing score as a precondition for cash prize eligibility.
+
+This architecture makes two things explicit in the platform's own code and governance:
+
+1. **Skill is the intended mechanism.** The HPS measures the behavioral footprint of
+   cognition under pressure — the same variable reaction times, contextual hesitation,
+   and corrective movements that distinguish a human solving a real spatial problem from
+   an algorithm executing a computed path.
+
+2. **Automated exploitation is prohibited, not merely discouraged.** HPS failure voids
+   a submission by contract. The financial liability for bot-assisted play falls on the
+   submitter, not the platform (see `platform.md §4.2` — Breach of Contract). The platform
+   is the enforcement mechanism; the player is the liable party.
+
+Under the dominant factor test, a court evaluating CELLTOWER should note that the platform
+operator has built, documented, and deployed a system specifically designed to ensure that
+prizes go only to human players who demonstrated skill — not to the party with the best
+automation. This is the institutional expression of skill dominance.
+
 ### The Spirit of California's Approach
 
 California's gaming laws reflect a consistent legislative philosophy: protect consumers from exploitation by chance-based systems masquerading as entertainment, while preserving the freedom to compete in genuine contests of skill. The state has a long history of permitting entry-fee competitions where skill determines the outcome — from horse racing (constitutionally authorized) to licensed card rooms to competitive gaming events.
@@ -112,9 +143,38 @@ The random piece sequence must be demonstrably fair — neither the player nor t
 
 The piece type bits in each P-frame serve as a redundancy check against the seed-derived sequence. If someone patches the game to feed themselves favorable pieces, the P-frame piece types will not match the sequence generated from the committed seed. This is detectable without replaying the game — a simple sequence comparison suffices.
 
-### Bot Detection
+### Bot Detection and the Humanity Probability Score
 
-The verification stream cannot inherently distinguish human input from automated input. A cheater who silently invokes the game's AI pathfinder while pretending to play manually would produce a valid stream. To address this, each P-frame includes a 2-byte timing field: milliseconds elapsed from piece spawn to lock. Human players exhibit characteristic timing signatures — variable reaction times, corrective movements, pauses before decisions. Automated play produces unnaturally uniform timing. Statistical analysis of placement timing distributions provides a secondary integrity signal, analogous to engine-detection methods used in competitive chess.
+The hash chain cannot inherently distinguish human input from automated input. A player
+who silently invokes the game's AI pathfinder would produce a valid stream — the terminal
+hash proves the game was played as recorded, not that a human played it.
+
+To address this, each placement record includes a 2-byte `timing_ms` field: milliseconds
+from piece spawn to lock. This field enables statistical analysis of a player's behavioral
+profile across the game.
+
+**The key insight is correlation, not distribution alone.** Naive bot detection compares
+timing variance against a threshold. Sophisticated cheaters can inject artificial variance
+to defeat this. The CELLTOWER approach goes further: the `timing_ms` values are correlated
+against board complexity at each placement — stack height, hole count, column variance, and
+next-piece difficulty (see `platform.md §4.2` for the full factor list).
+
+Human cognition under spatial pressure produces **context-sensitive** timing: slower and
+more variable when the board is dangerous, faster and more consistent on easy placements.
+This pattern is characteristic of genuine decision-making and difficult to replicate without
+solving the same board-evaluation problem the human is solving.
+
+**Bot-Jitter** is the failure mode that HPS detection is designed to catch: timing
+distributions that are either (a) uniform across varying board states, or (b) variable but
+uncorrelated with board complexity. Both patterns indicate that the timing was generated
+independently of the actual game state — i.e., that no human was making context-sensitive
+decisions about where to place pieces.
+
+Bot-Jitter detection is a continuous score (the Humanity Probability Score), not a binary
+flag. Scores below the contract's declared threshold result in submission audit hold and
+potential voidance. The threshold and methodology are public. The computation is the same
+for every submission. This is the same statistical-transparency principle as the hash chain
+itself: the algorithm is public; the result is deterministic; the proof is auditable.
 
 ### Transparency, AI Participation, and the Turing Layer
 
@@ -188,11 +248,40 @@ This verification system inverts that relationship entirely. Every aspect of the
 
 CELLTOWER tournaments operate as peer-to-peer skill contests, not banking or percentage games. There is no house that profits from player losses. Entry fees fund a prize pool distributed to top performers based on verified scores. The platform operator's revenue comes from entry fee administration, not from an edge built into the game. This structure falls outside the prohibitions of Penal Code §330, which targets "banking or percentage games."
 
-### Fraud Prevention as Consumer Protection
+### Fraud Prevention as Consumer Protection — and Liability Allocation
 
-The verification system protects players from each other — ensuring that scores submitted for prize money were actually achieved through legitimate play. This serves the same consumer protection purpose that California's gaming regulations serve: preventing fraud and ensuring fair outcomes.
+The verification system protects players from each other — ensuring that scores submitted
+for prize money were actually achieved through legitimate play. This serves the same
+consumer protection purpose that California's gaming regulations serve: preventing fraud
+and ensuring fair outcomes.
 
-The system also protects tournament operators from liability. If a score is challenged, the replay stream provides mathematical proof of its validity (or invalidity). There is no subjective judgment required, no reliance on witnesses, and no possibility of a "he said / she said" dispute.
+The system also protects tournament operators from liability through an explicit liability
+allocation mechanism. By entering any Tier 2 (cash prize) tournament, a player makes a
+contractual representation that their submission was produced by an unaided human. This
+representation is material to the entry agreement. Breach of this representation — by
+submitting an automated or AI-assisted stream — is breach of contract, not platform
+negligence.
+
+**The financial liability of a bot attack therefore rests with the attacker, not the
+platform.** The platform's obligations are: (1) operate HPS infrastructure in good faith,
+(2) publish methodology and thresholds, (3) provide a documented dispute path for false
+positives. These obligations are bounded and achievable. An unlimited guarantee against
+all automated fraud is not a reasonable obligation for any infrastructure provider, and
+the platform does not purport to offer one.
+
+This allocation is legally significant: it transforms a potential platform liability
+(failing to detect all bots) into a player liability (fraudulent misrepresentation at
+entry). California courts have consistently held that contract fraud claims lie against
+the party who made the false representation, not the party who relied on it in good faith.
+The entry agreement, the HPS disclosure at entry, and the on-chain record of the voided
+submission together constitute the evidence chain for such a claim.
+
+If a score is challenged, the replay stream provides mathematical proof of its integrity
+(or lack thereof). If integrity is confirmed but humanity is disputed, the HPS computation
+and its inputs are the audit record. There is no subjective judgment required, no reliance
+on witnesses, and no possibility of a "he said / she said" dispute at the hash-chain level.
+The HPS layer introduces probabilistic judgment — but that judgment is bounded, disclosed,
+and reviewable by the Board of Directors.
 
 ### Skill Measurement, Not Chance Exploitation
 
@@ -214,11 +303,38 @@ CELLTOWER applies these proven principles to modern web technology, using standa
 
 ## Summary
 
-The CELLTOWER verification system is designed to enable something specific: cash-prize competitive Tetris tournaments that are legal in California, fair to players, transparent to regulators, and resistant to fraud.
+The CELLTOWER verification system is designed to enable something specific: cash-prize
+competitive Tetris tournaments that are legal in California, fair to players, transparent
+to regulators, and resistant to fraud.
 
-It achieves this through a combination of provably fair randomization (commit-reveal seed protocol), open-source auditable game physics (single-file HTML, version-hashed), compact tamper-evident replay streams (bitwise board representation, SHA-256 hash chain), bot detection (placement timing analysis), and live tournament monitoring (real-time hash checkpoint transmission).
+It achieves this through a layered architecture:
 
-The system is built to follow the spirit of California's gaming laws: skill determines outcomes, chance is minimized and provably fair, every aspect of play is transparent and verifiable, and consumers are protected from fraud. This is not a gambling system seeking a legal loophole. It is a skill measurement system seeking to prove, mathematically, that the best player won.
+1. **Provably fair randomization** — commit-reveal seed protocol binds the piece sequence
+   before the game begins.
+2. **Tamper-evident replay stream** — SHA-256 hash chain over every placement record;
+   any modification breaks the terminal hash.
+3. **Identity binding** — player name mixed into H_0; a stream cannot be re-attributed
+   to a different identity.
+4. **Humanity Probability Score** — statistical correlation of placement timing against
+   board complexity; Bot-Jitter patterns (uniform or context-uncorrelated timing) are
+   grounds for submission voidance.
+5. **Contractual liability allocation** — by entering a Tier 2 tournament, a player
+   warrants human play; automated submissions are breach of contract, making the player
+   (not the platform) financially liable.
+6. **Transparent governance** — HPS methodology, thresholds, and dispute outcomes are
+   published; the Board of Directors reviews flagged cases; the on-chain record is permanent.
+
+The combined effect: the best human player wins. A bot may post a verified score. It may
+not collect a prize. It may not answer its fan mail. It may not pass its attestation session.
+The system is designed so that every layer it would need to defeat requires solving a harder
+version of the original problem — eventually requiring the construction of a system that is,
+for all practical purposes, a human.
+
+The system is built to follow the spirit of California's gaming laws: skill determines
+outcomes, chance is minimized and provably fair, every aspect of play is transparent and
+verifiable, fraud liability rests with the fraudster, and consumers are protected. This is
+not a gambling system seeking a legal loophole. It is a skill measurement system seeking
+to prove, mathematically and statistically, that the best human player won.
 
 ---
 
