@@ -1511,16 +1511,23 @@ function drawPlayfield(t){
     CTX.restore();
   }
 
-  // Pulsing border
-  const pulse2 = 0.25 + 0.5*(0.5+0.5*Math.sin(t*Math.PI*0.5));
-  const bw2 = Math.ceil(CELL*0.15);
-  CTX.save();
-  CTX.strokeStyle=`rgba(255,220,0,${pulse2})`;
-  CTX.lineWidth=bw2;
-  CTX.shadowColor=`rgba(255,200,0,${pulse2*0.6})`;
-  CTX.shadowBlur=bw2*2;
-  CTX.strokeRect(gx+bw2/2, gy+bw2/2, gw-bw2, gh-bw2);
-  CTX.restore();
+  // 5-pixel concentric border outside cells: black-white-black-white-black (inside → out).
+  // Each ring is a 1px strokeRect centered at gx-(p+0.5) — entirely outside the cell area.
+  // White rings pulse; black rings stay solid to maintain crisp pixel-art edge.
+  {
+    const bPulse = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(t * Math.PI * 0.5));
+    CTX.save();
+    CTX.lineWidth = 1;
+    for (let p = 0; p < 5; p++) {
+      const ofs = -(p + 0.5);  // negative = outside cells; p=0 touches cell edge
+      const isWhite = (p === 1 || p === 3);
+      CTX.strokeStyle = isWhite
+        ? `rgba(255,255,255,${bPulse.toFixed(3)})`
+        : 'rgba(0,0,0,1)';
+      CTX.strokeRect(gx + ofs, gy + ofs, gw - 2 * ofs, gh - 2 * ofs);
+    }
+    CTX.restore();
+  }
 
   drawVerificationStripe(gx, gy, gw, gh);
 
@@ -3127,7 +3134,7 @@ function drawVerificationStripe(gx, gy, gw, gh) {
       bx = gx - S;
       by = gy + jj * S;
       dotDx = _dotX(3 - slot, S); dotDy = _dotX(rot, S);
-      tsX = bx + S; tsY = by; tsW = 1; tsH = S;  // timing strip: 1px right of block
+      tsX = bx + S - 1; tsY = by; tsW = 1; tsH = S;  // timing strip: rightmost pixel of block (gx-1, outside cells)
     } else if(i < firstLap) {
       // Bottom lane 0, left→right — Y=slot(mirrored), X=rotation
       const jj = i - nR - nT - nL;
@@ -3151,7 +3158,7 @@ function drawVerificationStripe(gx, gy, gw, gh) {
         bx = gx - S - off;
         by = gy + jj * S;
         dotDx = _dotX(3 - slot, S);   dotDy = _dotX(rot, S);
-        tsX = bx + S; tsY = by; tsW = 1; tsH = S;
+        tsX = bx + S - 1; tsY = by; tsW = 1; tsH = S;
       }
     }
 
