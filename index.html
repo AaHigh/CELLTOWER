@@ -2843,6 +2843,21 @@ const G = (() => {
     };
   };
 
+  // Compute HPS v0.4 from live game history using DPC as the conflict signal.
+  // Call at game-over (or any time after ≥10 pieces) to get the human-play verdict.
+  g.verifyHumanity = function() {
+    const entries = _gameHistory.filter(e => e.dpc !== undefined && e.dpc !== null);
+    if (entries.length < 10) return { hps: null, hpsLabel: 'N/A', reason: 'insufficient data' };
+    const timings = entries.map(e => e.ms);
+    const dpcs    = entries.map(e => e.dpc);
+    const hps = _vComputeHPS(timings, dpcs, 10);
+    const npfHits  = entries.filter(e => e.dpc >= 0.7 && e.ms < 150).length;
+    const npfRatio = Math.round(npfHits / entries.length * 100) / 100;
+    const hpsLabel = hps === null ? 'N/A' : hps >= 0.72 ? 'PASS' : hps >= 0.50 ? 'REVIEW' : 'FAIL';
+    const npfFlag  = npfRatio >= 0.05 ? 'NPF_SUSPECT' : null;
+    return { hps, hpsLabel, npfHits, npfRatio, npfFlag, pieces: entries.length };
+  };
+
   return g;
 })();
 
@@ -2856,7 +2871,8 @@ let _gameHistory      = [];    // [{k, slot}] one entry per locked piece, oldest
 let _prevDecadeHash   = null;  // Uint8Array(32): H_0, then most recent decade_hash
 let _decadeRecs       = [];    // Uint8Array(56) records accumulating toward next decade
 let _decadeTms        = [];    // timing_ms values for current decade
-let _decadeComplx     = [];    // board complexity values for current decade
+let _decadeComplx     = [];    // DPC values for current decade
+let _currentDPC       = 0;     // DPC of the current piece, set by calcPlacements()
 let _killScreenActive = false; // true during the 2.5s kill screen animation
 let _killScreenT      = 0;     // performance.now() when kill screen started
 let _wasKillScreen    = false; // true if this game ended via kill screen
@@ -2978,7 +2994,7 @@ function _boardComplexityFromWords(words) {
 // Record format matches stream.md spec: 6 bytes placement + 50 bytes board = 56 bytes.
 async function _advanceHashChain(k, rot, x, drop_y, spawnT, slot, boardWords) {
   const ms = Math.min(8463, Math.round(performance.now() - spawnT));
-  _gameHistory.push({k, slot: slot||0, rot, x, drop_y, ms});
+  _gameHistory.push({k, slot: slot||0, rot, x, drop_y, ms, dpc: _currentDPC});
   // AI games have no verifiable input — skip hash chain and leave receipt invalid.
   if(autoUsed) return;
   const PIECE_ORDER = ['I','O','T','S','Z','J','L'];
@@ -5270,6 +5286,15 @@ function calcPlacements(fresh=false, _forceRun=false){
 
   cands.sort((a,b)=>b.sc-a.sc);
 
+  // DPC: how close are the top two options? 1.0 = perfect toss-up, 0 = obvious choice.
+  if (cands.length >= 2) {
+    const sc1=cands[0].sc, sc2=cands[1].sc, scMin=cands[cands.length-1].sc;
+    const range=Math.max(1, sc1-scMin);
+    _currentDPC=Math.max(0, Math.min(1, 1.0-(sc1-sc2)/range));
+  } else {
+    _currentDPC=0;
+  }
+
   // Always ensure the correct puzzle candidate is one of the 4 options,
   // whether or not debug mode is on. This guarantees the lottery is always
   // fair — 1-in-4 chance of picking right on any given piece by random guessing.
@@ -6866,6 +6891,77 @@ function _vBytesToB92(bytes, width) {
   return s;
 }
 
+// Port of game's scoreBoard() for flat 25×10 Uint8Array. No game globals used.
+function _vScoreBoard(b) {
+  let totalH=0, bump=0;
+  const colH=new Array(10).fill(0);
+  for (let c=0; c<10; c++) {
+    for (let r=0; r<25; r++) if (b[r*10+c]) { colH[c]=25-r; break; }
+    totalH+=colH[c];
+  }
+  for (let c=0; c<9; c++) bump+=Math.abs(colH[c]-colH[c+1]);
+  const maxH=Math.max(...colH), minH=Math.min(...colH);
+  const danger=Math.max(0,Math.min(1,(maxH-12)/10)), dSq=danger*danger;
+  const hPen=totalH*80*(1+dSq*8);
+  const mhB=Math.max(0,maxH-8); const mhPen=mhB*mhB*120*(1+dSq*4);
+  let cPen=0;
+  for (let c=1; c<9; c++) {
+    const ld=colH[c-1]-colH[c], rd=colH[c+1]-colH[c];
+    if(ld>0&&rd>0){const d=Math.min(ld,rd);if(d>=2)cPen+=d*d*400*(1+dSq*2);}
+  }
+  const sp=maxH-minH;
+  const sPen=sp>4?(sp-4)*(sp-4)*200*(1+dSq*3):0;
+  let spkPen=0;
+  for (let c=0; c<10; c++) {
+    const lh=c>0?colH[c-1]:null, rh=c<9?colH[c+1]:null;
+    const avg=(lh!==null&&rh!==null)?(lh+rh)/2:(lh!==null?lh:rh);
+    const spk=colH[c]-avg;
+    if(spk>=2) spkPen+=spk*spk*300*(1+dSq*4);
+  }
+  return -(hPen+bump*150*(1+dSq*2)+mhPen+cPen+sPen+spkPen);
+}
+
+// Decision-Path Conflict [0,1]: 0 = obvious best move, 1.0 = perfect toss-up.
+// Evaluates all straight-drop placements for the piece type using base score
+// (lines×800 + scoreBoard) — no next-piece lookahead (nxt not in stream).
+function _vDPC(board, typeIdx) {
+  const shapes = _V_SHAPES[_V_PIECE_ORDER[typeIdx]];
+  const fitsAt = (cells, x, gy) => {
+    for (let r=0; r<cells.length; r++)
+      for (let c=0; c<cells[r].length; c++) {
+        if (!cells[r][c]) continue;
+        const br=gy+r, bc=x+c;
+        if (br<0) continue;
+        if (br>=25 || bc<0 || bc>=10 || board[br*10+bc]) return false;
+      }
+    return true;
+  };
+  const scores=[];
+  for (let rot=0; rot<shapes.length; rot++) {
+    const cells=shapes[rot], cw=cells[0].length;
+    for (let x=0; x<=10-cw; x++) {
+      if (!fitsAt(cells,x,0)) continue;
+      let gy=0; while(fitsAt(cells,x,gy+1)) gy++;
+      const tb=new Uint8Array(board);
+      for (let r=0; r<cells.length; r++)
+        for (let c=0; c<cw; c++)
+          if (cells[r][c]&&gy+r>=0&&gy+r<25) tb[(gy+r)*10+x+c]=1;
+      const nb=new Uint8Array(250);
+      let dr=24, cl=0;
+      for (let r=24; r>=0; r--) {
+        let full=true;
+        for (let c=0; c<10; c++) if(!tb[r*10+c]){full=false;break;}
+        if(!full){nb.set(tb.subarray(r*10,r*10+10),dr*10);dr--;}else cl++;
+      }
+      scores.push(cl*800+_vScoreBoard(nb));
+    }
+  }
+  if (scores.length<2) return 0;
+  scores.sort((a,b)=>b-a);
+  const range=Math.max(1,scores[0]-scores[scores.length-1]);
+  return Math.max(0,Math.min(1,1.0-(scores[0]-scores[1])/range));
+}
+
 // Convert flat 25×10 board (Uint8Array, index=row*10+col) to 50-byte word array
 function _vBoardToWords(b) {
   const out = new Uint8Array(50);
@@ -6930,15 +7026,15 @@ async function _verifyStream(streamText) {
 
     // Fresh board — no game state
     const board = new Uint8Array(250);  // 25 rows × 10 cols
-    const _hpTimings = [], _hpComplexity = [];
+    const _hpTimings = [], _hpDPC = [];
 
     // Decade Merkle-Root state
     let prevDecadeHash = new Uint8Array(H);  // seeded from H_0
     let decadeRecs = [], decadeTms = [], decadeComplx = [];
     const blockLedger = [];
 
-    // Physical Limit Sentinel — counts floor-timing hits during high-complexity boards
-    let floorHits = 0;
+    // Neural Processing Floor — neurologically impossible: high-conflict choice resolved <150ms
+    let npfHits = 0;
 
     for (let n = 0; n < nPieces; n++) {
       const chunk = placementsBlock.slice(n*4, n*4+4);
@@ -6951,17 +7047,17 @@ async function _verifyStream(streamText) {
       const x       = Math.floor((posIdx % 290) / 29);
       const drop_y  = (posIdx % 29) - 4;  // 29-slot field, offset 4 → range -4..24
 
-      // Collect HPS metrics before applying placement (pre-placement board complexity)
-      const preC = _vBoardComplexity(board);
+      // DPC: how much conflict did this placement pose? Computed pre-placement.
+      const dpc = _vDPC(board, typeIdx);
       _hpTimings.push(ms);
-      _hpComplexity.push(preC);
+      _hpDPC.push(dpc);
 
-      // Physical Limit Sentinel: frame-rate floor (≤17ms) during a non-trivial board
-      if (ms <= 17 && preC >= 0.3) floorHits++;
+      // Neural Processing Floor: high-conflict decision resolved in neurologically impossible time
+      if (ms < 150 && dpc >= 0.7) npfHits++;
 
-      // Decade accumulators use pre-placement complexity (same as full-game HPS)
+      // Decade accumulators use DPC (same signal as full-game HPS)
       decadeTms.push(ms);
-      decadeComplx.push(preC);
+      decadeComplx.push(dpc);
 
       _vApply(board, typeIdx, rot, x, drop_y);
       const boardWords = _vBoardToWords(board);
@@ -6999,16 +7095,16 @@ async function _verifyStream(streamText) {
 
     const computedB92 = _vBytesToB92(new Uint8Array(H), 40);
     const valid = computedB92 === termHashB92;
-    const hps = _vComputeHPS(_hpTimings, _hpComplexity);
+    const hps = _vComputeHPS(_hpTimings, _hpDPC);
     const hpsLabel = hps === null ? 'N/A' : hps >= 0.72 ? 'PASS' : hps >= 0.50 ? 'REVIEW' : 'FAIL';
-    const dmiRatio = nPieces > 0 ? Math.round(floorHits / nPieces * 100) / 100 : 0;
-    const dmiFlag  = dmiRatio >= 0.10 ? 'DMI_SUSPECT' : null;
+    const npfRatio = nPieces > 0 ? Math.round(npfHits / nPieces * 100) / 100 : 0;
+    const npfFlag  = npfRatio >= 0.05 ? 'NPF_SUSPECT' : null;
     return {
       valid,
       piecesReplayed: nPieces,
       hps, hpsLabel,
       blockLedger,
-      dmiFlag, dmiRatio,
+      npfFlag, npfRatio, npfHits,
       error: valid ? null : `hash mismatch\n  computed: ${computedB92}\n  stream:   ${termHashB92}`
     };
   } catch(e) {
@@ -7033,8 +7129,12 @@ async function _selfCheck() {
   const result = await _verifyStream(stream);
   const ms = Math.round(performance.now() - t0);
   if (result.valid) {
-    const dmiStr = result.dmiFlag ? ` | ⚠ ${result.dmiFlag} (ratio=${result.dmiRatio})` : '';
-    console.log(`[SELFCHECK] ✓ PASS — ${result.piecesReplayed} pieces, ${ms}ms | HPS: ${result.hps !== null ? result.hps.toFixed(2) : 'N/A'} [${result.hpsLabel}] | Decades: ${result.blockLedger.length}${dmiStr}`);
+    const npfStr = result.npfFlag ? ` | ⚠ ${result.npfFlag} (${result.npfHits} hits, ratio=${result.npfRatio})` : '';
+    console.log(`[SELFCHECK] ✓ PASS — ${result.piecesReplayed} pieces, ${ms}ms | HPS: ${result.hps !== null ? result.hps.toFixed(2) : 'N/A'} [${result.hpsLabel}] | Decades: ${result.blockLedger.length}${npfStr}`);
+    // Live game DPC-based humanity verdict (uses exact AI scores, not verifier approximation)
+    const vh = G.verifyHumanity();
+    const dpcStr = vh.hps !== null ? ` DPC-HPS: ${vh.hps.toFixed(2)} [${vh.hpsLabel}]${vh.npfFlag?' ⚠ '+vh.npfFlag:''}` : '';
+    if (dpcStr) console.log(`[SELFCHECK] verifyHumanity() →${dpcStr} over ${vh.pieces} pieces`);
     if (result.blockLedger.length > 0) console.table(result.blockLedger);
     if (_currentPlayer) {
       _addToLedger({
