@@ -1965,6 +1965,11 @@ function drawAutoRow(t){
 
   // AUTO toggle button
   const isOn = AUTO_PLAY;
+  // During replay the AUTO toggle is repurposed as a SPEED label (speed slider still works)
+  if(_replayMode){
+    panel(r.x, r.y, AUTO_BTN_W, r.h, '#003344');
+    _dmWordLabel(CTX, 'SPEED', r.x + 4, r.y + r.h*0.15, AUTO_BTN_W - 8, r.h*0.70, '#00ccff');
+  } else {
   panel(r.x, r.y, AUTO_BTN_W, r.h, isOn ? C.autoBorder : C.border);
   const asz = Math.max(7, r.h*0.32);
   CTX.font=F(FONT_LABEL, asz);
@@ -1973,13 +1978,11 @@ function drawAutoRow(t){
   if(isOn){CTX.shadowBlur=0;}
   const autoLabelColor = isOn ? C.green : C.purple;
   if(isOn){
-    // Render "AUTO" | dot | "ON" with dot centered between the two words
     const wordH = r.h * 0.58;
     const wordY = r.y + r.h * 0.18;
     const halfW = (AUTO_BTN_W - 8) * 0.45;
     _dmWordLabel(CTX, 'AUTO', r.x + 4,           wordY, halfW,        wordH, C.green);
     _dmWordLabel(CTX, 'ON',   r.x + 4 + halfW + 10, wordY, halfW - 6, wordH, C.green);
-    // Dot — centered in the gap between the two words
     const dotX = r.x + 4 + halfW + 5;
     const dotY = r.y + r.h * 0.50;
     const dotR = Math.max(2, r.h * 0.06);
@@ -1989,6 +1992,7 @@ function drawAutoRow(t){
     CTX.fill(); CTX.shadowBlur = 0;
   } else {
     _dmWordLabel(CTX, 'AUTO', r.x + 4, r.y + r.h*0.15, AUTO_BTN_W - 8, r.h*0.70, C.purple);
+  }
   }
 
   // ── Speed control zone ───────────────────────────────────────────────
@@ -2104,7 +2108,7 @@ function drawAutoRow(t){
 
   // RECEIPT button — only interactive when paused or dead
   const RX = r.x + r.w - RECEIPT_W;
-  const receiptAvail = paused || dead || !ui.gameStarted;
+  const receiptAvail = paused || dead || !ui.gameStarted || _replayMode;
   panel(RX, r.y, RECEIPT_W, r.h, receiptAvail ? '#aa6600' : '#442200');
   _dmWordLabel(CTX, 'RECEIPT', RX+2, r.y + r.h*0.12, RECEIPT_W-4, r.h*0.76,
     receiptAvail ? '#ffcc44' : '#664422');
@@ -2459,7 +2463,7 @@ function handleTap(tx, ty){
     switch(id){
       case 'pause':        if(dead) restart(false); else togglePause(); break;
       case 'auto_toggle':  toggleAutoPlay(); break; // allow turning OFF
-      case 'receipt':      if(paused||dead) showReceipt(); break;
+      case 'receipt':      if(paused||dead||_replayMode) showReceipt(); break;
       case 'receipt_close':hideReceipt(); break;
       case 'speed_slider': break; // handled by slider path
       // Everything else (piece0-3, tetris, ctrl_*, canvas) — silently ignored
@@ -7213,6 +7217,29 @@ function buildReceiptDOM() {
   const L  = (t,o)  => A(dmLine(t, o));
   const SP = (px)   => A(dmSpacer(px));
   const HR = (c,n)  => L((c||'=').repeat(n||DM_COLS));
+
+  // ── PLAYBACK / DIAGNOSTIC HEADER ─────────────────────────────────────────────
+  if(_replayMode){
+    SP(6);
+    L(center('\x01 CELLTOWER PLAYBACK RECEIPT \x01'), {inv:true, bold:true});
+    SP(2);
+    L(center('─── DIAGNOSTIC MODE ───'), {bold:true});
+    SP(2);
+    L('  THIS IS A REPLAY — NOT ACTIVE PLAY.');
+    L('  STATS REFLECT PROGRESS TO CURRENT');
+    L('  PIECE IN THE RECORDED GAME.');
+    SP(3);
+    L('  PLAYER:  ' + (_replayDisplayName || '???'), {bold:true});
+    L('  SCORE AT PAUSE:  ' + score);
+    L('  PIECE:           ' + _replayIdx + ' / ' + _replayPlacements.length);
+    L('  FULL GAME SCORE: ' + _replayMeta.score);
+    L('  FULL GAME LINES: ' + _replayMeta.lines);
+    L('  FULL GAME LEVEL: ' + _replayMeta.level);
+    SP(2);
+    HR('=');
+    SP(4);
+    return;
+  }
 
   // ── ZERO SCORE RECEIPTS ──────────────────────────────────────────────────────
   if(score === 0){
