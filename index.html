@@ -1525,7 +1525,7 @@ function drawPlayfield(t){
     CTX.restore();
   }
 
-  drawVerificationStripe(gx, gy, gw, gh);
+  drawVerificationStripe(gx - 5, gy - 5, gw + 10, gh + 10);
 
   // 5-pixel concentric border outside cells: black-white-black-white-black (inside → out).
   // Drawn after the stripe so it renders on top of stripe blocks along all edges.
