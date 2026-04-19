@@ -2853,6 +2853,10 @@ let _gameSeed5    = null;            // 5 random B92 chars, fixed per game
 let _stripeBytes  = null;            // Uint8Array(50): seed+hash+count, render cache
 let _spawnT           = 0;     // performance.now() when current piece spawned
 let _gameHistory      = [];    // [{k, slot}] one entry per locked piece, oldest first
+let _prevDecadeHash   = null;  // Uint8Array(32): H_0, then most recent decade_hash
+let _decadeRecs       = [];    // Uint8Array(56) records accumulating toward next decade
+let _decadeTms        = [];    // timing_ms values for current decade
+let _decadeComplx     = [];    // board complexity values for current decade
 let _killScreenActive = false; // true during the 2.5s kill screen animation
 let _killScreenT      = 0;     // performance.now() when kill screen started
 let _wasKillScreen    = false; // true if this game ended via kill screen
@@ -2951,6 +2955,26 @@ function _boardToWords(b) {
 }
 
 // drop_y: final resting row of the piece. boardWords: 50-byte post-placement board state.
+// Board complexity from 50-byte word array (25 rows × uint16). Same metric as _vBoardComplexity.
+function _boardComplexityFromWords(words) {
+  const colH = new Array(10).fill(0);
+  for (let c = 0; c < 10; c++)
+    for (let r = 0; r < 25; r++)
+      if (((words[r*2]<<8)|words[r*2+1]) >> (9-c) & 1) { colH[c] = 25-r; break; }
+  const maxH  = Math.max(...colH) / 25;
+  const meanH = colH.reduce((a,b)=>a+b,0) / 10;
+  const stdH  = Math.sqrt(colH.reduce((s,h)=>s+(h-meanH)**2,0)/10) / 25;
+  let holes = 0;
+  for (let c = 0; c < 10; c++) {
+    let seen = false;
+    for (let r = 0; r < 25; r++) {
+      const cell = ((words[r*2]<<8)|words[r*2+1]) >> (9-c) & 1;
+      if (cell) seen = true; else if (seen) holes++;
+    }
+  }
+  return maxH*0.5 + stdH*0.3 + Math.min(holes/50,1)*0.2;
+}
+
 // Record format matches stream.md spec: 6 bytes placement + 50 bytes board = 56 bytes.
 async function _advanceHashChain(k, rot, x, drop_y, spawnT, slot, boardWords) {
   const ms = Math.min(8463, Math.round(performance.now() - spawnT));
@@ -2979,6 +3003,35 @@ async function _advanceHashChain(k, rot, x, drop_y, spawnT, slot, boardWords) {
   sb[48] = (piecesPlaced >> 8) & 0xFF;
   sb[49] = piecesPlaced & 0xFF;
   _stripeBytes = sb;
+
+  // ── Decade Merkle-Root ───────────────────────────────────────────────────
+  if (_prevDecadeHash) {
+    _decadeRecs.push(new Uint8Array(rec));
+    _decadeTms.push(ms);
+    _decadeComplx.push(boardWords ? _boardComplexityFromWords(boardWords) : 0);
+    if (_decadeRecs.length === 10) {
+      const iHPS    = _vComputeHPS(_decadeTms, _decadeComplx, 5);
+      const hpsU16  = iHPS === null ? 0 : Math.round(iHPS * 65535);
+      const din     = new Uint8Array(32 + 560 + 2);
+      din.set(_prevDecadeHash, 0);
+      let off = 32;
+      for (const r of _decadeRecs) { din.set(r, off); off += 56; }
+      din[594] = (hpsU16 >> 8) & 0xFF; din[595] = hpsU16 & 0xFF;
+      const dhBuf  = await crypto.subtle.digest('SHA-256', din);
+      const dhBytes = new Uint8Array(dhBuf);
+      _prevDecadeHash = dhBytes;
+      const dIdx = Math.floor(_gameHistory.length / 10) - 1;
+      if (!G.blockLedger) G.blockLedger = [];
+      G.blockLedger.push({
+        decade: dIdx,
+        startPiece: _gameHistory.length - 10,
+        endPiece:   _gameHistory.length - 1,
+        hps:  iHPS,
+        hash: Array.from(dhBytes).map(b=>b.toString(16).padStart(2,'0')).join('')
+      });
+      _decadeRecs = []; _decadeTms = []; _decadeComplx = [];
+    }
+  }
 }
 
 // Dot position encodes slot 0–3 symmetrically within a block of width w.
@@ -6265,11 +6318,13 @@ function init(){
   _gameSeed5 = Array.from(_sv).map(b => _B92_ALPHABET[b % 92]).join('');
   G.gameSeed = _gameSeed5;
   G.hashChain = ''; G.receiptCode = '-----'; _stripeBytes = null; _spawnT = performance.now(); _gameHistory = [];
+  _prevDecadeHash = null; _decadeRecs = []; _decadeTms = []; _decadeComplx = []; G.blockLedger = [];
   _killScreenActive = false; _wasKillScreen = false;
   autoUsed = AUTO_PLAY;
   const _seedStr = _gameSeed5 + ((_currentPlayer&&_currentPlayer.name)||'');
   _chainPromise = crypto.subtle.digest('SHA-256', new TextEncoder().encode(_seedStr)).then(buf => {
     _hashChainBuf = buf;
+    _prevDecadeHash = new Uint8Array(buf);  // H_0 seeds the decade chain
     if(autoUsed) return;  // AI game — no valid receipt
     const hb = new Uint8Array(buf);
     G.hashChain = Array.from(hb).map(b=>b.toString(16).padStart(2,'0')).join('');
@@ -6787,9 +6842,9 @@ function _vBoardComplexity(board) {
 // Humanity Probability Score [0,1] from parallel timing and pre-placement complexity arrays.
 // Signal: human players slow down on complex boards (positive correlation + natural variability).
 // Bot-Jitter: uniform timing (low CV) or variance uncorrelated with complexity (r ≈ 0).
-function _vComputeHPS(timings, complexities) {
+function _vComputeHPS(timings, complexities, minSamples = 20) {
   const n = timings.length;
-  if (n < 20) return null; // insufficient sample for meaningful result
+  if (n < minSamples) return null; // insufficient sample for meaningful result
   const meanT = timings.reduce((a,b)=>a+b,0)/n;
   const meanC = complexities.reduce((a,b)=>a+b,0)/n;
   let num=0, ssT=0, ssC=0;
@@ -6877,6 +6932,14 @@ async function _verifyStream(streamText) {
     const board = new Uint8Array(250);  // 25 rows × 10 cols
     const _hpTimings = [], _hpComplexity = [];
 
+    // Decade Merkle-Root state
+    let prevDecadeHash = new Uint8Array(H);  // seeded from H_0
+    let decadeRecs = [], decadeTms = [], decadeComplx = [];
+    const blockLedger = [];
+
+    // Physical Limit Sentinel — counts floor-timing hits during high-complexity boards
+    let floorHits = 0;
+
     for (let n = 0; n < nPieces; n++) {
       const chunk = placementsBlock.slice(n*4, n*4+4);
       if (chunk.length < 4) return { valid: false, error: 'short placement block at piece ' + n };
@@ -6889,28 +6952,63 @@ async function _verifyStream(streamText) {
       const drop_y  = (posIdx % 29) - 4;  // 29-slot field, offset 4 → range -4..24
 
       // Collect HPS metrics before applying placement (pre-placement board complexity)
+      const preC = _vBoardComplexity(board);
       _hpTimings.push(ms);
-      _hpComplexity.push(_vBoardComplexity(board));
+      _hpComplexity.push(preC);
+
+      // Physical Limit Sentinel: frame-rate floor (≤17ms) during a non-trivial board
+      if (ms <= 17 && preC >= 0.3) floorHits++;
+
+      // Decade accumulators use pre-placement complexity (same as full-game HPS)
+      decadeTms.push(ms);
+      decadeComplx.push(preC);
 
       _vApply(board, typeIdx, rot, x, drop_y);
       const boardWords = _vBoardToWords(board);
 
       // H_n = SHA-256(H_{n-1} || record)
-      const prev = new Uint8Array(H);
-      const msg  = new Uint8Array(88);  // 32 + 56
-      msg.set(prev, 0); msg.set(_vRecord(typeIdx, rot, x, drop_y, ms, boardWords), 32);
+      const rec56 = _vRecord(typeIdx, rot, x, drop_y, ms, boardWords);
+      const prev  = new Uint8Array(H);
+      const msg   = new Uint8Array(88);  // 32 + 56
+      msg.set(prev, 0); msg.set(rec56, 32);
       H = await crypto.subtle.digest('SHA-256', msg);
+
+      // Decade boundary: emit a Merkle-Root every 10 pieces
+      decadeRecs.push(rec56);
+      if (decadeRecs.length === 10) {
+        const iHPS   = _vComputeHPS(decadeTms, decadeComplx, 5);
+        const hpsU16 = iHPS === null ? 0 : Math.round(iHPS * 65535);
+        const din    = new Uint8Array(32 + 560 + 2);
+        din.set(prevDecadeHash, 0);
+        let off = 32;
+        for (const r of decadeRecs) { din.set(r, off); off += 56; }
+        din[594] = (hpsU16 >> 8) & 0xFF; din[595] = hpsU16 & 0xFF;
+        const dhBuf  = await crypto.subtle.digest('SHA-256', din);
+        const dhBytes = new Uint8Array(dhBuf);
+        prevDecadeHash = dhBytes;
+        blockLedger.push({
+          decade: blockLedger.length,
+          startPiece: n - 9,
+          endPiece:   n,
+          hps:  iHPS,
+          hash: Array.from(dhBytes).map(b=>b.toString(16).padStart(2,'0')).join('')
+        });
+        decadeRecs = []; decadeTms = []; decadeComplx = [];
+      }
     }
 
     const computedB92 = _vBytesToB92(new Uint8Array(H), 40);
     const valid = computedB92 === termHashB92;
     const hps = _vComputeHPS(_hpTimings, _hpComplexity);
     const hpsLabel = hps === null ? 'N/A' : hps >= 0.72 ? 'PASS' : hps >= 0.50 ? 'REVIEW' : 'FAIL';
+    const dmiRatio = nPieces > 0 ? Math.round(floorHits / nPieces * 100) / 100 : 0;
+    const dmiFlag  = dmiRatio >= 0.10 ? 'DMI_SUSPECT' : null;
     return {
       valid,
       piecesReplayed: nPieces,
-      hps,
-      hpsLabel,
+      hps, hpsLabel,
+      blockLedger,
+      dmiFlag, dmiRatio,
       error: valid ? null : `hash mismatch\n  computed: ${computedB92}\n  stream:   ${termHashB92}`
     };
   } catch(e) {
@@ -6935,7 +7033,9 @@ async function _selfCheck() {
   const result = await _verifyStream(stream);
   const ms = Math.round(performance.now() - t0);
   if (result.valid) {
-    console.log(`[SELFCHECK] ✓ PASS — ${result.piecesReplayed} pieces, ${ms}ms | HPS: ${result.hps !== null ? result.hps.toFixed(2) : 'N/A'} [${result.hpsLabel}]`);
+    const dmiStr = result.dmiFlag ? ` | ⚠ ${result.dmiFlag} (ratio=${result.dmiRatio})` : '';
+    console.log(`[SELFCHECK] ✓ PASS — ${result.piecesReplayed} pieces, ${ms}ms | HPS: ${result.hps !== null ? result.hps.toFixed(2) : 'N/A'} [${result.hpsLabel}] | Decades: ${result.blockLedger.length}${dmiStr}`);
+    if (result.blockLedger.length > 0) console.table(result.blockLedger);
     if (_currentPlayer) {
       _addToLedger({
         player: _currentPlayer.name,
