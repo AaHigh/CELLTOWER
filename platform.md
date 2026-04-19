@@ -7,6 +7,13 @@
 
 ---
 
+> **Implementation note (April 2026):** The stream format described in §1.4 reflects the
+> intended platform design. The current CELLTOWER client implements a simplified variant of
+> this format — see `stream.md §Known Conflicts` for the precise differences. This document
+> describes the target architecture; `stream.md` describes what is actually running.
+
+---
+
 ## Part I — The Multi-Game Score Space
 
 ### 1.1 Design Philosophy
@@ -46,10 +53,10 @@ ScoreRecord {
   pieces/events:   uint16         // game-specific action count
 
   // Verification
-  stream:          base92-string  // compact replay (see §1.4)
-  terminal_hash:   hex64          // SHA-256 chain terminal value
-  seed_commit:     hex64          // pre-game seed commitment
-  seed_reveal:     hex32          // post-game seed (verifies commit)
+  stream:          base92-string  // compact replay (see §1.4 and stream.md)
+  terminal_hash:   b92[40]        // SHA-256 chain terminal value, B92-encoded (40 chars)
+  game_version:    hex64          // SHA-256 of game file — server-side only, not in stream
+  seed_commit:     b92[5]         // pre-game seed (5 B92 chars for casual; longer for provably-fair)
   verified:        bool           // local self-check passed
 
   // Context
@@ -101,16 +108,13 @@ All platform games use a common stream envelope. The game-specific action encodi
 ```
 Stream layout (base92-encoded, semicolon-delimited sections):
 
-  HEADER ; PAYLOAD ; [SNAPSHOT ...] ; TERMINAL_HASH
+  HEADER ; PAYLOAD ; TERMINAL_HASH
 
 HEADER (comma-delimited):
-  seed_hex         — 32 hex bytes (256-bit commit/reveal seed)
-  version_hex      — 32 hex bytes (game file SHA-256)
+  seed_b92         — 5 B92 chars (casual play) or more for tournament seeds
   stats            — game-specific summary (score, duration, event count, etc.)
-  game_id          — ASCII game identifier
-  mode_id          — ASCII mode identifier
   admission_id?    — optional 3-char B92 admission name (if playing an admission-ticket contract)
-  player_name      — 3-char B92 displayed name (must equal admission_id if present)
+  player_name      — 0–3 char B92 displayed name (must equal admission_id if present)
 
 PAYLOAD:
   Variable-length sequence of action records.
@@ -118,17 +122,24 @@ PAYLOAD:
   Each action record is a fixed number of base92 characters (typically 2–4).
   Actions are ordered chronologically.
 
-SNAPSHOT (one or more, emitted every N actions):
-  piece_num        — 2 base92 chars (action index at snapshot time)
-  state            — game-specific state encoding (board, positions, etc.)
-
 TERMINAL_HASH:
-  64 hex chars — SHA-256 of the full hash chain (H_final)
+  40 B92 chars — SHA-256 of the full hash chain, B92-encoded (saves 24 chars vs hex)
 ```
 
 **Hash chain rule (universal):**
-- H_0 = SHA-256(seed_bytes || admission_id || player_name)
-- H_n = SHA-256(H_{n-1} || action_record_n || state_after_n)
+- H_0 = SHA-256( UTF-8( seed + admission_id + player_name ) )
+- H_n = SHA-256( H_{n-1} || action_record_n || state_after_n )
+
+**Notes on current implementation vs. this spec:**
+- `version_hex` (game file SHA-256) has been removed from the stream. It belongs in the
+  `ScoreRecord` server-side schema, not in the verifiable stream itself.
+- `game_id` and `mode_id` are not yet in the casual stream header; they will be added when
+  the server-side Score Record infrastructure is built.
+- Snapshots have been removed. The hash chain is all-or-nothing — snapshots added stream
+  bloat with no verification benefit. See `stream.md §Snapshot Removal Rationale`.
+- For current casual play, `admission_id` is absent and `player_name` alone is mixed into H_0.
+  When tournament admission tickets are implemented, `admission_id` will be added as a separate
+  field upstream of `player_name` in the H_0 input.
 
 Mixing `admission_id` and `player_name` into H_0 binds the replay to the identity under which it was played. Re-submitting the same replay under a different identity produces a different terminal hash — the stream cannot be laundered across tournaments.
 
@@ -144,6 +155,15 @@ posIdx: uint16 (2 base92 chars)   — type*1160 + rot*290 + x*29 + (drop_y+4)
 ms:     uint16 (2 base92 chars)   — spawn-to-lock milliseconds (bot detection)
 Total:  4 base92 chars per piece placement
 ```
+
+**Packing rationale:** drop_y ranges −4 to +24 (pieces may spawn partially above the visible
+board). Stored as drop_y+4, giving 29 values (0–28). The base-29 factor propagates:
+x(10) × 29 = 290, rot(4) × 290 = 1160, type(7) × 1160 = 8,120. Max posIdx = 8,119 < 8,464
+(2-char B92 capacity). ✓
+
+**Note:** An earlier version of this spec used `type*1000 + rot*250 + x*25 + drop_y` (base-25
+for drop_y). This was incorrect — it cannot represent pieces partially above the board. Any
+verifier must use the formula above.
 
 ---
 
