@@ -144,7 +144,9 @@ TERMINAL_HASH:
 Mixing `admission_id` and `player_name` into H_0 binds the replay to the identity under which it was played. Re-submitting the same replay under a different identity produces a different terminal hash — the stream cannot be laundered across tournaments.
 
 **Stream size budget:**
-For a 10-minute game at 1 action per second, a 4-char action record produces 2,400 base92 characters (~2.4KB). At 10 actions per second (fast arcade play): 24KB. Both fit comfortably in a clipboard paste, QR code (with compression), or single HTTP POST.
+For a 10-minute game at 1 action per second, a 4-char action record produces 2,400 base92 characters (~2.4KB). At 10 actions per second (fast arcade play): 24KB. Both fit comfortably in a clipboard paste or single HTTP POST.
+
+**Transport note:** QR codes, visual encoding, and similar representations are optional app-specific convenience features for players who want to share or import streams without a clipboard (e.g., scanning a poster, camera-to-camera transfer). They are never a platform requirement. The stream is plain text and can be moved by any channel the app or user chooses. No player is ever required to use a QR code or any visual encoding to participate in the platform.
 
 ---
 
@@ -422,6 +424,8 @@ Additionally, for admission-ticket tournaments, all players are bound to a speci
 
 This gives the creator full control over who participates without requiring advance knowledge of wallet addresses. It also gives participants pseudonymity — they play under the ticket's 3-letter ID, not under their wallet's public address.
 
+The distribution mechanism for admission codes (email, in-person word-of-mouth, paper flyers) is entirely outside platform scope. Any app that displays or scans a QR code for convenience does so as an app-level feature; the platform only ever receives the text string of the admission code itself. QR codes are never required to obtain or redeem an admission ticket.
+
 ### 3.6 Oracle as Single Point of Failure
 
 **Problem.** If the verification oracle is compromised, offline, or malicious, the contract cannot determine winners.
@@ -512,51 +516,91 @@ The platform does not claim to detect all automated play with certainty. It clai
 make a statistically rigorous, publicly documented, good-faith determination — and to
 hold submitters contractually liable for misrepresentation regardless of detection outcome.
 
-#### The Humanity Probability Score
+#### The Humanity Probability Score (HPS v0.4)
 
 The oracle computes a **Humanity Probability Score (HPS)** for every stream submitted to
 a Tier 2 contract. HPS is a value in [0.0, 1.0] derived from statistical analysis of the
-`timing_ms` field across all piece placements, correlated against board complexity at each
-placement moment.
+`timing_ms` field across all piece placements, correlated against the **Decision-Path
+Conflict (DPC)** of each placement.
 
-Board complexity factors used in the correlation:
+**Decision-Path Conflict (DPC)** is the core signal. Before each piece is locked, the AI
+evaluation engine scores every legal placement for that piece type. DPC is derived from the
+gap between the top-ranked and second-ranked options, normalized over the full range of
+candidate scores:
 
-| Factor | Description |
-|--------|-------------|
-| Stack height | Rows with any occupied cell above the playfield midpoint |
-| Hole count | Occupied cells with empty cells directly above them |
-| Column height variance | Standard deviation of per-column stack heights |
-| Next-piece difficulty | Number of clean placement slots given current board topology |
-| Current level | Tighter timing windows at higher levels; human reaction times do not scale linearly |
+```
+DPC = 1.0 − (score_rank1 − score_rank2) / (score_rank1 − score_rankLast)
+```
 
-**The behavioral signal:** A human player under cognitive load — high stack, multiple
-holes, a difficult next piece — exhibits measurably longer placement times and elevated
-timing variance. On a clean board with an easy piece, the same player places quickly.
-This **context-sensitivity** is the fingerprint of human cognition applied to a real
-problem. It is not easy to fake, because faking it correctly requires solving the same
-board-evaluation problem the human is solving.
+DPC is bounded [0, 1]. A value near **1.0** means the two best moves are nearly equal
+in AI score — a genuine toss-up that demands deliberation. A value near **0** means one
+move is clearly dominant and the correct choice requires little thought.
+
+This framing upgrades the earlier board-complexity signal. Board complexity measures how
+hard the board looks. DPC measures how hard the *decision* actually was — which is what
+a human player experiences. A tall, complex board with an obvious I-piece slot may be a
+low-DPC placement. A clean board with two equally viable options for an S-piece may be
+a high-DPC placement. The distinction matters for detecting cognitive load authentically.
+
+**The behavioral signal:** Human players hesitate in proportion to decision difficulty.
+When DPC is high (nearly equal options), humans slow down — they evaluate both paths,
+weigh outcomes, resolve the tie. When DPC is low (obvious best move), they place quickly.
+This **conflict-sensitivity** is the fingerprint of genuine cognition applied to a real
+decision problem. It is not easy to fake because faking it correctly requires solving
+the same placement-evaluation problem the human is solving.
+
+**HPS formula:**
+```
+Pearson r = correlation(timing_ms, DPC)  over all N placements
+CV        = stddev(timing_ms) / mean(timing_ms)
+rNorm     = (r + 1) / 2                  — maps −1..1 → 0..1
+cvNorm    = min(1, CV / 0.4)             — CV ≥ 0.4 = full variability credit
+HPS       = rNorm × 0.7 + cvNorm × 0.3
+```
+
+A human typically shows: positive r (slower when conflicted), CV in the range 0.3–0.8
+(natural variability in execution speed), HPS in the range 0.65–0.90.
 
 Automated systems fail this test in one of two ways:
 
-- **Uniform Bot-Jitter:** Timing is consistent regardless of board state. Fast on easy
-  boards, fast on hard boards. No correlation with complexity.
-- **Synthetic Bot-Jitter:** Variance is introduced deliberately but is not correlated with
-  board complexity — random noise injected to look human, detectable because it does not
-  track the actual difficulty of each placement decision.
+- **Uniform Bot-Jitter:** Timing is consistent regardless of DPC. Fast on toss-up
+  placements, fast on obvious placements. r ≈ 0, CV low. HPS collapses.
+- **Synthetic Bot-Jitter:** Variance is injected deliberately but not correlated with DPC
+  — random noise added to look human, detectable because it does not track decision
+  difficulty. r ≈ 0, CV may appear normal. HPS penalizes the uncorrelated component.
 
-Both patterns are statistically distinguishable from genuine human timing with sufficient
-sample size. A 300-piece game provides approximately 300 timing samples — sufficient for
-robust analysis.
+Both patterns are statistically distinguishable with sufficient sample size. A 300-piece
+game provides approximately 300 DPC/timing pairs — sufficient for robust analysis.
+
+#### Neural Processing Floor (NPF)
+
+Any placement where DPC ≥ 0.70 (genuine toss-up) and `timing_ms` < 150ms is flagged as
+a **Neural Processing Floor violation**. 150ms is the approximate lower bound for human
+cognitive conflict resolution combined with motor execution: a human cannot cognitively
+evaluate two nearly-equal options, select one, and complete the touch-input in under 150ms.
+
+If NPF violations exceed 5% of total placements, the stream is flagged **NPF_SUSPECT**
+regardless of overall HPS score. This is the "Direct Injection" sensor: it catches bots
+that correctly fake timing variability but resolve hard decisions instantaneously.
+
+Both the overall HPS and the NPF flag are reported independently. A stream can pass HPS
+but fail NPF. Contracts may set independent thresholds for each.
 
 #### Bot-Jitter Definition
 
 > **Bot-Jitter** is defined as any timing distribution in a submitted game stream where
-> the `timing_ms` values are either (a) statistically uniform across varying board
-> complexity states, or (b) variable but with variance uncorrelated to board complexity
-> metrics. Either pattern constitutes grounds for HPS failure.
+> the `timing_ms` values are either (a) statistically uniform across varying Decision-Path
+> Conflict scores, or (b) variable but with variance uncorrelated to DPC. Either pattern
+> constitutes grounds for HPS failure.
 >
 > A Humanity Probability Score below the contract's declared threshold, attributed to
 > Bot-Jitter detection, is grounds for **contract voidance** of that submission.
+
+> **Neural Processing Floor (NPF)** is a separate, complementary flag. Any stream in which
+> more than 5% of high-conflict placements (DPC ≥ 0.70) are resolved in under 150ms
+> receives an **NPF_SUSPECT** flag. NPF_SUSPECT is independent grounds for contract voidance
+> regardless of overall HPS — it indicates timing behavior that is neurologically impossible
+> for a human resolving a genuine cognitive conflict.
 
 The HPS threshold is a contract parameter declared at deploy time. Default: **0.72**.
 High-stakes contracts may require 0.85 or higher. Casual or exhibition contracts may
@@ -593,6 +637,47 @@ or a future audit — the on-chain record of their submission is permanent evide
 **In summary: the platform moves the financial and legal liability for bot-assisted play
 from the infrastructure provider to the player, through explicit contractual representation
 at entry. Detection is a tool. Contractual liability is the backstop.**
+
+---
+
+### 4.4 Decade Merkle-Roots — Block-Based Verification
+
+In addition to the terminal hash (which commits the full game), the platform computes a
+secondary **block-based hash chain** at decade boundaries — every 10 piece placements.
+
+```
+decade_hash_n = SHA-256(
+    decade_hash_{n-1}      — 32 bytes (H_0 for the first decade)
+  || records[1..10]        — 10 × 56-byte hash records = 560 bytes
+  || interval_HPS_u16      — 2 bytes: DPC-HPS for this 10-piece window, scaled 0–65535
+)
+```
+
+The chain of decade hashes is stored in `G.blockLedger` (an array on the game object)
+during live play and recomputed by the verifier during stream verification.
+
+**Purpose — Light Client Verification:**
+A platform Oracle that receives a long stream can verify a specific decade independently
+without replaying all 600 pieces. The Oracle only needs the preceding decade hash (an
+anchor) and the 10 records for the decade in question. This enables:
+
+- **"Hardest Decade" extraction:** The decade with the highest average DPC is the game's
+  peak cognitive-load window. An Oracle can identify and verify this window in isolation —
+  useful for dispute resolution ("the player claims the challenging mid-game section was
+  legitimate — verify just that decade").
+- **Faster settlement for high-tier payouts:** Rather than full-stream replay, an Oracle
+  can verify the top-scoring decades and confirm the terminal hash matches. Partial
+  verification is not a security reduction — the terminal hash still covers the full stream.
+  The decade hashes are additional anchors that make forensic investigation faster.
+- **Per-decade HPS anomaly detection:** A bot that plays well for most of the game but
+  engages automation for a critical high-stakes sequence leaves a decade-HPS signature
+  inconsistent with the surrounding decades. The `interval_HPS` field in each decade hash
+  commits to the humanity score for that window.
+
+**Implementation status:** Implemented in `index.html` as of April 2026. The verifier
+computes and returns `blockLedger` in the result object. SELFCHECK prints the decade
+table at game-over. The block ledger is not yet transmitted to any server — that is a
+future platform integration task.
 
 ---
 

@@ -43,8 +43,11 @@ The CELLTOWER Humanity Probability Score (HPS) system (documented in `platform.m
 is evidence of this character. The platform does not treat human and automated play as
 equivalent. It does not permit automated play to qualify for prize money, even when the
 hash chain verifies perfectly. It computes a statistical profile of each submission's
-timing behavior, correlates that profile against board complexity at every decision point,
-and requires a passing score as a precondition for cash prize eligibility.
+timing behavior, correlates that profile against Decision-Path Conflict (DPC) at every
+placement — measuring whether the player's hesitation matched the actual difficulty of
+each choice — and requires a passing score as a precondition for cash prize eligibility.
+An additional Neural Processing Floor check flags high-conflict placements resolved in
+neurologically impossible time windows.
 
 This architecture makes two things explicit in the platform's own code and governance:
 
@@ -153,22 +156,35 @@ To address this, each placement record includes a 2-byte `timing_ms` field: mill
 from piece spawn to lock. This field enables statistical analysis of a player's behavioral
 profile across the game.
 
-**The key insight is correlation, not distribution alone.** Naive bot detection compares
-timing variance against a threshold. Sophisticated cheaters can inject artificial variance
-to defeat this. The CELLTOWER approach goes further: the `timing_ms` values are correlated
-against board complexity at each placement — stack height, hole count, column variance, and
-next-piece difficulty (see `platform.md §4.2` for the full factor list).
+**The key insight is correlation with decision difficulty, not with board appearance alone.**
+Naive bot detection compares timing variance against a threshold. Sophisticated cheaters
+inject artificial variance to defeat this. The CELLTOWER approach goes further: the
+`timing_ms` values are correlated against the **Decision-Path Conflict (DPC)** of each
+placement — a normalized score measuring how close the AI's top-ranked and second-ranked
+options were at the moment the piece was locked.
 
-Human cognition under spatial pressure produces **context-sensitive** timing: slower and
-more variable when the board is dangerous, faster and more consistent on easy placements.
-This pattern is characteristic of genuine decision-making and difficult to replicate without
-solving the same board-evaluation problem the human is solving.
+DPC is more precise than raw board complexity because it measures the actual difficulty
+of the *choice*, not just the difficulty of the *position*. A dangerous board with an
+obvious move is a low-DPC placement. A clean board with two equally viable options is a
+high-DPC placement. The distinction captures what the human player actually experienced.
+
+Human cognition under decision pressure produces **conflict-sensitive** timing: slower and
+more variable when two options are nearly equal, faster and more decisive when one option
+is clearly best. This pattern is characteristic of genuine deliberation and difficult to
+replicate without solving the same placement-evaluation problem the human is solving —
+because faking it correctly requires computing DPC, which requires running the AI scorer.
 
 **Bot-Jitter** is the failure mode that HPS detection is designed to catch: timing
-distributions that are either (a) uniform across varying board states, or (b) variable but
-uncorrelated with board complexity. Both patterns indicate that the timing was generated
-independently of the actual game state — i.e., that no human was making context-sensitive
-decisions about where to place pieces.
+distributions that are either (a) uniform across varying DPC scores, or (b) variable but
+uncorrelated with DPC. Both patterns indicate that timing was generated independently of
+decision difficulty — i.e., that no human was resolving genuine cognitive conflict at each
+placement.
+
+**Neural Processing Floor (NPF)** catches a distinct failure mode: high-DPC placements
+resolved in under 150ms. No human can evaluate two nearly-equal options, commit to one,
+and execute the touch input in under 150ms — this is a hard floor set by neuroscience, not
+by game statistics. NPF violations are independent grounds for submission voidance, flagged
+separately from the overall HPS. See `platform.md §4.2` for full parameter definitions.
 
 Bot-Jitter detection is a continuous score (the Humanity Probability Score), not a binary
 flag. Scores below the contract's declared threshold result in submission audit hold and
@@ -312,17 +328,22 @@ It achieves this through a layered architecture:
 1. **Provably fair randomization** — commit-reveal seed protocol binds the piece sequence
    before the game begins.
 2. **Tamper-evident replay stream** — SHA-256 hash chain over every placement record;
-   any modification breaks the terminal hash.
+   any modification breaks the terminal hash. Decade Merkle-Roots provide block-level
+   anchors every 10 pieces for light-client verification and forensic "hardest decade"
+   isolation.
 3. **Identity binding** — player name mixed into H_0; a stream cannot be re-attributed
    to a different identity.
-4. **Humanity Probability Score** — statistical correlation of placement timing against
-   board complexity; Bot-Jitter patterns (uniform or context-uncorrelated timing) are
-   grounds for submission voidance.
+4. **Humanity Probability Score (HPS v0.4)** — statistical correlation of placement timing
+   against Decision-Path Conflict (DPC); Bot-Jitter patterns (uniform or DPC-uncorrelated
+   timing) are grounds for submission voidance. The Neural Processing Floor (NPF) catches
+   high-conflict placements resolved in under 150ms — a neurologically impossible response
+   window for human cognitive conflict resolution.
 5. **Contractual liability allocation** — by entering a Tier 2 tournament, a player
    warrants human play; automated submissions are breach of contract, making the player
    (not the platform) financially liable.
-6. **Transparent governance** — HPS methodology, thresholds, and dispute outcomes are
-   published; the Board of Directors reviews flagged cases; the on-chain record is permanent.
+6. **Transparent governance** — HPS methodology, DPC computation, NPF thresholds, and
+   dispute outcomes are published; the Board of Directors reviews flagged cases; the
+   on-chain record is permanent.
 
 The combined effect: the best human player wins. A bot may post a verified score. It may
 not collect a prize. It may not answer its fan mail. It may not pass its attestation session.

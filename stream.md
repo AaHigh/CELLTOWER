@@ -383,6 +383,22 @@ plays back the game in full.
 Zlib compression (Path A in v1.4) and the custom visual matrix (Path B) remain design goals but
 are not yet implemented in the single-file game client.
 
+### QR codes and visual encodings — optional, never required
+
+QR codes, barcodes, and visual matrix encodings are **app-specific convenience features**. An
+app may choose to render a stream as a QR code for camera-to-camera transfer, or to scan one.
+These are transport helpers — like a URL shortener — not a platform specification.
+
+The platform specification is the plain-text stream string. Any transport that delivers the
+string to its destination is valid. No player is ever required to use a QR code to submit a
+score, enter a tournament, share a replay, or participate in any platform function.
+
+This distinction matters for platform adoption: app stores, regional regulators, and corporate
+policies treat QR-code-based payment and redemption flows with varying degrees of scrutiny.
+By keeping QR codes strictly optional and app-layer, the platform avoids that baggage entirely.
+The canonical flow — clipboard copy, clipboard paste — requires no special permissions and
+works in every browser environment.
+
 ### Replay from clipboard
 
 Pasting a valid stream into the game (CTRL-V / long-press paste):
