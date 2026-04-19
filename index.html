@@ -1525,15 +1525,16 @@ function drawPlayfield(t){
     CTX.restore();
   }
 
+  drawVerificationStripe(gx, gy, gw, gh);
+
   // 5-pixel concentric border outside cells: black-white-black-white-black (inside → out).
-  // Each ring is a 1px strokeRect centered at gx-(p+0.5) — entirely outside the cell area.
-  // White rings pulse; black rings stay solid to maintain crisp pixel-art edge.
+  // Drawn after the stripe so it renders on top of stripe blocks along all edges.
   {
     const bPulse = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(t * Math.PI * 0.5));
     CTX.save();
     CTX.lineWidth = 1;
     for (let p = 0; p < 5; p++) {
-      const ofs = -(p + 0.5);  // negative = outside cells; p=0 touches cell edge
+      const ofs = -(p + 0.5);
       const isWhite = (p === 1 || p === 3);
       CTX.strokeStyle = isWhite
         ? `rgba(255,255,255,${bPulse.toFixed(3)})`
@@ -1542,8 +1543,6 @@ function drawPlayfield(t){
     }
     CTX.restore();
   }
-
-  drawVerificationStripe(gx, gy, gw, gh);
 
   // READY/status text in bottom-left of playfield
 }
