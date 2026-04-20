@@ -4,9 +4,6 @@
 ### Design document by Aaron Hightower with AI assistance (Claude, Anthropic)
 ### the High Tower District · Fresno, California
 ### Version 0.2 · April 2026
-
----
-
 > ## Document Hierarchy and Conflict Resolution
 >
 > This project maintains three authoritative sources at different levels of abstraction:
