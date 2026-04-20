@@ -488,6 +488,9 @@ var _p10Log=[]; // per-piece log for first-10 debug audit
 var piecePot=0, tetrisPot=0;
 var AUTO_PLAY=false, AUTO_SPEED=10.66, autoUsed=false;
 var _replayMode=false, _replayPlacements=[], _replayIdx=0, _replayTimer=null;
+var _replayThinkScale=1;    // per-piece msPerMove multiplier derived from normalized think time
+var _replayMinMs=0;         // min think time across all pieces in current replay
+var _replayMaxMs=0;         // max think time across all pieces in current replay
 var _replayPaused=false;      // replay-only pause — never touches game `paused` state
 var _replayMeta={score:0,lines:0,level:0,pieces:0};
 var _pendingReplayStream=null, _replayPromptVisible=false;
@@ -1635,7 +1638,13 @@ function drawTicker(t){
 // ── Right panel ──────────────────────────────────────────────────────
 function drawRightPanel(t){
   drawNextPiece(t);
-  draw7SegScore(R.rHi,    'HIGH',  hi);  // default pink matches SCORE
+  // During replay: show the replay's final score labeled "FINAL SCORE" so a
+  // screenshot viewer knows this is a replay, not the phone's live high score.
+  if(_replayMode && _replayMeta && _replayMeta.score){
+    draw7SegScore(R.rHi, 'REPLAY', _replayMeta.score);
+  } else {
+    draw7SegScore(R.rHi, 'HIGH', hi);
+  }
   drawPauseBox(t);
   drawTBonusBox(t);
   draw7SegScore(R.rHoles, 'HOLES', currentScoringHoles, {litColor:'#ff4444', glowColor:'#ff4444', dimColor:'rgba(60,0,0,0.35)', labelColor:'#ff4444'});
@@ -3283,7 +3292,8 @@ function _parseStreamForReplay(streamText){
       const x=Math.floor((posIdx%290)/29);
       const drop_y=(posIdx%29)-4;
       const k=PO[Math.floor(posIdx/1160)]||'I';
-      pieces.push({k,rot,x,drop_y});
+      const ms=_fromB92(chunk.slice(2,4));
+      pieces.push({k,rot,x,drop_y,ms});
     }
     const playerName=(hdrParts[2]||'').slice(0,3);
     return{pieces,score:replayScore,level:replayLevel,lines:replayLines,playerName};
@@ -4506,6 +4516,7 @@ function mkPiece(){
 // verify the board (with all 9 pieces now placed) still allows a Tetris.
 // If not, silently swap cur to a random non-I piece.
 function verifyTetrisPiece(){
+  if(_replayMode) return; // stream defines exact piece sequence; never override nxt
   // Called right after nxt is fetched — if nxt is the puzzle I-piece,
   // check NOW (8 pieces on board) whether a Tetris will be possible.
   // We check one piece early so the preview box never shows the wrong piece.
@@ -4554,8 +4565,19 @@ function isOk(c,bx,by,b=board){
 
 function ghostY(){let g=cy;while(isOk(cur.c,cx,g+1))g++;return g}
 
+function _mkReplayPiece(rec){
+  if(!rec) return mkPiece();
+  return {k:rec.k, rot:0, c:NRS[rec.k][0].map(r=>[...r]), rgb:[...PTYPES[rec.k].rgb]};
+}
 function spawn(){
-  cur=nxt||mkPiece();nxt=mkPiece();
+  if(_replayMode){
+    // Pull current and next pieces directly from the recorded sequence so the
+    // next-piece preview always shows the correct upcoming piece, not an RNG piece.
+    cur = _mkReplayPiece(_replayPlacements[_replayIdx]);
+    nxt = _mkReplayPiece(_replayPlacements[_replayIdx+1]);
+  } else {
+    cur=nxt||mkPiece();nxt=mkPiece();
+  }
 
   // Spawn-time scoring-hole check: did the previous clear create scoring holes
   // via collapse? If so alert the player now rather than waiting for next placement.
@@ -6350,9 +6372,11 @@ function _applyMove(pieceKey, move){
 }
 
 function _execTickMs(){
-  // Live read — called every step so slider drag takes immediate effect.
   const sp = AUTO_SPEED;
-  return sp >= 9 ? 16 : Math.max(16, Math.round(160-(sp-1)*14));
+  const base = sp >= 9 ? 16 : Math.max(16, Math.round(160-(sp-1)*14));
+  // Replay: scale per-piece by normalized think time, except at speed 11 which
+  // always runs at maximum pace (one visual frame per placement, no slowdown).
+  return (_replayMode && sp < 11) ? Math.round(base * _replayThinkScale) : base;
 }
 
 function _execStepsPerTick(){
@@ -7987,6 +8011,11 @@ function _startReplayMode(streamText){
   _replayMode=true; _replayPaused=false;
   _replayPlacements=parsed.pieces;
   _replayIdx=0;
+  // Pre-compute think time range for proportional animation scaling
+  const _allMs=_replayPlacements.map(p=>p.ms||0);
+  _replayMinMs=Math.min(..._allMs);
+  _replayMaxMs=Math.max(..._allMs);
+  _replayThinkScale=1;
   _replayMeta={score:parsed.score,lines:parsed.lines,level:parsed.level,
                pieces:parsed.pieces.length};
   _replaySource=streamText;
@@ -7995,8 +8024,8 @@ function _startReplayMode(streamText){
   autoUsed=true; // prevent replay score from overwriting human hi score
 }
 
-// Called by _startAutoPlay() when _replayMode. Overrides the spawned piece type
-// with the recorded type, then delegates to _navigateAndLock() for the animation.
+// Called by _startAutoPlay() when _replayMode. Overrides the spawned piece type,
+// sets _replayThinkScale from normalized think time, then runs _navigateAndLock.
 function _startReplayPlay(){
   if(!cur||dead||_replayPaused||clearAnimating)return;
   // Wipe AI-computed ghosts immediately — they belong to the pre-override piece type
@@ -8047,6 +8076,12 @@ function _startReplayPlay(){
   else { placements[0]={...destP,hideLabel:true}; }
   selectedPlacementIdx=_matchIdx>=0?_matchIdx:0;
   for(let i=0;i<4;i++) drawPrevBtn(i,placements[i]);
+  // Proportional think-time scaling: ratio=(p.ms-minMs)/(maxMs-minMs) → [0,1]
+  // Fastest piece → ratio 0 → base speed. Slowest piece → ratio 1 → 5× slower.
+  // Preserves the linear delta-from-minimum relationship of the original timing.
+  const range=_replayMaxMs-_replayMinMs;
+  const ratio=range>0?((p.ms||0)-_replayMinMs)/range:0;
+  _replayThinkScale=1+ratio*4; // 1× to 5× of base _execTickMs()
   _navigateAndLock(p.k,{x:p.x,rotation:p.rot,dropY:p.drop_y},_REPLAY_MOVE_MS);
 }
 
@@ -8473,6 +8508,7 @@ function _handleLibraryTap(hit){
 function _stopReplayMode(){
   _replayMode=false; _replayPaused=false; _replaySource=null;
   clearTimeout(_replayTimer); _replayTimer=null;
+  _replayThinkScale=1;
   stopSelTimer(); stopDrop();
   dead=false; ui.gameStarted=false;
   _replayDisplayName=null;
@@ -8484,7 +8520,6 @@ function _stopReplayMode(){
 function _toggleReplayPause(){
   if(!_replayMode) return;
   _replayPaused = !_replayPaused;
-  // When resuming and no animation is mid-path, kick the next piece manually
   if(!_replayPaused && !_animStep && !dead && cur) _startReplayPlay();
 }
 
