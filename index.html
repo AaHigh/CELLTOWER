@@ -57,6 +57,25 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
   </div>
 </div>
 
+<!-- ── PASTE / LOAD REPLAY OVERLAY ── -->
+<div id="paste-overlay">
+  <div id="paste-header">LOAD REPLAY</div>
+  <div id="paste-instructions">
+    <span class="paste-step">1.</span> Copy a CELLTOWER stream from anywhere<br>
+    <span class="paste-step">2.</span> Long-press the box below<br>
+    <span class="paste-step">3.</span> Tap <strong>Paste</strong> — replay loads automatically
+  </div>
+  <textarea id="paste-input"
+    placeholder="Long-press here · tap Paste"
+    autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+    rows="5"></textarea>
+  <div id="paste-status"></div>
+  <div id="paste-btns">
+    <button id="paste-cancel">✕ CANCEL</button>
+    <button id="paste-load">LOAD ▶</button>
+  </div>
+</div>
+
 <!-- ── IDENTITY OVERLAY ── -->
 <div id="id-overlay">
   <!-- Welcome / name picker — shown on startup; pre-populated -->
@@ -132,6 +151,67 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
   image-rendering:crisp-edges;
   display:block;
 }
+#paste-overlay{
+  position:fixed;top:0;left:0;right:0;bottom:0;
+  background:rgba(0,4,16,0.97);
+  z-index:700;
+  display:none;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  padding:24px 20px;
+  box-sizing:border-box;
+  font-family:'Courier New',monospace;
+}
+#paste-overlay.show{display:flex}
+#paste-header{
+  font-size:1.3rem;font-weight:900;letter-spacing:.2em;
+  color:#00ccff;text-shadow:0 0 12px #00ccff;
+  margin-bottom:16px;
+}
+#paste-instructions{
+  font-size:.78rem;color:#aaccff;line-height:1.8;
+  text-align:left;width:100%;max-width:380px;
+  margin-bottom:16px;background:rgba(0,20,40,0.7);
+  padding:12px 14px;border-radius:6px;border:1px solid #003366;
+  box-sizing:border-box;
+}
+.paste-step{color:#00ccff;font-weight:900;margin-right:4px;}
+#paste-input{
+  width:100%;max-width:380px;
+  min-height:90px;
+  background:#000d1a;
+  color:#00ff88;
+  border:2px solid #00ccff;
+  border-radius:8px;
+  font-family:'Courier New',monospace;
+  font-size:.75rem;
+  padding:12px;
+  box-sizing:border-box;
+  resize:none;
+  outline:none;
+  caret-color:#00ccff;
+  -webkit-tap-highlight-color:transparent;
+}
+#paste-input::placeholder{color:#224433;font-style:italic;}
+#paste-status{
+  min-height:22px;
+  font-size:.75rem;font-weight:700;letter-spacing:.08em;
+  margin:8px 0;width:100%;max-width:380px;text-align:center;
+}
+#paste-btns{
+  display:flex;gap:12px;width:100%;max-width:380px;margin-top:4px;
+}
+#paste-cancel,#paste-load{
+  flex:1;padding:14px 0;border:none;border-radius:8px;
+  font-family:'Courier New',monospace;font-size:.9rem;font-weight:900;
+  letter-spacing:.1em;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
+}
+#paste-cancel{background:#1a0011;color:#cc4466;border:1px solid #440022;}
+#paste-load{background:#003322;color:#00ff88;border:1px solid #00aa44;}
+#paste-load:active{background:#004433;}
+#paste-cancel:active{background:#2a0022;}
 #id-overlay{
   position:fixed;top:0;left:0;right:0;bottom:0;
   background:rgba(2,0,14,0.78);
@@ -2373,12 +2453,8 @@ function handleTap(tx, ty){
     if(tx >= _RX && tx < _RX + _RW && ty >= R.auto.y && ty < R.auto.y + R.auto.h){
       // Receipt / PASTE / READY button
       if(_replayMode && !_replayPaused){
-        // Active replay → PASTE: read clipboard and start new replay if valid
-        navigator.clipboard.readText().then(text=>{
-          const s=(text||'').trim();
-          if(_looksLikeStream(s)){ _startReplayMode(s); }
-          else { ui.flash={text:'NO VALID STREAM IN CLIPBOARD',until:performance.now()+2200}; }
-        }).catch(()=>{ ui.flash={text:'CLIPBOARD ACCESS DENIED',until:performance.now()+2200}; });
+        // Active replay → PASTE: show native text field for iPhone long-press paste
+        showPasteOverlay();
         return;
       }
       if(_replayMode && _replayPaused){ showReceipt(); return; }
@@ -7678,6 +7754,10 @@ const _REPLAY_MOVE_MS = 55; // ms per nav step — controls visible slide/rotate
 function _startReplayMode(streamText){
   const parsed=_parseStreamForReplay(streamText);
   if(!parsed||!parsed.pieces.length)return;
+  // Kill any in-flight animation callbacks before resetting state
+  _replayMode=false;
+  stopSelTimer();
+  stopDrop();
   _replayPromptVisible=false; _pendingReplayStream=null;
   _replayMode=true; _replayPaused=false;
   _replayPlacements=parsed.pieces;
@@ -7843,6 +7923,38 @@ function showReceipt() {
   _receiptOpen = false;
 }
 
+// ── PASTE OVERLAY ────────────────────────────────────────────────────────────
+function showPasteOverlay(){
+  const ov = document.getElementById('paste-overlay');
+  const inp = document.getElementById('paste-input');
+  const st  = document.getElementById('paste-status');
+  if(!ov||!inp) return;
+  inp.value = '';
+  if(st) st.textContent = '';
+  st.style.color = '#aaaaaa';
+  ov.classList.add('show');
+  // Slight delay so the overlay renders before keyboard opens (iOS needs this)
+  setTimeout(()=>{ inp.focus(); }, 80);
+}
+function hidePasteOverlay(){
+  const ov = document.getElementById('paste-overlay');
+  if(ov) ov.classList.remove('show');
+}
+function _tryLoadPasteStream(){
+  const inp = document.getElementById('paste-input');
+  const st  = document.getElementById('paste-status');
+  if(!inp) return;
+  const s = inp.value.trim();
+  if(_looksLikeStream(s)){
+    if(st){ st.textContent='✓ VALID — LOADING...'; st.style.color='#00ff88'; }
+    hidePasteOverlay();
+    _startReplayMode(s);
+  } else {
+    if(st){ st.textContent = s.length < 10 ? 'Waiting for stream...' : '✗ NOT A VALID STREAM'; }
+    if(st) st.style.color = s.length < 10 ? '#556677' : '#ff4455';
+  }
+}
+
 function hideReceipt() {
   const ov = document.getElementById('receipt-overlay');
   if(ov) ov.classList.remove('show');
@@ -7884,6 +7996,18 @@ window.addEventListener('DOMContentLoaded', function(){
       document.getElementById('hv').textContent = hi;
     }
     _syncAutoUI();
+    // Paste overlay: wire up buttons and auto-detect on input
+    (function(){
+      const inp = document.getElementById('paste-input');
+      const loadBtn = document.getElementById('paste-load');
+      const cancelBtn = document.getElementById('paste-cancel');
+      if(inp){
+        inp.addEventListener('input', ()=>{ _tryLoadPasteStream(); });
+        inp.addEventListener('paste', ()=>{ setTimeout(_tryLoadPasteStream, 0); });
+      }
+      if(loadBtn) loadBtn.addEventListener('click', _tryLoadPasteStream);
+      if(cancelBtn) cancelBtn.addEventListener('click', hidePasteOverlay);
+    })();
     dbg('init done, starting loop');
     requestAnimationFrame(loop);
     // Paste listener: detect a CELLTOWER stream in clipboard when idle
