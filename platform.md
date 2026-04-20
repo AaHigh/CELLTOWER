@@ -6,23 +6,18 @@
 ### Version 0.2 · April 2026
 
 ---
-
-> ## Document Hierarchy and Conflict Resolution
+> ## Document Hierarchy — Conflict Resolution Rule
 >
-> This project maintains three authoritative sources at different levels of abstraction:
->
-> | Document | Role | Wins when conflict involves |
-> |----------|------|-----------------------------|
+> | Document | Role | Authoritative for |
+> |----------|------|-------------------|
 > | `index.html` | Ground truth — the running code | Anything currently executing |
-> | `stream.md` | Current implementation spec | Wire format, hash chain, encoding in use today |
-> | `platform.md` (this file) | Target architecture — forward-looking design | Future tournament features not yet built |
+> | `stream.md` | Current implementation spec | Wire format, encoding, hash chain today |
+> | `platform.md` | Target architecture — forward-looking | Future tournament features not yet built |
 >
-> **Arbitration rule:** When `platform.md` and `stream.md` describe the same field
-> differently, `stream.md` reflects what is **currently implemented** in `index.html`.
-> `platform.md` describes the **intended target** for features not yet built.
-> Any verifier, replayer, or third-party integration must implement against `stream.md`
-> for all fields marked `[SUPERSEDED]` below.
->
+> **When `platform.md` and `stream.md` conflict: `stream.md` wins on anything currently in `index.html`. `platform.md` wins on features not yet built.**
+
+---
+
 > Lines marked `[SUPERSEDED by stream.md v2.0 · April 2026]` were revised during
 > implementation. `stream.md` is the implemented reality.
 > Lines marked `[TARGET — not yet implemented]` are planned features absent from `index.html`.
