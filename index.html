@@ -76,6 +76,11 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
   </div>
 </div>
 
+<!-- invisible keyboard sink for library import — no visible HTML, canvas draws the UI -->
+<textarea id="import-sink"
+  autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+  tabindex="-1" aria-hidden="true"></textarea>
+
 <!-- ── COPY / SHARE OVERLAY ── -->
 <div id="copy-overlay">
   <canvas id="copy-rain"></canvas>
@@ -175,6 +180,18 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
   image-rendering:pixelated;
   image-rendering:crisp-edges;
   display:block;
+}
+#import-sink{
+  position:fixed;left:0;top:0;width:1px;height:1px;
+  opacity:0;font-size:16px;pointer-events:none;
+  border:none;outline:none;background:transparent;color:transparent;
+  resize:none;z-index:0;overflow:hidden;
+}
+#import-sink.active{
+  /* Covers the canvas import box (4%/18% → 96%/78% of viewport) */
+  left:4%;top:18%;width:92%;height:60%;
+  pointer-events:auto;z-index:999;
+  cursor:text;
 }
 #paste-overlay{
   position:fixed;top:0;left:0;right:0;bottom:0;
@@ -472,11 +489,16 @@ var _libraryScreen=false;   // full-canvas library overlay
 var _libraryHitZones=[];    // hit zones for library overlay (cleared each frame)
 var _libraryTab='players';  // active tab: 'players'|'top'|'builtin'
 var _libraryScroll=0;       // first visible item index
-var _pasteImportOnly=false; // when true, paste overlay adds to library without starting replay
+var _pasteImportOnly=false;     // when true, paste overlay adds to library without starting replay
+var _libraryImportReady=false;  // library is waiting for a paste — canvas shows prompt
+var _libraryImportText='';      // mirrors import-sink value for canvas rendering
+var _libraryImportValid=false;  // true once pasted text passes _looksLikeStream
+var _libraryImportValidAt=0;    // Date.now() when stream was validated (drives resolve anim)
 var _justPlayedStream=null; // verified stream from the most recent live human game
 
 // Built-in sample games selectable from the HIGH score display.
 // JSON-encoded so backslash/quote chars survive the JS string literal.
+const _KANA_RAIN='ｦｧｨｩｪｫｬｭｮｯｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ01ﾞ!?#%@';
 const _SAMPLE_STREAMS=[
   {label:'AAR · Demo', stream:"3Lw)K,\">\\K!(!`#0,AMH;q03{Zi):JaA@!y~~0hp{I-G7B2E3HM.9jP0#%}/lsC10rG2@Nf4{W8FHHH2Ej/1-[>.By#0'by)dfc(<LqdICF.YI}.4$J11g]?9v/XJc5:I>]/}HF*/0(9I0&3$$g/k$J8}MKNtB*^z&?--0g.7sv4:z4Dx'1?\\&p5Q&R~~C|6\\HB:kK15%/64/p(6(w=<#dC:3/4.ZA)KAn*5k@Swa/OwVMa5BrD0AYbDS@L4C/Ja!M$2H$J1BVS64Y^Bn/32o$J8\\G*7~0}47rG14/2-4l$5+$J^c&:9/w%@_ei-`ZB2?HE7&l$0~YH3/Z{1#vc9iM)=0N^4:$J?F@nC10b0|vd:AZ!3QMDb*$d`Dl#~~HD6M/J=7[97y0_<)$J8'[<@*B$B\\N\\5QH>64A|:20a3tNV5IMF8=fB8(0_Dx0]:sG&D]$J@&mT=?$g1]H<>|$J<}l*~~s!7TA~=zNX>T$fIP+A~~vI?$lxWMx{@bAJE@/K6=egwZYcDrN\"8`Ya<T$J5:yUBW$J5@s9<~$g5ryU@IY~<lY|B0N(4Uh[6~Gi8DZ_A/$J3`HGAyMFB]AM5dB'/qN%(6N#(UN!*+YP>o.v.3.u(tLW.3Lt*rY0@XY.-pY++R%B4</+6rNb+tk|0Dz/6jN`)z$I/(n44D%B1UA.2]NC)MM+(?0C*/NA)Ji0'C=!2m=\\&]zj)gZZ0>@h*n$^+Z192c0>(jdC-/YC4ix9*\\/&(qLe'tvA'l17*|$V+n$I:NFJ/~$H-^/~/`Y@+TJp.rie(^zf)+&K&WVN34VL+Io^$L;#?0s)s]Fq5:$_W}F{[t4wLZ(]\\&:g.<y<\\6?$3u%"},
 ];
@@ -8033,6 +8055,7 @@ function _openLibrary(){
 }
 function _closeLibrary(){
   _libraryScreen=false;
+  if(_libraryImportReady) _cancelLibraryImport();
   if(_libraryAutoPaused){
     _libraryAutoPaused=false;
     togglePause(); // resume
@@ -8213,12 +8236,190 @@ function drawLibraryScreen(t){
   _dmWordLabel(CTX,'CLOSE',clX2,footY,footBtnW,footBtnH,'#00ccff');
   CTX.shadowBlur=0;
   _libraryHitZones.push({type:'close',x:clX2,y:footY,w:footBtnW,h:footBtnH});
+  // Canvas overlay when waiting for paste
+  if(_libraryImportReady){
+    const now=Date.now();
+    const hue0=(now/30)%360;
+    CTX.fillStyle='rgba(0,0,12,0.94)';
+    CTX.fillRect(0,0,SW,SH);
+    // Title
+    const titleH=Math.round(SH*0.1), titleY=Math.round(SH*0.05);
+    if(_libraryImportValid){
+      CTX.shadowColor=`hsl(${hue0},100%,60%)`; CTX.shadowBlur=22;
+      _dmWordLabel(CTX,'STREAM DECODED',0,titleY,SW,titleH,`hsl(${hue0},100%,72%)`);
+    } else {
+      CTX.shadowColor='#00ff88'; CTX.shadowBlur=18;
+      _dmWordLabel(CTX,'PASTE STREAM NOW',0,titleY,SW,titleH,'#00ff88');
+    }
+    CTX.shadowBlur=0;
+    // The box
+    const bx=Math.round(SW*0.04), bw=Math.round(SW*0.92);
+    const by=Math.round(SH*0.18), bh=Math.round(SH*0.60);
+    CTX.fillStyle='rgba(0,6,2,0.98)';
+    roundRect(bx,by,bw,bh,10); CTX.fill();
+    // Font metrics used by rain + stream text
+    const fsz=Math.max(9,Math.round(bw*0.027));
+    CTX.font=`${fsz}px monospace`;
+    const cw=CTX.measureText('M').width;
+    const lh=Math.round(fsz*1.75);
+    const cpl=Math.max(1,Math.floor((bw-32)/cw));
+    const maxL=Math.floor((bh-28)/lh);
+    // Clip everything to box interior
+    CTX.save();
+    roundRect(bx,by,bw,bh,10); CTX.clip();
+    // — Matrix rain columns (always on, brighter when valid) —
+    const rainCols=Math.floor((bw-20)/cw);
+    const rainBright=_libraryImportValid?120:55;
+    for(let col=0;col<rainCols;col++){
+      const spd=0.022+((col*137)%100)*0.0007;
+      const headPx=((now*spd+(col*(bh*0.41)))%(bh+lh*12))-lh*6;
+      const tlen=4+(col*7)%9;
+      for(let t=0;t<tlen;t++){
+        const py=headPx-t*lh;
+        if(py<-lh||py>bh) continue;
+        const br=1-t/tlen;
+        const g=Math.round(br*rainBright);
+        CTX.fillStyle=`rgba(0,${g},${Math.round(g*0.12)},${br*0.9})`;
+        const ki=Math.abs(Math.floor(now*0.09+col*13+t*7))%_KANA_RAIN.length;
+        CTX.fillText(_KANA_RAIN[ki], bx+10+col*cw, by+py);
+      }
+    }
+    // — Stream text layer —
+    if(_libraryImportValid){
+      const txt=_libraryImportText;
+      const show=Math.min(txt.length,cpl*maxL);
+      const resolveSpan=1300; // ms for all chars to resolve
+      const elapsed=now-_libraryImportValidAt;
+      for(let i=0;i<show;i++){
+        const li=Math.floor(i/cpl), ci=i%cpl;
+        if(li>=maxL) break;
+        const x=bx+10+ci*cw, y=by+18+fsz+li*lh;
+        const resolveAt=(i/Math.max(show,1))*resolveSpan;
+        if(elapsed>resolveAt+120){
+          // Resolved: rainbow character
+          const ch=(hue0+i*(360/Math.max(show,1)))%360;
+          CTX.fillStyle=`hsl(${ch},100%,68%)`;
+          CTX.shadowColor=`hsl(${ch},100%,50%)`; CTX.shadowBlur=4;
+          CTX.fillText(txt[i],x,y);
+          CTX.shadowBlur=0;
+        } else if(elapsed>resolveAt){
+          // Resolving: deterministic flicker between kana and real char
+          const prog=(elapsed-resolveAt)/120;
+          const flicker=(Math.sin(now*0.04+i*2.3)*0.5+0.5);
+          if(flicker<prog){
+            const g=Math.round(180+prog*75);
+            CTX.fillStyle=`rgb(${Math.round(g*0.4)},${g},${Math.round(g*0.3)})`;
+            CTX.fillText(txt[i],x,y);
+          } else {
+            const ki=Math.abs(Math.floor(now*0.18+i*11))%_KANA_RAIN.length;
+            const g=Math.round(100+prog*120);
+            CTX.fillStyle=`rgb(0,${g},${Math.round(g*0.2)})`;
+            CTX.fillText(_KANA_RAIN[ki],x,y);
+          }
+        }
+        // else: not yet resolving — rain covers it
+      }
+      if(txt.length>show){
+        CTX.fillStyle='#335544';
+        CTX.fillText('\u2026',bx+bw-fsz-8,by+bh-10);
+      }
+    } else if(_libraryImportText.length>0){
+      // Invalid text: dim red chars over the rain
+      CTX.fillStyle='rgba(130,30,30,0.85)';
+      const txt=_libraryImportText;
+      for(let i=0;i<Math.min(txt.length,cpl*maxL);i++){
+        const li=Math.floor(i/cpl), ci=i%cpl;
+        if(li>=maxL) break;
+        CTX.fillText(txt[i],bx+10+ci*cw,by+18+fsz+li*lh);
+      }
+    } else {
+      // Empty: blinking cursor + ghost hint
+      if(Math.floor(now/530)%2===0){
+        CTX.fillStyle='#00cc66';
+        CTX.fillRect(bx+12,by+20,2,Math.round(fsz*1.1));
+      }
+      const hsz=Math.max(10,Math.round(bh*0.068));
+      CTX.font=`${hsz}px monospace`;
+      CTX.fillStyle='rgba(0,80,40,0.55)';
+      CTX.textAlign='center';
+      CTX.fillText('right-click \u2192 paste',SW/2,by+bh*0.5+hsz*0.35);
+      CTX.textAlign='left';
+      CTX.font=`${fsz}px monospace`;
+    }
+    CTX.restore(); // end clip
+    // Border (drawn after restore so glow isn't clipped)
+    CTX.lineWidth=_libraryImportValid?3:2;
+    if(_libraryImportValid){
+      const grad=CTX.createLinearGradient(bx,by,bx+bw,by+bh);
+      for(let gi=0;gi<=8;gi++) grad.addColorStop(gi/8,`hsl(${(hue0+gi*45)%360},100%,60%)`);
+      CTX.strokeStyle=grad;
+      CTX.shadowColor=`hsl(${hue0},100%,50%)`; CTX.shadowBlur=18;
+    } else if(_libraryImportText.length>0){
+      CTX.strokeStyle='#550e0e';
+      CTX.shadowColor='#ff2222'; CTX.shadowBlur=8;
+    } else {
+      CTX.strokeStyle='#1a3d2a';
+      CTX.shadowColor='#00ff88'; CTX.shadowBlur=10;
+    }
+    roundRect(bx,by,bw,bh,10); CTX.stroke();
+    CTX.shadowBlur=0; CTX.lineWidth=1;
+    // Cancel / status hint at bottom
+    if(_libraryImportValid){
+      _dmWordLabel(CTX,'DECODING\u2026',0,Math.round(SH*0.81),SW,Math.round(SH*0.06),`hsl(${hue0},80%,55%)`);
+    } else {
+      _dmWordLabel(CTX,'TAP ANYWHERE TO CANCEL',0,Math.round(SH*0.82),SW,Math.round(SH*0.06),'#2a4434');
+    }
+  }
 }
 
+function _doLibraryImport(s){
+  if(!s||!_libraryImportReady) return;
+  s=s.trim();
+  _libraryImportText=s;
+  _libraryImportValid=_looksLikeStream(s);
+  if(!_libraryImportValid) return;
+  _libraryImportValidAt=Date.now();
+  const parsed=_parseStreamForReplay(s);
+  if(parsed&&parsed.playerName){
+    _saveHiScore(parsed.score,s,parsed.playerName);
+    _addToLibrary(s,parsed.playerName,parsed.score,parsed.lines,parsed.level,parsed.pieces);
+  }
+  const sk=document.getElementById('import-sink');
+  if(sk){ sk.classList.remove('active'); sk.blur(); }
+  setTimeout(()=>{
+    _libraryImportReady=false;
+    _libraryImportText='';
+    _libraryImportValid=false;
+    const sk2=document.getElementById('import-sink');
+    if(sk2) sk2.value='';
+    _libraryTab='players'; _libraryScroll=0;
+  },1800);
+}
+function _tryLibraryImport(){
+  const sk=document.getElementById('import-sink');
+  if(!sk) return;
+  const s=sk.value.trim();
+  _libraryImportText=s; // mirror for rendering even before valid
+  _doLibraryImport(s);
+}
+function _cancelLibraryImport(){
+  _libraryImportReady=false;
+  _libraryImportText='';
+  _libraryImportValid=false;
+  _libraryImportValidAt=0;
+  const sk=document.getElementById('import-sink');
+  if(sk){ sk.value=''; sk.blur(); sk.classList.remove('active'); }
+}
 function _handleLibraryTap(hit){
+  if(_libraryImportReady){
+    // Any tap while waiting for paste cancels import mode (except import button re-press)
+    if(hit.type!=='import') _cancelLibraryImport();
+    return;
+  }
   if(hit.type==='import'){
-    _pasteImportOnly=true;
-    showPasteOverlay();
+    _libraryImportReady=true;
+    const sk=document.getElementById('import-sink');
+    if(sk){ sk.classList.add('active'); sk.value=''; setTimeout(()=>sk.focus(),50); }
   } else if(hit.type==='close'){
     _closeLibrary();
   } else if(hit.type==='tab'){
@@ -8546,6 +8747,15 @@ window.addEventListener('DOMContentLoaded', function(){
       if(loadBtn) loadBtn.addEventListener('click', _tryLoadPasteStream);
       if(cancelBtn) cancelBtn.addEventListener('click', hidePasteOverlay);
     })();
+    // Import-sink: canvas-native library import (no visible overlay)
+    (function(){
+      const sk=document.getElementById('import-sink');
+      if(sk){
+        sk.addEventListener('input',()=>{ _tryLibraryImport(); });
+        sk.addEventListener('paste',()=>{ setTimeout(_tryLibraryImport,0); });
+        // No blur-to-cancel: iOS fires blur before paste event, which would abort the import
+      }
+    })();
     // Copy overlay close button
     (function(){
       const cb=document.getElementById('copy-close-btn');
@@ -8553,16 +8763,30 @@ window.addEventListener('DOMContentLoaded', function(){
     })();
     dbg('init done, starting loop');
     requestAnimationFrame(loop);
-    // Paste listener: detect a CELLTOWER stream in clipboard when idle
+    // Paste listener: intercept Ctrl+V everywhere
     document.addEventListener('paste',function(e){
-      if(_replayMode)return;
       const text=(e.clipboardData||window.clipboardData||{}).getData('text');
-      if(!text||!_looksLikeStream(text))return;
-      if(ui.gameStarted&&!dead&&_gameCommitted)return; // committed game in progress — block paste
+      if(!text) return;
+      // Library import mode takes priority
+      if(_libraryImportReady){
+        e.preventDefault();
+        _doLibraryImport(text);
+        return;
+      }
+      if(_replayMode)return;
+      if(!_looksLikeStream(text))return;
+      if(ui.gameStarted&&!dead&&_gameCommitted)return;
       e.preventDefault();
-      // Dismiss identity/name-entry screen if showing, then immediately start replay
       if(_identityScreen){ _replayInterruptedIdentity=true; _identityScreen=false; _idOnComplete=null; }
       _startReplayMode(text.trim());
+    });
+    // Suppress canvas right-click when import mode is active; try clipboard API as bonus path
+    document.getElementById('cv').addEventListener('contextmenu',function(e){
+      if(!_libraryImportReady) return;
+      e.preventDefault();
+      if(navigator.clipboard&&navigator.clipboard.readText){
+        navigator.clipboard.readText().then(t=>{ if(t) _doLibraryImport(t); }).catch(()=>{});
+      }
     });
     // Show canvas welcome/identity screen immediately — no tap required
     _showIdentityCanvas(() => startGame());
