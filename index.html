@@ -2616,7 +2616,7 @@ function handleTap(tx, ty){
   // ── DIRECT COORDINATE BUTTONS ─────────────────────────────────────────────────
   // These buttons are checked by raw screen math rather than hitZones so they work
   // consistently in every mode without depending on hit zone registration state.
-if(R && R.auto && !(_replayMode && !_replayPaused)){
+  if(R && R.auto && !(_replayMode)){
     const _RW = Math.round(R.auto.w * 0.25);
     const _RX = R.auto.x + R.auto.w - _RW;
     if(tx >= _RX && tx < _RX + _RW && ty >= R.auto.y && ty < R.auto.y + R.auto.h){
