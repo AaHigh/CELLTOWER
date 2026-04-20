@@ -355,6 +355,10 @@ var _replayDisplayName=null;  // name shown in badge during replay — never tou
 var _replayInterruptedIdentity=false; // true if CTRL-V fired while name-entry screen was open
 var _gameCommitted=false; // false until player's first input — piece hovers, timers hold, can exit freely
 var _hiStream=null;  // verified stream for current session/loaded hi score — click HIGH to replay
+var _libraryScreen=false;   // full-canvas library overlay
+var _libraryHitZones=[];    // hit zones for library overlay (cleared each frame)
+var _libraryTab='players';  // active tab: 'players'|'top'|'builtin'
+var _libraryScroll=0;       // first visible item index
 
 // Built-in sample games selectable from the HIGH score display.
 // JSON-encoded so backslash/quote chars survive the JS string literal.
@@ -766,8 +770,9 @@ function draw(ts){
   if(!SW||!SH||!R.gw) return; // layout not ready yet
   const t = ts * 0.001;
 
-  // Identity screen takes over the full canvas
+  // Full-canvas overlays — each takes over the entire canvas
   if(_identityScreen){ drawIdentityScreen(t); return; }
+  if(_libraryScreen){ drawLibraryScreen(t); return; }
 
   // Background
   const bg = CTX.createLinearGradient(0,0,SW,SH);
@@ -1201,6 +1206,9 @@ function _confirmIdentityCanvas() {
   _namePreFilled = false;
   _saveIdentity({ name });
   _currentPlayer = { name };
+  const _nameHi = _loadHiScore(name);
+  _hiStream = _nameHi ? _nameHi.stream : null;
+  hi = _nameHi ? (_nameHi.score||0) : 0;
   _identityScreen = false;
   if(_idOnComplete){ _idOnComplete(); _idOnComplete = null; }
 }
@@ -1877,16 +1885,16 @@ function drawPieceRow(t){
 
   // ── REPLAY TRANSPORT BAR ─────────────────────────────────────────────────
   if(_replayMode || (_replaySource && dead)){
-    const GAP3=R.GAP, PW3=Math.round((r.w-3*GAP3)/4);
+    const GAP3=R.GAP, PW3=Math.round((r.w-4*GAP3)/5);
     hitZones=hitZones.filter(z=>!z.id.startsWith('replay_')&&z.id!=='tetris'&&z.id!=='piece0'&&z.id!=='piece1'&&z.id!=='piece2'&&z.id!=='piece3');
-    const _icons=['◀◀','▶','⏸','⏹'];
-    const _ids  =['replay_back','replay_play','replay_pause','replay_stop'];
+    const _icons=['◀◀','▶','⏸','⏹','☰'];
+    const _ids  =['replay_back','replay_play','replay_pause','replay_stop','replay_library'];
     // Dim play when not paused; dim pause when paused or dead
-    const _dims =[false, _replayMode&&!_replayPaused, _replayMode&&(_replayPaused||dead), false];
-    for(let i=0;i<4;i++){
+    const _dims =[false, _replayMode&&!_replayPaused, _replayMode&&(_replayPaused||dead), false, false];
+    for(let i=0;i<5;i++){
       const bx2=r.x+i*(PW3+GAP3), by2=r.y;
       CTX.globalAlpha=_dims[i]?0.30:1.0;
-      panel(bx2,by2,PW3,r.h,'#002233');
+      panel(bx2,by2,PW3,r.h,i===4?'#002244':'#002233');
       addHit(_ids[i],bx2,by2,PW3,r.h);
       _drawPauseIcon(_icons[i],bx2+PW3/2,by2+r.h*0.55,Math.max(8,r.h*0.46));
     }
@@ -2466,6 +2474,13 @@ function handleTap(tx, ty){
     }
   }
 
+  // Library screen owns all input while showing
+  if(_libraryScreen){
+    const _lhit=_libraryHitZones.find(z=>tx>=z.x&&tx<=z.x+z.w&&ty>=z.y&&ty<=z.y+z.h);
+    if(_lhit) _handleLibraryTap(_lhit);
+    return;
+  }
+
   // Identity screen owns all input while showing
   if(_identityScreen){
     const hit = _idHitZones.find(z => tx>=z.x && tx<=z.x+z.w && ty>=z.y && ty<=z.y+z.h);
@@ -2498,11 +2513,12 @@ function handleTap(tx, ty){
   if(_replayMode || (_replaySource && dead)){
     const idR=hitTest(tx,ty);
     switch(idR){
-      case 'replay_back':  _startReplayMode(_replaySource); return;
-      case 'replay_play':  if(_replayMode&&_replayPaused){ _toggleReplayPause(); return; } break;
-      case 'replay_pause': if(_replayMode&&!_replayPaused){ _toggleReplayPause(); return; } break;
-      case 'replay_stop':  _stopReplayMode(); return;
-      case 'pause':        if(_replayMode){ _toggleReplayPause(); return; } break;
+      case 'replay_back':    _startReplayMode(_replaySource); return;
+      case 'replay_play':    if(_replayMode&&_replayPaused){ _toggleReplayPause(); return; } break;
+      case 'replay_pause':   if(_replayMode&&!_replayPaused){ _toggleReplayPause(); return; } break;
+      case 'replay_stop':    _stopReplayMode(); return;
+      case 'replay_library': _openLibrary(); return;
+      case 'pause':          if(_replayMode){ _toggleReplayPause(); return; } break;
     }
     if(_replayMode) return; // block other taps only during active playback
   }
@@ -2527,11 +2543,7 @@ function handleTap(tx, ty){
        ty>=ui._startBtnY && ty<=ui._startBtnY+ui._startBtnH){
       startGame();
     }
-    // Allow HIGH tap on start screen to demo a sample replay
-    if(hitTest(tx,ty) === 'rHi'){
-      const _rs = _hiStream || (_SAMPLE_STREAMS.length ? _SAMPLE_STREAMS[0].stream : null);
-      if(_rs){ _startReplayMode(_rs); return; }
-    }
+    if(hitTest(tx,ty) === 'rHi'){ _openLibrary(); return; }
     return;
   }
 
@@ -2571,11 +2583,7 @@ function handleTap(tx, ty){
       restart(true); return;
     }
     // receipt while dead handled by direct coordinate check at top of handleTap
-    // Tap HIGH score display → replay hi or first sample
-    if(id === 'rHi'){
-      const _rs = _hiStream || (_SAMPLE_STREAMS.length ? _SAMPLE_STREAMS[0].stream : null);
-      if(_rs){ _startReplayMode(_rs); return; }
-    }
+    if(id === 'rHi'){ _openLibrary(); return; }
     if(id === 'pause'){
       if(_replaySource){
         _replaySource=null;
@@ -2612,6 +2620,7 @@ function handleTap(tx, ty){
     handleCanvasTap(tx, ty);
     return;
   }
+  _ensureCommitted();
   switch(id){
     case 'pause':     if(dead) restart(false); else if(ui.gameStarted) togglePause(); break;
     case 'piece0': case 'piece1': case 'piece2': case 'piece3':
@@ -2623,14 +2632,7 @@ function handleTap(tx, ty){
     case 'ctrl_hard': hdrop(); break;
     case 'ctrl_left': mhz(-1); break;
     case 'ctrl_right':mhz(1);  break;
-    case 'rHi': {
-      // Allow exit to replay any time game is uncommitted (no pieces placed yet)
-      if(!_gameCommitted){
-        const _rs=_hiStream||(_SAMPLE_STREAMS.length?_SAMPLE_STREAMS[0].stream:null);
-        if(_rs){_startReplayMode(_rs);return;}
-      }
-      break;
-    }
+    case 'rHi': { if(paused || !_gameCommitted) _openLibrary(); return; }
     case 'auto_toggle': if(ui.gameStarted&&!dead&&_gameCommitted) toggleAutoPlay(); break;
     case 'receipt': break; // handled by direct coordinate check at top of handleTap
     case 'receipt_close':  hideReceipt(); break;
@@ -2665,8 +2667,7 @@ function startHold(id){
   if(AUTO_PLAY||_replayMode) return;
   stopHold();
   _holdId=id;
-  handleTap(0,0); // won't match - call direct
-  // direct call
+  _ensureCommitted();
   if(id==='ctrl_left') mhz(-1);
   else if(id==='ctrl_right') mhz(1);
   _holdIv=setInterval(()=>{
@@ -6578,12 +6579,56 @@ function _genRandomName() {
   return Array.from(arr, b => pool[b % pool.length]);
 }
 
-function _saveHiScore(sc, stream, playerName) {
-  _hiStream = stream;
-  try { localStorage.setItem('ct_hi', JSON.stringify({score:sc, stream, playerName})); } catch(e) {}
+function _getHiTable(){
+  try{ return JSON.parse(localStorage.getItem('ct_hi_v2')||'{}'); }catch(e){ return {}; }
 }
-function _loadHiScore() {
-  try { return JSON.parse(localStorage.getItem('ct_hi') || 'null'); } catch(e) { return null; }
+function _saveHiScore(sc, stream, playerName){
+  if(!playerName) return;
+  try{
+    const tbl=_getHiTable();
+    if(!tbl[playerName]||sc>tbl[playerName].score){
+      tbl[playerName]={score:sc,stream,playerName};
+      localStorage.setItem('ct_hi_v2',JSON.stringify(tbl));
+      if(_currentPlayer&&_currentPlayer.name===playerName) _hiStream=stream;
+    }
+  }catch(e){}
+}
+function _loadHiScore(name){
+  try{
+    const tbl=_getHiTable();
+    return name&&tbl[name]?tbl[name]:null;
+  }catch(e){ return null; }
+}
+function _resetHiScore(name){
+  if(!name) return;
+  try{
+    const tbl=_getHiTable();
+    delete tbl[name];
+    localStorage.setItem('ct_hi_v2',JSON.stringify(tbl));
+    if(_currentPlayer&&_currentPlayer.name===name){ _hiStream=null; hi=0; }
+  }catch(e){}
+}
+function _getLibrary(){
+  try{ return JSON.parse(localStorage.getItem('ct_library_v1')||'[]'); }catch(e){ return []; }
+}
+function _addToLibrary(stream, playerName, score, lines, level, pieces){
+  if(!stream||!playerName) return;
+  try{
+    let lib=_getLibrary();
+    if(lib.some(e=>e.stream===stream)) return; // already present
+    lib.push({id:Date.now()+'_'+Math.random().toString(36).slice(2),
+              stream,playerName,score:score||0,lines:lines||0,
+              level:level||0,pieces:pieces||0,addedAt:Date.now()});
+    if(lib.length>100) lib=lib.slice(lib.length-100); // keep newest 100
+    localStorage.setItem('ct_library_v1',JSON.stringify(lib));
+  }catch(e){}
+}
+function _removeFromLibrary(playerName){
+  // Remove all entries for this player name
+  try{
+    const lib=_getLibrary().filter(e=>e.playerName!==playerName);
+    localStorage.setItem('ct_library_v1',JSON.stringify(lib));
+  }catch(e){}
 }
 
 function _getStoredIdentity() {
@@ -7788,6 +7833,12 @@ function _startReplayPlay(){
     _replayMode=false;
     stopSelTimer(); stopDrop(); cur=null;
     dead=true; _deadAt=performance.now();
+    // Save replayed performance under the original player's name
+    if(_replayDisplayName&&_replayMeta&&_replaySource){
+      _saveHiScore(_replayMeta.score,_replaySource,_replayDisplayName);
+      _addToLibrary(_replaySource,_replayDisplayName,_replayMeta.score,
+                    _replayMeta.lines,_replayMeta.level,_replayMeta.pieces);
+    }
     const _gov=document.getElementById('gov');
     if(_gov) _gov.style.display='flex';
     const _fst=document.getElementById('fst');
@@ -7823,6 +7874,180 @@ function _startReplayPlay(){
   selectedPlacementIdx=_matchIdx>=0?_matchIdx:0;
   for(let i=0;i<4;i++) drawPrevBtn(i,placements[i]);
   _navigateAndLock(p.k,{x:p.x,rotation:p.rot,dropY:p.drop_y},_REPLAY_MOVE_MS);
+}
+
+// ── Library screen ────────────────────────────────────────────────────────────
+
+function _openLibrary(){
+  _libraryScreen=true;
+  _libraryScroll=0;
+}
+
+function _getLibraryEntries(){
+  if(_libraryTab==='builtin'){
+    return _SAMPLE_STREAMS.map(s=>{
+      const p=_parseStreamForReplay(s.stream);
+      return {stream:s.stream,playerName:p?p.playerName:'???',
+              score:p?p.score:0,lines:p?p.lines:0,label:s.label,isBuiltin:true};
+    });
+  }
+  if(_libraryTab==='players'){
+    const tbl=_getHiTable();
+    return Object.values(tbl).sort((a,b)=>b.score-a.score);
+  }
+  // 'top': library pool sorted by score desc — sample streams never appear here
+  return _getLibrary().sort((a,b)=>b.score-a.score);
+}
+
+function drawLibraryScreen(t){
+  _libraryHitZones=[];
+
+  const LPAD=Math.round(SW*0.03);
+  const LGAP=Math.round(SW*0.02);
+  const headerH=Math.round(SH*0.11);
+  const tabH=Math.round(SH*0.09);
+  const footerH=Math.round(SH*0.09);
+  const itemH=Math.round(SH*0.105);
+  const listTop=headerH+tabH;
+  const listH=SH-listTop-footerH;
+  const visCount=Math.max(1,Math.floor(listH/itemH));
+
+  // Background + scanlines
+  CTX.fillStyle='#05000f';
+  CTX.fillRect(0,0,SW,SH);
+  CTX.fillStyle='rgba(0,0,0,0.15)';
+  for(let sy=0;sy<SH;sy+=3) CTX.fillRect(0,sy,SW,1);
+
+  // Header
+  CTX.shadowColor='#00ccff'; CTX.shadowBlur=14;
+  _dmWordLabel(CTX,'LIBRARY',LPAD,LPAD*0.5,SW-2*LPAD,headerH-LPAD,'#00ccff');
+  CTX.shadowBlur=0;
+  // Entry count hint
+  const _entries=_getLibraryEntries();
+  CTX.fillStyle='#334466';
+  CTX.font=F(FONT_SMALL,Math.round(SH*0.017));
+  CTX.textAlign='right'; CTX.textBaseline='bottom';
+  CTX.fillText(_entries.length+' entries',SW-LPAD,headerH-2);
+
+  // Tabs
+  const _tabs=[{id:'players',lbl:'PLAYERS'},{id:'top',lbl:'TOP SCORES'},{id:'builtin',lbl:'BUILT-IN'}];
+  const tabW=Math.round((SW-2*LPAD-2*LGAP)/3);
+  for(let i=0;i<3;i++){
+    const tx2=LPAD+i*(tabW+LGAP), ty2=headerH;
+    const isA=_libraryTab===_tabs[i].id;
+    roundRect(tx2,ty2,tabW,tabH-4,5);
+    CTX.fillStyle=isA?'#002244':'#0a0a1a';
+    CTX.fill();
+    CTX.strokeStyle=isA?'#00ccff':'#223344';
+    CTX.lineWidth=1.5; CTX.stroke();
+    CTX.shadowColor=isA?'#00ccff':'transparent'; CTX.shadowBlur=isA?8:0;
+    _dmWordLabel(CTX,_tabs[i].lbl,tx2+2,ty2+2,tabW-4,tabH-8,isA?'#00ccff':'#335566');
+    CTX.shadowBlur=0;
+    _libraryHitZones.push({type:'tab',tabId:_tabs[i].id,x:tx2,y:ty2,w:tabW,h:tabH-4});
+  }
+
+  // List entries
+  const maxScroll=Math.max(0,_entries.length-visCount);
+  _libraryScroll=Math.max(0,Math.min(_libraryScroll,maxScroll));
+  const delBtnW=Math.round(SW*0.085);
+
+  for(let i=0;i<visCount;i++){
+    const ei=_libraryScroll+i;
+    if(ei>=_entries.length) break;
+    const en=_entries[ei];
+    const ey=listTop+i*itemH+2;
+    const ew=SW-2*LPAD;
+    const canDel=_libraryTab==='players'&&!en.isBuiltin;
+    const entryW=canDel?ew-delBtnW-LGAP:ew;
+
+    // Row background
+    roundRect(LPAD,ey,entryW,itemH-4,5);
+    CTX.fillStyle='rgba(0,20,40,0.9)'; CTX.fill();
+    CTX.strokeStyle='#003355'; CTX.lineWidth=1.2; CTX.stroke();
+
+    // Player name badge
+    const badgeW=Math.round(SW*0.115);
+    roundRect(LPAD+4,ey+4,badgeW,itemH-12,4);
+    CTX.fillStyle='#001122'; CTX.fill();
+    CTX.strokeStyle='#00bbcc'; CTX.lineWidth=1; CTX.stroke();
+    CTX.fillStyle='#00ddee';
+    CTX.font=F(FONT_VAL,Math.round(itemH*0.27));
+    CTX.textAlign='center'; CTX.textBaseline='middle';
+    CTX.fillText((en.playerName||'???').slice(0,3),LPAD+4+badgeW/2,ey+itemH/2-2);
+
+    // Score
+    const scoreX=LPAD+badgeW+10;
+    CTX.fillStyle='#ffcc44';
+    CTX.font=F(FONT_VAL,Math.round(itemH*0.28));
+    CTX.textAlign='left'; CTX.textBaseline='top';
+    CTX.fillText((en.score||0).toLocaleString(),scoreX,ey+itemH*0.08);
+
+    // Label / sub-info
+    const lbl=en.label||(en.playerName+' · '+(en.lines||0)+'L lv'+(en.level||1));
+    CTX.fillStyle='#556677';
+    CTX.font=F(FONT_SMALL,Math.round(itemH*0.20));
+    CTX.fillText(lbl.slice(0,30),scoreX,ey+itemH*0.56);
+
+    _libraryHitZones.push({type:'entry',entry:en,x:LPAD,y:ey,w:entryW,h:itemH-4});
+
+    // Delete button (PLAYERS tab, non-built-in only)
+    if(canDel){
+      const dx=LPAD+ew-delBtnW, dy=ey+(itemH-4)*0.2;
+      roundRect(dx,dy,delBtnW,(itemH-4)*0.6,4);
+      CTX.fillStyle='rgba(60,0,0,0.9)'; CTX.fill();
+      CTX.strokeStyle='#882222'; CTX.lineWidth=1.2; CTX.stroke();
+      CTX.fillStyle='#ff4444';
+      CTX.font=F(FONT_SMALL,Math.round(itemH*0.22));
+      CTX.textAlign='center'; CTX.textBaseline='middle';
+      CTX.fillText('✕',dx+delBtnW/2,dy+(itemH-4)*0.3);
+      _libraryHitZones.push({type:'delete',playerName:en.playerName,
+                             x:dx,y:dy,w:delBtnW,h:(itemH-4)*0.6});
+    }
+  }
+
+  // Scroll arrows
+  if(_libraryScroll>0){
+    CTX.fillStyle='rgba(0,180,220,0.7)';
+    CTX.font=F(FONT_SMALL,Math.round(SH*0.025));
+    CTX.textAlign='center'; CTX.textBaseline='middle';
+    CTX.fillText('▲',SW/2,listTop-Math.round(SH*0.018));
+    _libraryHitZones.push({type:'scroll',dir:-1,x:SW/2-40,y:listTop-24,w:80,h:22});
+  }
+  if(_libraryScroll<maxScroll){
+    CTX.fillStyle='rgba(0,180,220,0.7)';
+    CTX.font=F(FONT_SMALL,Math.round(SH*0.025));
+    CTX.textAlign='center'; CTX.textBaseline='middle';
+    CTX.fillText('▼',SW/2,SH-footerH-Math.round(SH*0.01));
+    _libraryHitZones.push({type:'scroll',dir:1,x:SW/2-40,y:SH-footerH-22,w:80,h:22});
+  }
+
+  // Footer: CLOSE button
+  const clW=Math.round(SW*0.45), clH=footerH-8;
+  const clX=(SW-clW)/2, clY=SH-footerH+4;
+  roundRect(clX,clY,clW,clH,6);
+  CTX.fillStyle='rgba(0,15,30,0.9)'; CTX.fill();
+  CTX.strokeStyle='#335566'; CTX.lineWidth=1.5; CTX.stroke();
+  CTX.shadowColor='#00ccff'; CTX.shadowBlur=6;
+  _dmWordLabel(CTX,'CLOSE',clX,clY,clW,clH,'#00ccff');
+  CTX.shadowBlur=0;
+  _libraryHitZones.push({type:'close',x:clX,y:clY,w:clW,h:clH});
+}
+
+function _handleLibraryTap(hit){
+  if(hit.type==='close'){
+    _libraryScreen=false;
+  } else if(hit.type==='tab'){
+    _libraryTab=hit.tabId; _libraryScroll=0;
+  } else if(hit.type==='scroll'){
+    _libraryScroll=Math.max(0,_libraryScroll+hit.dir);
+  } else if(hit.type==='entry'&&hit.entry&&hit.entry.stream){
+    _libraryScreen=false;
+    _stopReplayMode();
+    setTimeout(()=>{ _startReplayMode(hit.entry.stream); },0);
+  } else if(hit.type==='delete'&&hit.playerName){
+    _resetHiScore(hit.playerName);
+    _removeFromLibrary(hit.playerName);
+  }
 }
 
 function _stopReplayMode(){
@@ -7996,13 +8221,8 @@ window.addEventListener('DOMContentLoaded', function(){
     resize();
     dbg('SW='+SW+' SH='+SH+' CELL='+CELL+' Rgx='+R.gx);
     layout();
-    // Restore persisted hi score
-    const _savedHi = _loadHiScore();
-    if (_savedHi && _savedHi.score > 0) {
-      hi = _savedHi.score;
-      _hiStream = _savedHi.stream || null;
-      document.getElementById('hv').textContent = hi;
-    }
+    // Restore persisted hi score for the current player (loaded after identity resolves)
+    // _confirmIdentityCanvas handles this at name-selection time; nothing needed here
     _syncAutoUI();
     // Paste overlay: wire up buttons and auto-detect on input
     (function(){
