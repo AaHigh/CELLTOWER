@@ -723,7 +723,7 @@ function draw(ts){
       CTX.save(); CTX.translate(hud.dx, hud.dy);
       drawPieceRow(t);
       drawAutoRow(t);
-      drawControlRow(t);
+      if(!_replayMode && !(_replaySource&&dead)) drawControlRow(t);
       CTX.restore();
     } else {
       drawLeftPanel(t);
@@ -731,7 +731,7 @@ function draw(ts){
       drawPlayfield(t);
       drawPieceRow(t);
       drawAutoRow(t);
-      drawControlRow(t);
+      if(!_replayMode && !(_replaySource&&dead)) drawControlRow(t);
     }
     if(paused) drawPauseOverlay();
     if(_killScreenActive) drawKillScreen(performance.now());
@@ -2193,6 +2193,33 @@ function drawPauseOverlay(){
 
 // ── Game over overlay ────────────────────────────────────────────────
 function drawGameOverOverlay(){
+  // ── PLAYBACK ENDED ────────────────────────────────────────────────────────────
+  if(_replaySource){
+    // Cover everything above the VCR transport row (piece row)
+    CTX.fillStyle='rgba(0,0,16,0.92)';
+    CTX.fillRect(0, 0, SW, R.pieces.y);
+    const cx=SW/2, oy=R.pieces.y;
+    // "PLAYBACK ENDED" headline
+    CTX.shadowColor='#00ccff'; CTX.shadowBlur=18;
+    _dmWordLabel(CTX,'PLAYBACK',   cx-SW*0.46, oy*0.08, SW*0.92, oy*0.16, '#00ccff');
+    _dmWordLabel(CTX,'ENDED',      cx-SW*0.46, oy*0.24, SW*0.92, oy*0.14, '#00ccff');
+    CTX.shadowBlur=0;
+    // Player + score from replay metadata
+    const _rName  = _replayDisplayName || '???';
+    const _rScore = _replayMeta && _replayMeta.score ? _replayMeta.score : score;
+    const _rPcs   = _replayMeta && _replayMeta.pieces ? _replayMeta.pieces : 0;
+    _dmWordLabel(CTX, _rName,           cx-SW*0.46, oy*0.42, SW*0.92, oy*0.12, '#ffffff');
+    _dmWordLabel(CTX, 'SCORE  '+_rScore,cx-SW*0.46, oy*0.55, SW*0.92, oy*0.10, '#ffcc44');
+    _dmWordLabel(CTX, _rPcs+' PIECES',  cx-SW*0.46, oy*0.66, SW*0.92, oy*0.08, '#aaaaaa');
+    // Hint arrow toward VCR controls
+    CTX.fillStyle='rgba(0,180,220,0.55)';
+    CTX.font='bold '+Math.round(oy*0.07)+'px monospace';
+    CTX.textAlign='center'; CTX.textBaseline='middle';
+    CTX.fillText('▼  USE CONTROLS BELOW  ▼', cx, oy*0.86);
+    ui._receiptBtnW=0; ui._playAgainW=0; ui._playAutoW=0;
+    return;
+  }
+
   CTX.fillStyle='rgba(0,0,0,0.78)';
   roundRect(R.gx, R.gy, R.gw, R.gh, 6); CTX.fill();
 
