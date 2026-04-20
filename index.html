@@ -6051,14 +6051,17 @@ let _animStep=null;  // reference to current animation step fn — cleared when 
 let _animArmT=0;    // performance.now() when current _autoIv was armed
 let _animArmMs=0;   // interval duration that was used to arm it
 let _autoPhase=null; // {targetIdx, targetX, targetRot, isSlide, steps:[]}
+let _selGen=0;       // incremented each startSelTimer; guards uncancellable setTimeout callbacks
 
 function startSelTimer(){
   clearInterval(selIv);clearInterval(_autoIv);_autoPhase=null;
+  const _myGen = ++_selGen;
   timerMax=Math.max(3000,15000-(level-1)*800);
   timerLeft=timerMax;
 
   // Countdown (for any external timer bar display)
   selIv=setInterval(()=>{
+    if(_selGen!==_myGen){clearInterval(selIv);return;}
     if(paused||dead||clearAnimating||(_replayMode&&_replayPaused)||!_gameCommitted)return;
     timerLeft-=100;
     // Only auto-place on timeout during AUTO_PLAY — in human mode just let the
@@ -6071,6 +6074,7 @@ function startSelTimer(){
   const startDelay = AUTO_SPEED >= 11 ? 0 : Math.round(500 * (1 - (AUTO_SPEED-1)/10));
   if(AUTO_SPEED >= 11){
     requestAnimationFrame(()=>{
+      if(_selGen!==_myGen)return;
       if(!dead&&!paused&&!clearAnimating&&cur&&(AUTO_PLAY||_replayMode)){
         if(AUTO_PLAY&&puzzleActive&&window._proofCorrectCand===null) calcPlacements(true);
         _startAutoPlay();
@@ -6080,12 +6084,14 @@ function startSelTimer(){
     if(!dead&&!paused&&!clearAnimating&&cur&&(AUTO_PLAY||_replayMode)) _startAutoPlay();
   } else {
     setTimeout(()=>{
+      if(_selGen!==_myGen)return;
       if(!dead&&!paused&&!clearAnimating&&cur&&(AUTO_PLAY||_replayMode)) _startAutoPlay();
     }, startDelay);
   }
 }
 
 function stopSelTimer(){
+  _selGen++;  // invalidate any uncancellable setTimeout/rAF callbacks from prior generation
   clearInterval(selIv);
   clearTimeout(_autoIv);
   _autoIv=null;
