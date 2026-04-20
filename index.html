@@ -76,6 +76,31 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
   </div>
 </div>
 
+<!-- ── COPY / SHARE OVERLAY ── -->
+<div id="copy-overlay">
+  <canvas id="copy-rain"></canvas>
+  <div id="copy-card">
+    <div id="copy-eyebrow">PROOF OF HUMAN COGNITION</div>
+    <div id="copy-name-badge"><span id="copy-player-name">???</span></div>
+    <div id="copy-stats-row">
+      <span id="copy-score-val">0</span>
+      <span id="copy-stat-sep">·</span>
+      <span id="copy-lines-val">0 LINES</span>
+      <span id="copy-stat-sep2">·</span>
+      <span id="copy-level-val">LV 1</span>
+    </div>
+    <div id="copy-stream-box">
+      <div id="copy-stream-label">STREAM FRAGMENT</div>
+      <div id="copy-stream-preview"></div>
+      <div id="copy-fragment-id"></div>
+    </div>
+    <button id="copy-btn">⬡ &nbsp;COPY TO CLIPBOARD</button>
+    <div id="copy-feedback"></div>
+    <div id="copy-flavor"></div>
+  </div>
+  <button id="copy-close-btn">✕</button>
+</div>
+
 <!-- ── IDENTITY OVERLAY ── -->
 <div id="id-overlay">
   <!-- Welcome / name picker — shown on startup; pre-populated -->
@@ -212,6 +237,94 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
 #paste-load{background:#003322;color:#00ff88;border:1px solid #00aa44;}
 #paste-load:active{background:#004433;}
 #paste-cancel:active{background:#2a0022;}
+/* ── Copy / Share overlay ── */
+#copy-overlay{
+  position:fixed;top:0;left:0;right:0;bottom:0;
+  z-index:750;display:none;
+  flex-direction:column;align-items:center;justify-content:center;
+  background:rgba(0,2,6,0.93);
+  font-family:'Courier New',monospace;
+}
+#copy-overlay.show{display:flex}
+#copy-rain{
+  position:absolute;top:0;left:0;width:100%;height:100%;
+  pointer-events:none;opacity:0.22;
+}
+#copy-card{
+  position:relative;z-index:1;
+  width:min(94vw,400px);
+  background:rgba(0,8,20,0.92);
+  border:1.5px solid #00cc44;
+  border-radius:12px;
+  box-shadow:0 0 32px rgba(0,220,100,0.18),0 0 8px rgba(0,180,80,0.12) inset;
+  padding:22px 20px 18px;
+  display:flex;flex-direction:column;gap:10px;
+  box-sizing:border-box;
+}
+#copy-eyebrow{
+  font-size:.6rem;letter-spacing:.25em;color:#336644;text-transform:uppercase;
+  text-align:center;
+}
+#copy-name-badge{
+  text-align:center;
+  margin:2px 0;
+}
+#copy-player-name{
+  font-size:2.4rem;font-weight:900;letter-spacing:.18em;
+  color:#00ff88;text-shadow:0 0 18px #00ff88,0 0 6px #00aa44;
+}
+#copy-stats-row{
+  text-align:center;font-size:.78rem;font-weight:700;
+  color:#aaffcc;letter-spacing:.06em;
+}
+#copy-stat-sep,#copy-stat-sep2{color:#336644;margin:0 6px;}
+#copy-score-val{color:#ffcc44;text-shadow:0 0 8px #cc8800;}
+#copy-stream-box{
+  background:rgba(0,20,10,0.7);
+  border:1px solid #224433;border-radius:6px;
+  padding:10px 12px;
+}
+#copy-stream-label{
+  font-size:.55rem;letter-spacing:.2em;color:#226633;margin-bottom:6px;
+}
+#copy-stream-preview{
+  font-size:.68rem;color:#00cc66;word-break:break-all;line-height:1.5;
+  max-height:3.6em;overflow:hidden;
+}
+#copy-fragment-id{
+  font-size:.58rem;color:#335544;margin-top:6px;letter-spacing:.12em;
+}
+#copy-btn{
+  width:100%;padding:14px 0;
+  background:linear-gradient(135deg,#002210,#004422);
+  border:1.5px solid #00cc44;border-radius:8px;
+  color:#00ff88;font-family:'Courier New',monospace;
+  font-size:.88rem;font-weight:900;letter-spacing:.12em;
+  cursor:pointer;
+  text-shadow:0 0 8px #00cc44;
+  box-shadow:0 0 12px rgba(0,200,80,0.15);
+  -webkit-tap-highlight-color:transparent;
+  transition:background .15s;
+}
+#copy-btn:active{background:linear-gradient(135deg,#003318,#006633);}
+#copy-feedback{
+  min-height:18px;font-size:.72rem;font-weight:700;
+  text-align:center;letter-spacing:.1em;color:#00ff88;
+}
+#copy-flavor{
+  font-size:.6rem;color:#224433;line-height:1.7;text-align:center;
+  font-style:italic;
+}
+#copy-close-btn{
+  position:relative;z-index:1;
+  margin-top:14px;
+  background:transparent;border:1px solid #224433;border-radius:6px;
+  color:#446655;font-family:'Courier New',monospace;font-size:.78rem;
+  padding:8px 28px;cursor:pointer;letter-spacing:.1em;
+  -webkit-tap-highlight-color:transparent;
+}
+#copy-close-btn:active{background:rgba(0,40,20,0.5);}
+
 #id-overlay{
   position:fixed;top:0;left:0;right:0;bottom:0;
   background:rgba(2,0,14,0.78);
@@ -359,6 +472,8 @@ var _libraryScreen=false;   // full-canvas library overlay
 var _libraryHitZones=[];    // hit zones for library overlay (cleared each frame)
 var _libraryTab='players';  // active tab: 'players'|'top'|'builtin'
 var _libraryScroll=0;       // first visible item index
+var _pasteImportOnly=false; // when true, paste overlay adds to library without starting replay
+var _justPlayedStream=null; // verified stream from the most recent live human game
 
 // Built-in sample games selectable from the HIGH score display.
 // JSON-encoded so backslash/quote chars survive the JS string literal.
@@ -808,7 +923,7 @@ function draw(ts){
       CTX.save(); CTX.translate(hud.dx, hud.dy);
       drawPieceRow(t);
       drawAutoRow(t);
-      if(!_replayMode && !(_replaySource&&dead)) drawControlRow(t);
+      if(!_replayMode && !(_replaySource&&dead) && !(_justPlayedStream&&dead&&!_replaySource)) drawControlRow(t);
       CTX.restore();
     } else {
       drawLeftPanel(t);
@@ -816,7 +931,7 @@ function draw(ts){
       drawPlayfield(t);
       drawPieceRow(t);
       drawAutoRow(t);
-      if(!_replayMode && !(_replaySource&&dead)) drawControlRow(t);
+      if(!_replayMode && !(_replaySource&&dead) && !(_justPlayedStream&&dead&&!_replaySource)) drawControlRow(t);
     }
     if(paused) drawPauseOverlay();
     if(_killScreenActive) drawKillScreen(performance.now());
@@ -1205,6 +1320,7 @@ function _confirmIdentityCanvas() {
   const name = checked.join('');
   _namePreFilled = false;
   _saveIdentity({ name });
+  _addKnownName(name);  // mark as locally-originated player on this device
   _currentPlayer = { name };
   const _nameHi = _loadHiScore(name);
   _hiStream = _nameHi ? _nameHi.stream : null;
@@ -1884,7 +2000,7 @@ function drawPieceRow(t){
   }
 
   // ── REPLAY TRANSPORT BAR ─────────────────────────────────────────────────
-  if(_replayMode || (_replaySource && dead)){
+  if(_replayMode || (_replaySource && dead) || (_justPlayedStream && dead && !_replaySource)){
     const GAP3=R.GAP, PW3=Math.round((r.w-4*GAP3)/5);
     hitZones=hitZones.filter(z=>!z.id.startsWith('replay_')&&z.id!=='tetris'&&z.id!=='piece0'&&z.id!=='piece1'&&z.id!=='piece2'&&z.id!=='piece3');
     const _icons=['◀◀','▶','⏸','⏹','☰'];
@@ -2198,15 +2314,18 @@ function drawAutoRow(t){
   // RECEIPT button — context-sensitive label
   const RX = r.x + r.w - RECEIPT_W;
   const _uncommitted = ui.gameStarted && !dead && !_gameCommitted && !_replayMode;
+  const _ownGameDead = dead && !!_justPlayedStream && !_replaySource && !_replayMode;
+  const _ownReplayActive = _replayMode && !!_justPlayedStream && _replaySource===_justPlayedStream;
   const receiptAvail = paused || dead || !ui.gameStarted || _replayMode;
   // During active (non-paused) replay: PASTE — loads a stream from clipboard
   // During paused replay: RECEIPT — diagnostic playback receipt
   // Uncommitted pre-game: READY
   // Otherwise: RECEIPT (standard)
-  const _replayPaste = _replayMode && !_replayPaused;
-  const _receiptLabel  = _replayPaste  ? 'PASTE'   : _uncommitted ? 'READY'   : 'RECEIPT';
-  const _receiptBorder = _replayPaste  ? '#003344' : _uncommitted ? '#003322' : (receiptAvail ? '#aa6600' : '#442200');
-  const _receiptColor  = _replayPaste  ? '#00ccff' : _uncommitted ? '#00aa66' : (receiptAvail ? '#ffcc44' : '#664422');
+  const _showCopy    = (_ownGameDead || (_ownReplayActive && !_replayPaused));
+  const _replayPaste = _replayMode && !_replayPaused && !_showCopy;
+  const _receiptLabel  = _showCopy    ? 'COPY'    : _replayPaste ? 'PASTE'   : _uncommitted ? 'READY'   : 'RECEIPT';
+  const _receiptBorder = _showCopy    ? '#004422' : _replayPaste ? '#003344' : _uncommitted ? '#003322' : (receiptAvail ? '#aa6600' : '#442200');
+  const _receiptColor  = _showCopy    ? '#00ff88' : _replayPaste ? '#00ccff' : _uncommitted ? '#00aa66' : (receiptAvail ? '#ffcc44' : '#664422');
   panel(RX, r.y, RECEIPT_W, r.h, _receiptBorder);
   _dmWordLabel(CTX, _receiptLabel, RX+2, r.y + r.h*0.12, RECEIPT_W-4, r.h*0.76, _receiptColor);
 }
@@ -2459,9 +2578,11 @@ function handleTap(tx, ty){
     const _RW = Math.round(R.auto.w * 0.25);
     const _RX = R.auto.x + R.auto.w - _RW;
     if(tx >= _RX && tx < _RX + _RW && ty >= R.auto.y && ty < R.auto.y + R.auto.h){
-      // Receipt / PASTE / READY button
+      // COPY / PASTE / READY / RECEIPT button
+      const _isCopy = (dead && _justPlayedStream && !_replaySource && !_replayMode) ||
+                      (_replayMode && !_replayPaused && _justPlayedStream && _replaySource===_justPlayedStream);
+      if(_isCopy){ showCopyOverlay(_justPlayedStream); return; }
       if(_replayMode && !_replayPaused){
-        // Active replay → PASTE: show native text field for iPhone long-press paste
         showPasteOverlay();
         return;
       }
@@ -2510,10 +2631,13 @@ function handleTap(tx, ty){
     return;
   }
   // Replay transport controls — active during playback and after completion
-  if(_replayMode || (_replaySource && dead)){
+  if(_replayMode || (_replaySource && dead) || (_justPlayedStream && dead && !_replaySource)){
     const idR=hitTest(tx,ty);
     switch(idR){
-      case 'replay_back':    _startReplayMode(_replaySource); return;
+      case 'replay_back':
+        if(_replaySource) _startReplayMode(_replaySource);
+        else if(_justPlayedStream) _startReplayMode(_justPlayedStream);
+        return;
       case 'replay_play':    if(_replayMode&&_replayPaused){ _toggleReplayPause(); return; } break;
       case 'replay_pause':   if(_replayMode&&!_replayPaused){ _toggleReplayPause(); return; } break;
       case 'replay_stop':    _stopReplayMode(); return;
@@ -2620,19 +2744,18 @@ function handleTap(tx, ty){
     handleCanvasTap(tx, ty);
     return;
   }
-  _ensureCommitted();
   switch(id){
     case 'pause':     if(dead) restart(false); else if(ui.gameStarted) togglePause(); break;
     case 'piece0': case 'piece1': case 'piece2': case 'piece3':
-      choose(parseInt(id[5])); break;
-    case 'tetris':    chooseTetris(); break;
-    case 'ctrl_rotl': rot(-1); break;
-    case 'ctrl_rotr': rot(1); break;
-    case 'ctrl_soft': sdrop(); break;
-    case 'ctrl_hard': hdrop(); break;
-    case 'ctrl_left': mhz(-1); break;
-    case 'ctrl_right':mhz(1);  break;
-    case 'rHi': { if(paused || !_gameCommitted) _openLibrary(); return; }
+      _ensureCommitted(); choose(parseInt(id[5])); break;
+    case 'tetris':    _ensureCommitted(); chooseTetris(); break;
+    case 'ctrl_rotl': _ensureCommitted(); rot(-1); break;
+    case 'ctrl_rotr': _ensureCommitted(); rot(1); break;
+    case 'ctrl_soft': _ensureCommitted(); sdrop(); break;
+    case 'ctrl_hard': _ensureCommitted(); hdrop(); break;
+    case 'ctrl_left': _ensureCommitted(); mhz(-1); break;
+    case 'ctrl_right': _ensureCommitted(); mhz(1);  break;
+    case 'rHi': { _openLibrary(); return; }
     case 'auto_toggle': if(ui.gameStarted&&!dead&&_gameCommitted) toggleAutoPlay(); break;
     case 'receipt': break; // handled by direct coordinate check at top of handleTap
     case 'receipt_close':  hideReceipt(); break;
@@ -6618,17 +6741,33 @@ function _addToLibrary(stream, playerName, score, lines, level, pieces){
     if(lib.some(e=>e.stream===stream)) return; // already present
     lib.push({id:Date.now()+'_'+Math.random().toString(36).slice(2),
               stream,playerName,score:score||0,lines:lines||0,
-              level:level||0,pieces:pieces||0,addedAt:Date.now()});
+              level:level||0,pieces:pieces||0,addedAt:Date.now(),
+              external:!_isKnownName(playerName)});
     if(lib.length>100) lib=lib.slice(lib.length-100); // keep newest 100
     localStorage.setItem('ct_library_v1',JSON.stringify(lib));
   }catch(e){}
 }
 function _removeFromLibrary(playerName){
-  // Remove all entries for this player name
   try{
     const lib=_getLibrary().filter(e=>e.playerName!==playerName);
     localStorage.setItem('ct_library_v1',JSON.stringify(lib));
   }catch(e){}
+}
+function _getKnownNames(){
+  try{ return JSON.parse(localStorage.getItem('ct_known_names')||'[]'); }catch(e){ return []; }
+}
+function _addKnownName(name){
+  if(!name) return;
+  try{
+    const names=_getKnownNames();
+    if(!names.includes(name)){
+      names.push(name);
+      localStorage.setItem('ct_known_names',JSON.stringify(names));
+    }
+  }catch(e){}
+}
+function _isKnownName(name){
+  return _getKnownNames().includes(name);
 }
 
 function _getStoredIdentity() {
@@ -6739,6 +6878,7 @@ function _showIdentityModal(onComplete) {
 }
 
 function startGame(){
+  if(!_replayMode) _justPlayedStream=null; // clear own-game stream when starting fresh
   ui.gameStarted = true;
   // Belt-and-suspenders: always hide the overlay when game starts
   try{
@@ -7385,6 +7525,7 @@ async function _selfCheck() {
     const npfStr = result.npfFlag ? ` | ⚠ ${result.npfFlag} (${result.npfHits} hits, ratio=${result.npfRatio})` : '';
     console.log(`[SELFCHECK] ✓ PASS — ${result.piecesReplayed} pieces, ${ms}ms | HPS: ${result.hps !== null ? result.hps.toFixed(2) : 'N/A'} [${result.hpsLabel}] | Decades: ${result.blockLedger.length}${npfStr}`);
     // Persist hi score with its verified stream so clicking HIGH replays it
+    _justPlayedStream = stream; // enable COPY + self-replay after own game
     if (!autoUsed && score >= hi && score > 0) {
       _saveHiScore(score, stream, _currentPlayer ? _currentPlayer.name : '');
     }
@@ -7878,9 +8019,24 @@ function _startReplayPlay(){
 
 // ── Library screen ────────────────────────────────────────────────────────────
 
+var _libraryAutoPaused=false;
 function _openLibrary(){
   _libraryScreen=true;
   _libraryScroll=0;
+  // Auto-pause any active game so the gravity timer stops
+  if(ui.gameStarted && !dead && !paused && !_replayMode){
+    _libraryAutoPaused=true;
+    togglePause();
+  } else {
+    _libraryAutoPaused=false;
+  }
+}
+function _closeLibrary(){
+  _libraryScreen=false;
+  if(_libraryAutoPaused){
+    _libraryAutoPaused=false;
+    togglePause(); // resume
+  }
 }
 
 function _getLibraryEntries(){
@@ -7906,7 +8062,9 @@ function drawLibraryScreen(t){
   const LGAP=Math.round(SW*0.02);
   const headerH=Math.round(SH*0.11);
   const tabH=Math.round(SH*0.09);
-  const footerH=Math.round(SH*0.09);
+  const safeBot=Math.round(Math.max(34, SH*0.06)); // clear iOS home-indicator area
+  const footerH=Math.round(SH*0.13);               // total footer zone (includes safeBot)
+  const footBtnAreaH=footerH-safeBot;              // usable height above safe area
   const itemH=Math.round(SH*0.105);
   const listTop=headerH+tabH;
   const listH=SH-listTop-footerH;
@@ -7982,11 +8140,24 @@ function drawLibraryScreen(t){
     CTX.textAlign='left'; CTX.textBaseline='top';
     CTX.fillText((en.score||0).toLocaleString(),scoreX,ey+itemH*0.08);
 
-    // Label / sub-info
-    const lbl=en.label||(en.playerName+' · '+(en.lines||0)+'L lv'+(en.level||1));
-    CTX.fillStyle='#556677';
-    CTX.font=F(FONT_SMALL,Math.round(itemH*0.20));
-    CTX.fillText(lbl.slice(0,30),scoreX,ey+itemH*0.56);
+    // LOCAL vs EXTERNAL badge
+    const _isLocal = en.isBuiltin ? false : (en.external===false || _isKnownName(en.playerName));
+    const _badge = en.isBuiltin ? 'BUILT-IN' : (_isLocal ? 'LOCAL' : 'IMPORTED');
+    const _badgeColor = en.isBuiltin ? '#556644' : (_isLocal ? '#226644' : '#664422');
+    const _badgeTextColor = en.isBuiltin ? '#99aa66' : (_isLocal ? '#00ff88' : '#ffaa44');
+    const badgeFontSz = Math.round(itemH*0.17);
+    CTX.font=F(FONT_SMALL,badgeFontSz);
+    const _badgeTW=CTX.measureText(_badge).width+6;
+    roundRect(scoreX,ey+itemH*0.54,_badgeTW,badgeFontSz+4,2);
+    CTX.fillStyle=_badgeColor; CTX.fill();
+    CTX.fillStyle=_badgeTextColor;
+    CTX.textAlign='left'; CTX.textBaseline='top';
+    CTX.fillText(_badge,scoreX+3,ey+itemH*0.55);
+    // Sub-label
+    const lbl=en.label||(en.lines?(en.lines+'L lv'+(en.level||1)):'');
+    CTX.fillStyle='#445566';
+    CTX.font=F(FONT_SMALL,Math.round(itemH*0.19));
+    CTX.fillText(lbl.slice(0,22),scoreX+_badgeTW+6,ey+itemH*0.56);
 
     _libraryHitZones.push({type:'entry',entry:en,x:LPAD,y:ey,w:entryW,h:itemH-4});
 
@@ -8021,26 +8192,41 @@ function drawLibraryScreen(t){
     _libraryHitZones.push({type:'scroll',dir:1,x:SW/2-40,y:SH-footerH-22,w:80,h:22});
   }
 
-  // Footer: CLOSE button
-  const clW=Math.round(SW*0.45), clH=footerH-8;
-  const clX=(SW-clW)/2, clY=SH-footerH+4;
-  roundRect(clX,clY,clW,clH,6);
+  // Footer: IMPORT (left) + CLOSE (right) — kept above iOS safe area
+  const footBtnH=footBtnAreaH-8;
+  const footY=SH-footerH+4;
+  const footBtnW=Math.round((SW-2*LPAD-LGAP)/2);
+  // IMPORT button
+  roundRect(LPAD,footY,footBtnW,footBtnH,6);
+  CTX.fillStyle='rgba(0,20,10,0.9)'; CTX.fill();
+  CTX.strokeStyle='#226644'; CTX.lineWidth=1.5; CTX.stroke();
+  CTX.shadowColor='#00ff88'; CTX.shadowBlur=6;
+  _dmWordLabel(CTX,'+ IMPORT',LPAD,footY,footBtnW,footBtnH,'#00ff88');
+  CTX.shadowBlur=0;
+  _libraryHitZones.push({type:'import',x:LPAD,y:footY,w:footBtnW,h:footBtnH});
+  // CLOSE button
+  const clX2=LPAD+footBtnW+LGAP;
+  roundRect(clX2,footY,footBtnW,footBtnH,6);
   CTX.fillStyle='rgba(0,15,30,0.9)'; CTX.fill();
   CTX.strokeStyle='#335566'; CTX.lineWidth=1.5; CTX.stroke();
   CTX.shadowColor='#00ccff'; CTX.shadowBlur=6;
-  _dmWordLabel(CTX,'CLOSE',clX,clY,clW,clH,'#00ccff');
+  _dmWordLabel(CTX,'CLOSE',clX2,footY,footBtnW,footBtnH,'#00ccff');
   CTX.shadowBlur=0;
-  _libraryHitZones.push({type:'close',x:clX,y:clY,w:clW,h:clH});
+  _libraryHitZones.push({type:'close',x:clX2,y:footY,w:footBtnW,h:footBtnH});
 }
 
 function _handleLibraryTap(hit){
-  if(hit.type==='close'){
-    _libraryScreen=false;
+  if(hit.type==='import'){
+    _pasteImportOnly=true;
+    showPasteOverlay();
+  } else if(hit.type==='close'){
+    _closeLibrary();
   } else if(hit.type==='tab'){
     _libraryTab=hit.tabId; _libraryScroll=0;
   } else if(hit.type==='scroll'){
     _libraryScroll=Math.max(0,_libraryScroll+hit.dir);
   } else if(hit.type==='entry'&&hit.entry&&hit.entry.stream){
+    _libraryAutoPaused=false; // entry launch cancels auto-resume
     _libraryScreen=false;
     _stopReplayMode();
     setTimeout(()=>{ _startReplayMode(hit.entry.stream); },0);
@@ -8155,6 +8341,119 @@ function showReceipt() {
 }
 
 // ── PASTE OVERLAY ────────────────────────────────────────────────────────────
+// ── Copy / Share overlay ──────────────────────────────────────────────────────
+
+let _rainRaf=null;
+
+function _startRain(){
+  const cv2=document.getElementById('copy-rain');
+  if(!cv2) return;
+  const ctx2=cv2.getContext('2d');
+  cv2.width=cv2.offsetWidth||320; cv2.height=cv2.offsetHeight||600;
+  const cols=Math.floor(cv2.width/14);
+  const drops=Array.from({length:cols},()=>Math.random()*cv2.height/14|0);
+  const chars='アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン01';
+  function frame(){
+    ctx2.fillStyle='rgba(0,2,6,0.18)';
+    ctx2.fillRect(0,0,cv2.width,cv2.height);
+    ctx2.font='13px monospace';
+    for(let i=0;i<drops.length;i++){
+      ctx2.fillStyle=i%7===0?'rgba(180,255,200,0.9)':'rgba(0,200,80,0.7)';
+      ctx2.fillText(chars[Math.random()*chars.length|0],i*14,drops[i]*14);
+      if(drops[i]*14>cv2.height&&Math.random()>0.97) drops[i]=0;
+      drops[i]++;
+    }
+    _rainRaf=requestAnimationFrame(frame);
+  }
+  _rainRaf=requestAnimationFrame(frame);
+}
+
+function _stopRain(){
+  if(_rainRaf){ cancelAnimationFrame(_rainRaf); _rainRaf=null; }
+  const cv2=document.getElementById('copy-rain');
+  if(cv2){ const c=cv2.getContext('2d'); c.clearRect(0,0,cv2.width,cv2.height); }
+}
+
+const _FLAVORS=[
+  '"The hesitation was real.\nThe hash doesn\'t lie."',
+  '"In a world of generated moves,\nthis one was chosen."',
+  '"Proof filed. Fragment immutable.\nHumanity: verified."',
+  '"They will mine these like bitcoin.\nYou made one."',
+  '"Every pause between pieces\nwas a thought. This is evidence."',
+  '"The simulation logged your cognition.\nThis is the receipt."',
+];
+
+function showCopyOverlay(stream){
+  if(!stream) return;
+  const ov=document.getElementById('copy-overlay');
+  if(!ov) return;
+  const parsed=_parseStreamForReplay(stream);
+  // Populate fields
+  const pName=parsed?parsed.playerName:(_currentPlayer?_currentPlayer.name:'???');
+  document.getElementById('copy-player-name').textContent=pName||'???';
+  document.getElementById('copy-score-val').textContent=parsed?(parsed.score||0).toLocaleString():'0';
+  document.getElementById('copy-lines-val').textContent=(parsed?parsed.lines:0)+' LINES';
+  document.getElementById('copy-level-val').textContent='LV '+(parsed?parsed.level:1);
+  // Stream preview: first 38 chars highlighted, rest fades
+  const preview=stream.slice(0,42)+(stream.length>42?' ···':'');
+  document.getElementById('copy-stream-preview').textContent=preview;
+  // Fragment ID from terminal hash (last 40 B92 chars)
+  const termHash=stream.split(';').pop()||'';
+  document.getElementById('copy-fragment-id').textContent=
+    'FRAGMENT · '+termHash.slice(0,10).toUpperCase()+' · '+new Date().toISOString().slice(0,10);
+  // Flavor text
+  document.getElementById('copy-flavor').innerHTML=
+    _FLAVORS[Math.floor(Math.random()*_FLAVORS.length)].replace(/\n/g,'<br>');
+  // Clear feedback
+  document.getElementById('copy-feedback').textContent='';
+  // Wire copy button
+  const btn=document.getElementById('copy-btn');
+  btn.onclick=()=>{
+    const fb=document.getElementById('copy-feedback');
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(stream).then(()=>{
+        btn.textContent='✓  COPIED';
+        btn.style.borderColor='#00ff88';
+        btn.style.color='#ffffff';
+        fb.textContent='STREAM IN CLIPBOARD · SHARE IT';
+        fb.style.color='#00ff88';
+      }).catch(()=>_copyFallback(stream,btn));
+    } else {
+      _copyFallback(stream,btn);
+    }
+  };
+  // Show overlay + start rain
+  ov.classList.add('show');
+  setTimeout(_startRain,40);
+}
+
+function _copyFallback(stream,btn){
+  // Textarea select method for browsers without clipboard API
+  const ta=document.createElement('textarea');
+  ta.value=stream;
+  ta.style.cssText='position:fixed;opacity:0;top:0;left:0;';
+  document.body.appendChild(ta);
+  ta.focus(); ta.select();
+  try{
+    document.execCommand('copy');
+    const fb=document.getElementById('copy-feedback');
+    btn.textContent='✓  COPIED';
+    if(fb){ fb.textContent='STREAM IN CLIPBOARD'; fb.style.color='#00ff88'; }
+  }catch(e){
+    const fb=document.getElementById('copy-feedback');
+    if(fb){ fb.textContent='SELECT + COPY MANUALLY ↑'; fb.style.color='#ffaa44'; }
+  }
+  document.body.removeChild(ta);
+}
+
+function hideCopyOverlay(){
+  const ov=document.getElementById('copy-overlay');
+  if(ov) ov.classList.remove('show');
+  _stopRain();
+  const btn=document.getElementById('copy-btn');
+  if(btn){ btn.textContent='⬡ \u00a0COPY TO CLIPBOARD'; btn.style.borderColor=''; btn.style.color=''; }
+}
+
 function showPasteOverlay(){
   const ov = document.getElementById('paste-overlay');
   const inp = document.getElementById('paste-input');
@@ -8170,6 +8469,7 @@ function showPasteOverlay(){
 function hidePasteOverlay(){
   const ov = document.getElementById('paste-overlay');
   if(ov) ov.classList.remove('show');
+  _pasteImportOnly=false;
 }
 function _tryLoadPasteStream(){
   const inp = document.getElementById('paste-input');
@@ -8177,11 +8477,21 @@ function _tryLoadPasteStream(){
   if(!inp) return;
   const s = inp.value.trim();
   if(_looksLikeStream(s)){
-    if(st){ st.textContent='✓ VALID — LOADING...'; st.style.color='#00ff88'; }
-    hidePasteOverlay();
-    // Full stop first: get to clean lobby state, then load replay on next tick
-    _stopReplayMode();
-    setTimeout(()=>{ _startReplayMode(s); }, 0);
+    if(_pasteImportOnly){
+      // Library import: add to library/hi table, stay in library view
+      const parsed = _parseStreamForReplay(s);
+      if(parsed && parsed.playerName){
+        _saveHiScore(parsed.score, s, parsed.playerName);
+        _addToLibrary(s, parsed.playerName, parsed.score, parsed.lines, parsed.level, parsed.pieces);
+      }
+      if(st){ st.textContent='✓ IMPORTED — '+((parsed&&parsed.playerName)||'?'); st.style.color='#00ff88'; }
+      setTimeout(()=>{ hidePasteOverlay(); _pasteImportOnly=false; }, 900);
+    } else {
+      if(st){ st.textContent='✓ VALID — LOADING...'; st.style.color='#00ff88'; }
+      hidePasteOverlay();
+      _stopReplayMode();
+      setTimeout(()=>{ _startReplayMode(s); }, 0);
+    }
   } else {
     if(st){ st.textContent = s.length < 10 ? 'Waiting for stream...' : '✗ NOT A VALID STREAM'; }
     if(st) st.style.color = s.length < 10 ? '#556677' : '#ff4455';
@@ -8235,6 +8545,11 @@ window.addEventListener('DOMContentLoaded', function(){
       }
       if(loadBtn) loadBtn.addEventListener('click', _tryLoadPasteStream);
       if(cancelBtn) cancelBtn.addEventListener('click', hidePasteOverlay);
+    })();
+    // Copy overlay close button
+    (function(){
+      const cb=document.getElementById('copy-close-btn');
+      if(cb) cb.addEventListener('click', hideCopyOverlay);
     })();
     dbg('init done, starting loop');
     requestAnimationFrame(loop);
