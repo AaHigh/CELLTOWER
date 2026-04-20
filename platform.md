@@ -1,11 +1,9 @@
 # CELLTOWER Platform Architecture
 ## Multi-Game Score Space, Peer-Deployed Tournament Contracts, and Replay Verification
-
 ### Design document by Aaron Hightower with AI assistance (Claude, Anthropic)
 ### the High Tower District · Fresno, California
 ### Version 0.2 · April 2026
 
----
 > ## Document Hierarchy — Conflict Resolution Rule
 >
 > | Document | Role | Authoritative for |
@@ -15,13 +13,9 @@
 > | `platform.md` | Target architecture — forward-looking | Future tournament features not yet built |
 >
 > **When `platform.md` and `stream.md` conflict: `stream.md` wins on anything currently in `index.html`. `platform.md` wins on features not yet built.**
-
----
-
 > Lines marked `[SUPERSEDED by stream.md v2.0 · April 2026]` were revised during
 > implementation. `stream.md` is the implemented reality.
 > Lines marked `[TARGET — not yet implemented]` are planned features absent from `index.html`.
->
 > **Implementation note (April 2026):** The stream format described in §1.4 reflects the
 > intended platform design. The current CELLTOWER client implements a simplified variant of
 > this format — see `stream.md §Known Conflicts` for the precise differences. This document
