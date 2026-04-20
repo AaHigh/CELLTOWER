@@ -8215,27 +8215,27 @@ function drawLibraryScreen(t){
     _libraryHitZones.push({type:'scroll',dir:1,x:SW/2-40,y:SH-footerH-22,w:80,h:22});
   }
 
-  // Footer: IMPORT (left) + CLOSE (right) — kept above iOS safe area
+  // Footer: IMPORT (left) + CLOSE (right) — hidden when import overlay is active
   const footBtnH=footBtnAreaH-8;
   const footY=SH-footerH+4;
   const footBtnW=Math.round((SW-2*LPAD-LGAP)/2);
-  // IMPORT button
-  roundRect(LPAD,footY,footBtnW,footBtnH,6);
-  CTX.fillStyle='rgba(0,20,10,0.9)'; CTX.fill();
-  CTX.strokeStyle='#226644'; CTX.lineWidth=1.5; CTX.stroke();
-  CTX.shadowColor='#00ff88'; CTX.shadowBlur=6;
-  _dmWordLabel(CTX,'+ IMPORT',LPAD,footY,footBtnW,footBtnH,'#00ff88');
-  CTX.shadowBlur=0;
-  _libraryHitZones.push({type:'import',x:LPAD,y:footY,w:footBtnW,h:footBtnH});
-  // CLOSE button
   const clX2=LPAD+footBtnW+LGAP;
-  roundRect(clX2,footY,footBtnW,footBtnH,6);
-  CTX.fillStyle='rgba(0,15,30,0.9)'; CTX.fill();
-  CTX.strokeStyle='#335566'; CTX.lineWidth=1.5; CTX.stroke();
-  CTX.shadowColor='#00ccff'; CTX.shadowBlur=6;
-  _dmWordLabel(CTX,'CLOSE',clX2,footY,footBtnW,footBtnH,'#00ccff');
-  CTX.shadowBlur=0;
-  _libraryHitZones.push({type:'close',x:clX2,y:footY,w:footBtnW,h:footBtnH});
+  if(!_libraryImportReady){
+    roundRect(LPAD,footY,footBtnW,footBtnH,6);
+    CTX.fillStyle='rgba(0,20,10,0.9)'; CTX.fill();
+    CTX.strokeStyle='#226644'; CTX.lineWidth=1.5; CTX.stroke();
+    CTX.shadowColor='#00ff88'; CTX.shadowBlur=6;
+    _dmWordLabel(CTX,'+ IMPORT',LPAD,footY,footBtnW,footBtnH,'#00ff88');
+    CTX.shadowBlur=0;
+    _libraryHitZones.push({type:'import',x:LPAD,y:footY,w:footBtnW,h:footBtnH});
+    roundRect(clX2,footY,footBtnW,footBtnH,6);
+    CTX.fillStyle='rgba(0,15,30,0.9)'; CTX.fill();
+    CTX.strokeStyle='#335566'; CTX.lineWidth=1.5; CTX.stroke();
+    CTX.shadowColor='#00ccff'; CTX.shadowBlur=6;
+    _dmWordLabel(CTX,'CLOSE',clX2,footY,footBtnW,footBtnH,'#00ccff');
+    CTX.shadowBlur=0;
+    _libraryHitZones.push({type:'close',x:clX2,y:footY,w:footBtnW,h:footBtnH});
+  }
   // Canvas overlay when waiting for paste
   if(_libraryImportReady){
     const now=Date.now();
@@ -8363,12 +8363,30 @@ function drawLibraryScreen(t){
     }
     roundRect(bx,by,bw,bh,10); CTX.stroke();
     CTX.shadowBlur=0; CTX.lineWidth=1;
-    // Cancel / status hint at bottom
-    if(_libraryImportValid){
-      _dmWordLabel(CTX,'DECODING\u2026',0,Math.round(SH*0.81),SW,Math.round(SH*0.06),`hsl(${hue0},80%,55%)`);
+    // Footer buttons: PASTE (left) + CANCEL (right) — below import-sink coverage area
+    CTX.fillStyle='rgba(0,0,12,0.97)';
+    CTX.fillRect(0,footY-4,SW,footBtnH+12);
+    if(!_libraryImportValid){
+      // PASTE button — calls clipboard API
+      roundRect(LPAD,footY,footBtnW,footBtnH,6);
+      CTX.fillStyle='rgba(0,30,15,0.95)'; CTX.fill();
+      CTX.strokeStyle='#009944'; CTX.lineWidth=2;
+      CTX.shadowColor='#00ff88'; CTX.shadowBlur=10;
+      CTX.stroke();
+      _dmWordLabel(CTX,'\u29eb PASTE',LPAD,footY,footBtnW,footBtnH,'#00ff88');
+      CTX.shadowBlur=0; CTX.lineWidth=1;
+      _libraryHitZones.push({type:'paste_btn',x:LPAD,y:footY,w:footBtnW,h:footBtnH});
     } else {
-      _dmWordLabel(CTX,'TAP ANYWHERE TO CANCEL',0,Math.round(SH*0.82),SW,Math.round(SH*0.06),'#2a4434');
+      // Decoding status
+      _dmWordLabel(CTX,'DECODING\u2026',LPAD,footY,footBtnW,footBtnH,`hsl(${hue0},80%,55%)`);
     }
+    // CANCEL button
+    roundRect(clX2,footY,footBtnW,footBtnH,6);
+    CTX.fillStyle='rgba(20,0,0,0.9)'; CTX.fill();
+    CTX.strokeStyle='#553333'; CTX.lineWidth=1.5; CTX.stroke();
+    _dmWordLabel(CTX,'CANCEL',clX2,footY,footBtnW,footBtnH,'#885555');
+    CTX.lineWidth=1;
+    _libraryHitZones.push({type:'cancel_import',x:clX2,y:footY,w:footBtnW,h:footBtnH});
   }
 }
 
@@ -8412,7 +8430,15 @@ function _cancelLibraryImport(){
 }
 function _handleLibraryTap(hit){
   if(_libraryImportReady){
-    // Any tap while waiting for paste cancels import mode (except import button re-press)
+    if(hit.type==='paste_btn'){
+      // Clipboard API — works on iOS Safari without needing HTML input focus
+      if(navigator.clipboard&&navigator.clipboard.readText){
+        navigator.clipboard.readText().then(t=>{ if(t) _doLibraryImport(t); }).catch(()=>{});
+      }
+      return;
+    }
+    if(hit.type==='cancel_import'){ _cancelLibraryImport(); return; }
+    // Any other tap (on the box area etc) also cancels
     if(hit.type!=='import') _cancelLibraryImport();
     return;
   }
