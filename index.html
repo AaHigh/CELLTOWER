@@ -79,7 +79,7 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
 <!-- invisible keyboard sink for library import — no visible HTML, canvas draws the UI -->
 <textarea id="import-sink"
   autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
-  tabindex="-1" aria-hidden="true"></textarea>
+  tabindex="-1"></textarea>
 
 <!-- ── COPY / SHARE OVERLAY ── -->
 <div id="copy-overlay">
@@ -182,15 +182,26 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
   display:block;
 }
 #import-sink{
-  position:fixed;left:0;top:0;width:1px;height:1px;
+  position:fixed;left:0;top:-9999px;width:1px;height:1px;
   opacity:0;font-size:16px;pointer-events:none;
   border:none;outline:none;background:transparent;color:transparent;
   resize:none;z-index:0;overflow:hidden;
 }
 #import-sink.active{
-  /* Covers the canvas import box (4%/18% → 96%/78% of viewport) */
+  /* Covers the canvas import box (4%/18% → 96%/78% of viewport).
+     opacity:1 required — iOS ignores opacity:0 elements for cursor/paste menu.
+     color:transparent hides text (canvas renders it). caret-color gives the
+     real iOS green cursor so long-press → Paste works natively. */
   left:4%;top:18%;width:92%;height:60%;
   pointer-events:auto;z-index:999;
+  opacity:1;
+  background:transparent;
+  color:transparent;
+  caret-color:#00ff88;
+  font-size:16px;
+  font-family:monospace;
+  padding:18px 16px;
+  border:none;outline:none;resize:none;
   cursor:text;
 }
 #paste-overlay{
@@ -8333,16 +8344,12 @@ function drawLibraryScreen(t){
         CTX.fillText(txt[i],bx+10+ci*cw,by+18+fsz+li*lh);
       }
     } else {
-      // Empty: blinking cursor + ghost hint
-      if(Math.floor(now/530)%2===0){
-        CTX.fillStyle='#00cc66';
-        CTX.fillRect(bx+12,by+20,2,Math.round(fsz*1.1));
-      }
+      // Empty: ghost hint (real cursor rendered by the transparent textarea on top)
       const hsz=Math.max(10,Math.round(bh*0.068));
       CTX.font=`${hsz}px monospace`;
-      CTX.fillStyle='rgba(0,80,40,0.55)';
+      CTX.fillStyle='rgba(0,80,40,0.45)';
       CTX.textAlign='center';
-      CTX.fillText('right-click \u2192 paste',SW/2,by+bh*0.5+hsz*0.35);
+      CTX.fillText('long-press \u2192 paste',SW/2,by+bh*0.5+hsz*0.35);
       CTX.textAlign='left';
       CTX.font=`${fsz}px monospace`;
     }
