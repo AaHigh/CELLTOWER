@@ -7954,7 +7954,9 @@ function _tryLoadPasteStream(){
   if(_looksLikeStream(s)){
     if(st){ st.textContent='✓ VALID — LOADING...'; st.style.color='#00ff88'; }
     hidePasteOverlay();
-    _startReplayMode(s);
+    // Full stop first: get to clean lobby state, then load replay on next tick
+    _stopReplayMode();
+    setTimeout(()=>{ _startReplayMode(s); }, 0);
   } else {
     if(st){ st.textContent = s.length < 10 ? 'Waiting for stream...' : '✗ NOT A VALID STREAM'; }
     if(st) st.style.color = s.length < 10 ? '#556677' : '#ff4455';
