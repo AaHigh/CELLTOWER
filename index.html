@@ -2107,13 +2107,18 @@ function drawAutoRow(t){
   }
   CTX.shadowBlur = 0;
 
-  // RECEIPT button — "READY" when game is uncommitted (hovering, no pieces placed)
+  // RECEIPT button — context-sensitive label
   const RX = r.x + r.w - RECEIPT_W;
   const _uncommitted = ui.gameStarted && !dead && !_gameCommitted && !_replayMode;
   const receiptAvail = paused || dead || !ui.gameStarted || _replayMode;
-  const _receiptLabel = _uncommitted ? 'READY' : 'RECEIPT';
-  const _receiptBorder = _uncommitted ? '#003322' : (receiptAvail ? '#aa6600' : '#442200');
-  const _receiptColor  = _uncommitted ? '#00aa66' : (receiptAvail ? '#ffcc44' : '#664422');
+  // During active (non-paused) replay: PASTE — loads a stream from clipboard
+  // During paused replay: RECEIPT — diagnostic playback receipt
+  // Uncommitted pre-game: READY
+  // Otherwise: RECEIPT (standard)
+  const _replayPaste = _replayMode && !_replayPaused;
+  const _receiptLabel  = _replayPaste  ? 'PASTE'   : _uncommitted ? 'READY'   : 'RECEIPT';
+  const _receiptBorder = _replayPaste  ? '#003344' : _uncommitted ? '#003322' : (receiptAvail ? '#aa6600' : '#442200');
+  const _receiptColor  = _replayPaste  ? '#00ccff' : _uncommitted ? '#00aa66' : (receiptAvail ? '#ffcc44' : '#664422');
   panel(RX, r.y, RECEIPT_W, r.h, _receiptBorder);
   _dmWordLabel(CTX, _receiptLabel, RX+2, r.y + r.h*0.12, RECEIPT_W-4, r.h*0.76, _receiptColor);
 }
@@ -2359,6 +2364,32 @@ function hitTest(tx, ty){
 }
 
 function handleTap(tx, ty){
+  // ── DIRECT COORDINATE BUTTONS ─────────────────────────────────────────────────
+  // These buttons are checked by raw screen math rather than hitZones so they work
+  // consistently in every mode without depending on hit zone registration state.
+  if(R && R.auto){
+    const _RW = Math.round(R.auto.w * 0.25);
+    const _RX = R.auto.x + R.auto.w - _RW;
+    if(tx >= _RX && tx < _RX + _RW && ty >= R.auto.y && ty < R.auto.y + R.auto.h){
+      // Receipt / PASTE / READY button
+      if(_replayMode && !_replayPaused){
+        // Active replay → PASTE: read clipboard and start new replay if valid
+        navigator.clipboard.readText().then(text=>{
+          const s=(text||'').trim();
+          if(_looksLikeStream(s)){ _startReplayMode(s); }
+          else { ui.flash={text:'NO VALID STREAM IN CLIPBOARD',until:performance.now()+2200}; }
+        }).catch(()=>{ ui.flash={text:'CLIPBOARD ACCESS DENIED',until:performance.now()+2200}; });
+        return;
+      }
+      if(_replayMode && _replayPaused){ showReceipt(); return; }
+      if(_replaySource && dead){ return; }          // PLAYBACK ENDED — button inert
+      if(!_gameCommitted){ return; }                // pre-game READY — inert
+      if(paused || dead || !ui.gameStarted){ showReceipt(); return; }
+      // Active human game — not available (button is dimmed), do nothing
+      return;
+    }
+  }
+
   // Identity screen owns all input while showing
   if(_identityScreen){
     const hit = _idHitZones.find(z => tx>=z.x && tx<=z.x+z.w && ty>=z.y && ty<=z.y+z.h);
@@ -2463,8 +2494,7 @@ function handleTap(tx, ty){
        ty>=ui._playAutoY && ty<=ui._playAutoY+ui._playAutoH){
       restart(true); return;
     }
-    // Also allow the corner RECEIPT hit zone while dead (disabled during replay)
-    if(id === 'receipt' && !_replaySource){ showReceipt(); return; }
+    // receipt while dead handled by direct coordinate check at top of handleTap
     // Tap HIGH score display → replay hi or first sample
     if(id === 'rHi'){
       const _rs = _hiStream || (_SAMPLE_STREAMS.length ? _SAMPLE_STREAMS[0].stream : null);
@@ -2494,7 +2524,7 @@ function handleTap(tx, ty){
     switch(id){
       case 'pause':        if(dead) restart(false); else togglePause(); break;
       case 'auto_toggle':  toggleAutoPlay(); break; // allow turning OFF
-      case 'receipt':      if(paused||dead||_replayMode) showReceipt(); break;
+      case 'receipt': break; // handled by direct coordinate check at top of handleTap
       case 'receipt_close':hideReceipt(); break;
       case 'speed_slider': break; // handled by slider path
       // Everything else (piece0-3, tetris, ctrl_*, canvas) — silently ignored
@@ -2526,7 +2556,7 @@ function handleTap(tx, ty){
       break;
     }
     case 'auto_toggle': if(ui.gameStarted&&!dead&&_gameCommitted) toggleAutoPlay(); break;
-    case 'receipt':        if(paused||dead||!ui.gameStarted) showReceipt(); break;
+    case 'receipt': break; // handled by direct coordinate check at top of handleTap
     case 'receipt_close':  hideReceipt(); break;
     case 'speed_slider': break;
     default:
