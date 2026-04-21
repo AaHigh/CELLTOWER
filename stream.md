@@ -1,5 +1,18 @@
 # CELLTOWER Replay Stream Format
-## Specification v2.0
+
+## Specification v3.0 (50% placement compression)
+
+**Key changes (apply these):**
+- Piece type removed from every placement (deterministic from shared seed + identical index.html hash).
+- Rotations reduced: O=1, S/Z/I=2 each, T/J/L=4 → total 21 slots instead of 28.
+- posIdx multiplier now ~165 (1 type × ~3.0 avg rot × 10 x × 29 y adjusted).
+- Timing: 8 bits (256-value lookup table, high resolution on human 150-800ms hotspots, coarser elsewhere).
+- Each placement: **exactly 2 B92 chars** (`[1 char position] [1 char timing]`).
+- Header and terminal hash unchanged.
+- Placement block now ~50% shorter (2 chars × N pieces).
+
+### Updated Position encoding (1 B92 char)
+
 
 *Updated April 2026 to reflect implemented format. Previous v1.4 described a planned format
 that was revised during implementation. Conflicts with platform.md are noted explicitly in §Conflicts.*
@@ -452,6 +465,48 @@ verify current streams. Verifiers must use the new formula.
 The visual channels described in v1.4 (verification stripe, timing strip, board luminance
 steganography) remain design goals. They are not yet fully implemented in the current single-file
 client but are structurally compatible with the v2.0 stream format.
+
+# CELLTOWER Replay Stream Format
+
+## Specification v3.0 (50% placement compression)
+
+**Key changes (apply these):**
+- Piece type removed from every placement (deterministic from shared seed + identical index.html hash).
+- Rotations reduced: O=1, S/Z/I=2 each, T/J/L=4 → total 21 slots instead of 28.
+- posIdx multiplier now ~165 (1 type × ~3.0 avg rot × 10 x × 29 y adjusted).
+- Timing: 8 bits (256-value lookup table, high resolution on human 150-800ms hotspots, coarser elsewhere).
+- Each placement: **exactly 2 B92 chars** (`[1 char position] [1 char timing]`).
+- Header and terminal hash unchanged.
+- Placement block now ~50% shorter (2 chars × N pieces).
+
+### Updated Position encoding (1 B92 char)
+
+posIdx = rotation * (10 * 29) + x * 29 + (drop_y + 4)
+- type eliminated (known from RNG seed simulation).
+- rotation 0..max_for_type (0-3, but only valid values used).
+- Max posIdx now well under 92 → fits 1 char.
+
+### Updated Timing encoding (1 B92 char)
+
+- 8-bit value (0-255) mapped via fixed lookup table (shared in code).
+- Table focuses resolution on human reaction-time hotspots; log-like scaling outside.
+- Sufficient for bot detection.
+
+### New Placement block
+All placements concatenated: exactly **2 characters each**.  
+300-piece game → ~600 chars (was 1,200).  
+600-piece ceiling → ~1,200 chars (was 2,400).
+
+**To implement:**
+1. Update posIdx calculation in encoder/decoder to drop type multiplier and use reduced rotation count.
+2. Replace 2-char timing with 1-char lookup table value.
+3. Adjust stream parser to read 2 chars per placement.
+4. Keep header, delimiters, and terminal hash identical.
+5. Both client and validator must share exact same seed→piece sequence and timing LUT.
+
+Stream example structure remains: `HEADER;PLACEMENTS;TERMINAL_HASH`
+Copy-paste ready. Update stream.md and matching JS encode/decode logic.
+
 
 ---
 
