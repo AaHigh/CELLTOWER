@@ -448,6 +448,53 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
 </style>
 
 <script>
+// ── HTTP SHIM: crypto.subtle unavailable over plain HTTP ──────────────────────
+// Replaces SHA-256 with a fast non-cryptographic stub so the game runs locally
+// over http://. Hash chain verification is DISABLED in this mode — scores are
+// not verifiable. Use https://aahigh.github.io/CELLTOWER for real verification.
+(function(){
+  if(typeof crypto !== 'undefined' && crypto.subtle) return; // HTTPS — real crypto, do nothing
+  console.warn('[CELLTOWER] HTTP mode: crypto.subtle unavailable — using stub hash (NOT cryptographic)');
+  // FNV-1a 32-bit expanded to 32 bytes — fast, deterministic, good enough for UI testing
+  function _stubHash(data){
+    const bytes = (data instanceof Uint8Array) ? data : new Uint8Array(data);
+    let h0=0x811c9dc5, h1=0x9e3779b9, h2=0x6c62272e, h3=0xc2b2ae35;
+    for(let i=0;i<bytes.length;i++){
+      const b=bytes[i];
+      h0=(h0^b)*0x01000193>>>0;
+      h1=(h1^(b<<1))*0x01000193>>>0;
+      h2=(h2^(b+i))*0x01000193>>>0;
+      h3=(h3^(b^i))*0x01000193>>>0;
+    }
+    const out=new Uint8Array(32);
+    for(let i=0;i<4;i++){
+      out[i]   =(h0>>(i*8))&0xff;
+      out[i+4] =(h1>>(i*8))&0xff;
+      out[i+8] =(h2>>(i*8))&0xff;
+      out[i+12]=(h3>>(i*8))&0xff;
+      // mirror into upper 16 bytes with a twist so they differ
+      out[i+16]=(h1>>(i*8)^h0)&0xff;
+      out[i+20]=(h2>>(i*8)^h1)&0xff;
+      out[i+24]=(h3>>(i*8)^h2)&0xff;
+      out[i+28]=(h0>>(i*8)^h3)&0xff;
+    }
+    return out.buffer;
+  }
+  if(typeof crypto === 'undefined') window.crypto = {};
+  crypto.subtle = {
+    digest: function(_algo, data){
+      return Promise.resolve(_stubHash(data));
+    }
+  };
+  if(!crypto.getRandomValues){
+    crypto.getRandomValues = function(arr){
+      for(let i=0;i<arr.length;i++) arr[i]=Math.random()*256|0;
+      return arr;
+    };
+  }
+})();
+// ── END HTTP SHIM ─────────────────────────────────────────────────────────────
+
 // Error reporter — HTML div visible before canvas works
 window.onerror = function(msg, src, line, col, err) {
   var d = document.getElementById('errdiv');
@@ -1301,10 +1348,249 @@ function drawStartScreen(t){
   ui._startBtnX=btnX; ui._startBtnY=btnY;
   ui._startBtnW=btnW; ui._startBtnH=btnH;
 
-  // ── hint lines ───────────────────────────────────────────────────────
-  _dmWordLabel(CTX,'AUTO AVAILABLE AFTER START',bx+bw*0.04,by+bh*0.63,bw*0.92,bh*0.038,'#442266');
-  _dmWordLabel(CTX,'AUTO SCORES: NO HIGH SCORE', bx+bw*0.04,by+bh*0.68,bw*0.92,bh*0.038,'#442266');
-  _dmWordLabel(CTX,'PASTE A REPLAY TO WATCH',   bx+bw*0.04,by+bh*0.74,bw*0.92,bh*0.038,'#113a4a');
+  // ── ANIMATED ONBOARDING TUTORIAL ─────────────────────────────────────────────
+  // Only shown on start screen. Three elements:
+  //   1. Animated eyeball character with speech bubble → "tap 1 2 3 or 4!"
+  //   2. Four arrows from bubble down to piece row slot centers
+  //   3. Eyeball glances right at HIGH score box with pointer
+
+  // ── Layout: piece row slot centers (computed same way as drawPieceRow) ──────
+  const _GAP  = R.GAP;
+  const _PW   = Math.round((R.pieces.w - 3*_GAP) / 4);
+  const _slotCenters = [];
+  for(let _si=0; _si<4; _si++){
+    _slotCenters.push({
+      x: R.pieces.x + _si*(_PW+_GAP) + _PW/2,
+      y: R.pieces.y + R.pieces.h/2
+    });
+  }
+
+  // ── Eyeball position — floats in lower-center of playfield ──────────────────
+  const _eyeR   = Math.round(bw * 0.11);  // eyeball radius
+  const _eyeX   = bx + bw * 0.5;
+  const _eyeY   = by + bh * 0.60 + Math.sin(t * 1.3) * bh * 0.012; // gentle bob
+  const _bubble = { x: _eyeX, y: _eyeY - _eyeR - bh*0.04 }; // bubble sits above eye
+
+  // ── Squish/bounce scale — alive feeling ──────────────────────────────────────
+  const _squishX = 1.0 + 0.06 * Math.sin(t * 2.1);
+  const _squishY = 1.0 - 0.06 * Math.sin(t * 2.1);
+
+  CTX.save();
+  CTX.translate(_eyeX, _eyeY);
+  CTX.scale(_squishX, _squishY);
+
+  // ── White eyeball body ───────────────────────────────────────────────────────
+  CTX.beginPath();
+  CTX.arc(0, 0, _eyeR, 0, Math.PI*2);
+  const _eyeGrd = CTX.createRadialGradient(-_eyeR*0.3, -_eyeR*0.3, _eyeR*0.1, 0, 0, _eyeR);
+  _eyeGrd.addColorStop(0, '#ffffff');
+  _eyeGrd.addColorStop(1, '#ccddee');
+  CTX.fillStyle = _eyeGrd;
+  CTX.shadowColor = 'rgba(0,200,255,0.6)';
+  CTX.shadowBlur = _eyeR * 0.6;
+  CTX.fill();
+  CTX.shadowBlur = 0;
+
+  // ── Eyelid blink (blinks every ~4s) ─────────────────────────────────────────
+  const _blinkPhase = (t % 4.0) / 4.0;
+  const _blinkAmt   = _blinkPhase > 0.92 ? Math.sin((_blinkPhase-0.92)/0.08 * Math.PI) : 0;
+
+  // ── Iris + pupil — glances right toward HIGH score every ~5s ────────────────
+  const _glancePhase = (t % 5.0) / 5.0;
+  const _glanceAmt   = _glancePhase > 0.75 ? Math.sin((_glancePhase-0.75)/0.10 * Math.PI) : 0;
+  const _pupilOffX   = _glanceAmt * _eyeR * 0.35;
+  const _pupilOffY   = Math.sin(t * 0.7) * _eyeR * 0.08;
+
+  const _irisR = _eyeR * 0.52;
+  CTX.beginPath();
+  CTX.arc(_pupilOffX, _pupilOffY, _irisR, 0, Math.PI*2);
+  const _irisGrd = CTX.createRadialGradient(_pupilOffX-_irisR*0.2, _pupilOffY-_irisR*0.2, 1, _pupilOffX, _pupilOffY, _irisR);
+  const _irisHue = (t * 40) % 360;
+  _irisGrd.addColorStop(0, `hsl(${_irisHue},100%,55%)`);
+  _irisGrd.addColorStop(1, `hsl(${_irisHue+40},100%,25%)`);
+  CTX.fillStyle = _irisGrd;
+  CTX.fill();
+
+  // Pupil
+  CTX.beginPath();
+  CTX.arc(_pupilOffX, _pupilOffY, _irisR * 0.45, 0, Math.PI*2);
+  CTX.fillStyle = '#000';
+  CTX.fill();
+
+  // Catchlight
+  CTX.beginPath();
+  CTX.arc(_pupilOffX - _irisR*0.18, _pupilOffY - _irisR*0.18, _irisR*0.12, 0, Math.PI*2);
+  CTX.fillStyle = 'rgba(255,255,255,0.9)';
+  CTX.fill();
+
+  // ── Eyelid (drawn over iris when blinking) ───────────────────────────────────
+  if(_blinkAmt > 0){
+    CTX.beginPath();
+    CTX.ellipse(0, -_eyeR*(1-_blinkAmt), _eyeR, _eyeR*_blinkAmt, 0, Math.PI, Math.PI*2);
+    CTX.fillStyle = '#88aacc';
+    CTX.fill();
+  }
+
+  // ── Outline ──────────────────────────────────────────────────────────────────
+  CTX.beginPath();
+  CTX.arc(0, 0, _eyeR, 0, Math.PI*2);
+  CTX.strokeStyle = 'rgba(0,180,255,0.5)';
+  CTX.lineWidth = 2;
+  CTX.stroke();
+
+  CTX.restore(); // end eyeball transform
+
+  // ── Speech bubble ────────────────────────────────────────────────────────────
+  const _bblW = bw * 0.78;
+  const _bblH = bh * 0.11;
+  const _bblX = _bubble.x - _bblW/2;
+  const _bblY = _bubble.y - _bblH;
+  const _bblR = _bblH * 0.4;
+  const _tailX = _eyeX;
+  const _tailY = _eyeY - _eyeR * _squishY;
+
+  // Bubble body
+  CTX.beginPath();
+  CTX.moveTo(_bblX + _bblR, _bblY);
+  CTX.lineTo(_bblX + _bblW - _bblR, _bblY);
+  CTX.quadraticCurveTo(_bblX+_bblW, _bblY, _bblX+_bblW, _bblY+_bblR);
+  CTX.lineTo(_bblX+_bblW, _bblY+_bblH-_bblR);
+  CTX.quadraticCurveTo(_bblX+_bblW, _bblY+_bblH, _bblX+_bblW-_bblR, _bblY+_bblH);
+  // Tail toward eyeball
+  CTX.lineTo(_tailX + bw*0.04, _bblY+_bblH);
+  CTX.lineTo(_tailX, _tailY);
+  CTX.lineTo(_tailX - bw*0.04, _bblY+_bblH);
+  CTX.lineTo(_bblX + _bblR, _bblY+_bblH);
+  CTX.quadraticCurveTo(_bblX, _bblY+_bblH, _bblX, _bblY+_bblH-_bblR);
+  CTX.lineTo(_bblX, _bblY+_bblR);
+  CTX.quadraticCurveTo(_bblX, _bblY, _bblX+_bblR, _bblY);
+  CTX.closePath();
+  CTX.fillStyle = 'rgba(0,8,28,0.92)';
+  CTX.fill();
+  const _bubblePulse = 0.6 + 0.4*Math.sin(t*2.5);
+  CTX.strokeStyle = `rgba(0,200,255,${_bubblePulse})`;
+  CTX.lineWidth = 1.8;
+  CTX.stroke();
+
+  // Bubble text — two lines
+  const _line1 = 'TAP  \u2460 \u2461 \u2462 \u2463  TO PLACE!';
+  const _line2 = 'ARROWS SHOW WHERE EACH LANDS';
+  const _txtH1 = _bblH * 0.36;
+  const _txtH2 = _bblH * 0.28;
+  const _txtY1 = _bblY + _bblH*0.18;
+  const _txtY2 = _bblY + _bblH*0.56;
+  const _hue1 = (t*50+180)%360;
+  CTX.shadowColor = `hsl(${_hue1},100%,60%)`; CTX.shadowBlur=6;
+  _dmWordLabel(CTX, _line1, _bblX+_bblW*0.04, _txtY1, _bblW*0.92, _txtH1, `hsl(${_hue1},100%,72%)`);
+  CTX.shadowBlur=0;
+  _dmWordLabel(CTX, _line2, _bblX+_bblW*0.04, _txtY2, _bblW*0.92, _txtH2, 'rgba(0,180,220,0.75)');
+
+  // ── Four arrows from bubble bottom to piece slot centers ─────────────────────
+  // Arrow origin: evenly spaced along bubble bottom edge
+  const _arrowBaseY = _bblY + _bblH + 4;
+  for(let _ai=0; _ai<4; _ai++){
+    const _sc = _slotCenters[_ai];
+    // Spread origins across bubble width
+    const _originX = _bblX + (_bblW * (0.15 + _ai * 0.235));
+    const _targetX = _sc.x;
+    const _targetY = _sc.y - R.pieces.h * 0.35; // aim at top of slot
+
+    // Animated dash offset — marching ants feel
+    const _dashOff = (t * 40 + _ai * 15) % 16;
+    const _arrowHue = (_ai * 90 + t * 30) % 360;
+    const _arrowAlpha = 0.5 + 0.5*Math.sin(t*2.5 + _ai*1.1);
+
+    CTX.save();
+    CTX.setLineDash([6,6]);
+    CTX.lineDashOffset = -_dashOff;
+    CTX.strokeStyle = `hsla(${_arrowHue},100%,65%,${_arrowAlpha})`;
+    CTX.lineWidth = 2;
+    CTX.shadowColor = `hsl(${_arrowHue},100%,60%)`;
+    CTX.shadowBlur = 6;
+    CTX.beginPath();
+    // Curved arc: control point midway, bowing outward slightly
+    const _cpX = (_originX + _targetX)/2 + (_ai < 2 ? -bw*0.04 : bw*0.04);
+    const _cpY = (_arrowBaseY + _targetY)/2;
+    CTX.moveTo(_originX, _arrowBaseY);
+    CTX.quadraticCurveTo(_cpX, _cpY, _targetX, _targetY);
+    CTX.stroke();
+    CTX.setLineDash([]);
+    CTX.shadowBlur=0;
+
+    // Arrowhead at target
+    const _dx = _targetX - _cpX;
+    const _dy = _targetY - _cpY;
+    const _ang = Math.atan2(_dy, _dx);
+    const _ahLen = 10;
+    CTX.beginPath();
+    CTX.moveTo(_targetX, _targetY);
+    CTX.lineTo(_targetX - _ahLen*Math.cos(_ang-0.4), _targetY - _ahLen*Math.sin(_ang-0.4));
+    CTX.lineTo(_targetX - _ahLen*Math.cos(_ang+0.4), _targetY - _ahLen*Math.sin(_ang+0.4));
+    CTX.closePath();
+    CTX.fillStyle = `hsla(${_arrowHue},100%,65%,${_arrowAlpha})`;
+    CTX.shadowColor = `hsl(${_arrowHue},100%,60%)`;
+    CTX.shadowBlur = 6;
+    CTX.fill();
+    CTX.shadowBlur=0;
+
+    // Number badge at origin
+    const _badgeR = bh*0.022;
+    CTX.beginPath();
+    CTX.arc(_originX, _arrowBaseY - _badgeR, _badgeR, 0, Math.PI*2);
+    CTX.fillStyle = `hsl(${_arrowHue},100%,20%)`;
+    CTX.fill();
+    CTX.strokeStyle = `hsl(${_arrowHue},100%,65%)`;
+    CTX.lineWidth = 1.5;
+    CTX.stroke();
+    CTX.font = `900 ${Math.round(_badgeR*1.3)}px "Arial Black",sans-serif`;
+    CTX.textAlign='center'; CTX.textBaseline='middle';
+    CTX.fillStyle=`hsl(${_arrowHue},100%,80%)`;
+    CTX.fillText(String(_ai+1), _originX, _arrowBaseY - _badgeR);
+
+    CTX.restore();
+  }
+
+  // ── HIGH score eyeball glance hint ───────────────────────────────────────────
+  // When eyeball is glancing right (_glanceAmt > 0), show a little pointer
+  // toward the rHi box with "WATCH REPLAYS" text
+  if(_glanceAmt > 0.1 && R.rHi){
+    const _hiCX = R.rHi.x + R.rHi.w/2;
+    const _hiCY = R.rHi.y + R.rHi.h/2;
+    const _hintAlpha = _glanceAmt;
+
+    // Dotted line from eyeball to rHi box
+    CTX.save();
+    CTX.globalAlpha = _hintAlpha * 0.8;
+    CTX.setLineDash([4,5]);
+    CTX.strokeStyle = '#ffcc44';
+    CTX.lineWidth = 1.5;
+    CTX.shadowColor='#ffcc44'; CTX.shadowBlur=8;
+    CTX.beginPath();
+    CTX.moveTo(_eyeX + _eyeR, _eyeY);
+    CTX.quadraticCurveTo(_hiCX, _eyeY, _hiCX, _hiCY + R.rHi.h*0.3);
+    CTX.stroke();
+    CTX.setLineDash([]);
+    CTX.shadowBlur=0;
+
+    // Arrowhead at rHi
+    CTX.strokeStyle='#ffcc44'; CTX.fillStyle='#ffcc44';
+    CTX.lineWidth=1.5;
+    CTX.beginPath();
+    CTX.moveTo(_hiCX, _hiCY + R.rHi.h*0.3);
+    CTX.lineTo(_hiCX - 7, _hiCY + R.rHi.h*0.3 - 10);
+    CTX.lineTo(_hiCX + 7, _hiCY + R.rHi.h*0.3 - 10);
+    CTX.closePath();
+    CTX.fill();
+
+    // Label
+    const _lblY = _hiCY + R.rHi.h*0.3 + 10;
+    CTX.shadowColor='#ffcc44'; CTX.shadowBlur=10;
+    _dmWordLabel(CTX, 'WATCH REPLAYS!', _hiCX - R.rHi.w*1.2, _lblY, R.rHi.w*2.4, R.rHi.h*0.35, '#ffcc44');
+    CTX.shadowBlur=0;
+    CTX.globalAlpha=1;
+    CTX.restore();
+  }
+  // ── END ONBOARDING ────────────────────────────────────────────────────────────
 
   // ── small oscilloscope-style wave strip at bottom ─────────────────
   const waveY = by+bh*0.76;
@@ -2613,6 +2899,19 @@ function hitTest(tx, ty){
 }
 
 function handleTap(tx, ty){
+  // ── HTML OVERLAY GUARD ────────────────────────────────────────────────────────
+  // If any full-screen HTML overlay is visible, the canvas must not process taps.
+  // These overlays sit above the canvas in z-order but the canvas touchstart fires
+  // regardless — we gate it here so the HTML overlay owns all interaction.
+  const _receiptOv = document.getElementById('receipt-overlay');
+  const _pasteOv   = document.getElementById('paste-overlay');
+  const _copyOv    = document.getElementById('copy-overlay');
+  if((_receiptOv && _receiptOv.classList.contains('show')) ||
+     (_pasteOv   && _pasteOv.classList.contains('show'))   ||
+     (_copyOv    && _copyOv.classList.contains('show'))){
+    return;
+  }
+
   // ── DIRECT COORDINATE BUTTONS ─────────────────────────────────────────────────
   // These buttons are checked by raw screen math rather than hitZones so they work
   // consistently in every mode without depending on hit zone registration state.
