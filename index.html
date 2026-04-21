@@ -1019,6 +1019,10 @@ function draw(ts){
     if(paused) drawPauseOverlay();
     if(_killScreenActive) drawKillScreen(performance.now());
     else if(dead) drawGameOverOverlay();
+    // Pre-game tutorial: piece is suspended, nothing committed yet
+    if(ui.gameStarted && !_gameCommitted && !dead && !paused && !_replayMode && !AUTO_PLAY){
+      drawPreGameTutorial(t);
+    }
   }
 
   if(_receiptOpen) drawReceiptOverlay(t);
@@ -1223,6 +1227,212 @@ function drawTitle(t){
 }
 
 
+// ── PRE-GAME TUTORIAL ────────────────────────────────────────────────────────
+// Shown after name entry, while the first piece hovers and nothing is committed.
+// Eyeball character lives in the gap between the playfield and piece row,
+// pointing arrows at each numbered slot and glancing at the HIGH score box.
+function drawPreGameTutorial(t){
+  if(!R.pieces || !R.rHi) return;
+
+  // Piece slot centers
+  const _G  = R.GAP;
+  const _PW = Math.round((R.pieces.w - 3*_G) / 4);
+  const _slots = [];
+  for(let i=0;i<4;i++){
+    _slots.push({
+      x: R.pieces.x + i*(_PW+_G) + _PW/2,
+      y: R.pieces.y + R.pieces.h * 0.25
+    });
+  }
+
+  // Eyeball lives in the gap between playfield bottom and piece row top
+  const _gapTop = R.gy + R.gh;
+  const _gapBot = R.pieces.y;
+  const _gapH   = _gapBot - _gapTop;
+  if(_gapH < 6) return; // no room
+  const _eR  = Math.min(Math.round(_gapH * 0.42), Math.round(SW * 0.052));
+  const _eX  = SW * 0.5;
+  const _eY  = _gapTop + _gapH * 0.5 + Math.sin(t * 1.4) * _eR * 0.18;
+
+  // Squish/bounce
+  const _sqX = 1.0 + 0.07*Math.sin(t*2.0);
+  const _sqY = 1.0 - 0.07*Math.sin(t*2.0);
+
+  // Glance toward HIGH box every ~6s
+  const _glP = (t % 6.0) / 6.0;
+  const _glA = _glP > 0.80 ? Math.sin((_glP-0.80)/0.12*Math.PI) : 0;
+  const _pOX = _glA * _eR * 0.38;
+  const _pOY = Math.sin(t*0.8)*_eR*0.07;
+
+  // Blink every ~4s
+  const _blP = (t % 4.0) / 4.0;
+  const _blA = _blP > 0.93 ? Math.sin((_blP-0.93)/0.07*Math.PI) : 0;
+
+  // ── Draw eyeball ────────────────────────────────────────────────────────────
+  CTX.save();
+  CTX.translate(_eX, _eY);
+  CTX.scale(_sqX, _sqY);
+
+  // Body
+  CTX.beginPath(); CTX.arc(0,0,_eR,0,Math.PI*2);
+  const _eg = CTX.createRadialGradient(-_eR*0.3,-_eR*0.3,_eR*0.08,0,0,_eR);
+  _eg.addColorStop(0,'#ffffff'); _eg.addColorStop(1,'#c8ddf0');
+  CTX.fillStyle=_eg;
+  CTX.shadowColor='rgba(0,220,255,0.55)'; CTX.shadowBlur=_eR*0.55;
+  CTX.fill(); CTX.shadowBlur=0;
+
+  // Iris
+  const _iR=_eR*0.50;
+  CTX.beginPath(); CTX.arc(_pOX,_pOY,_iR,0,Math.PI*2);
+  const _iH=(t*45)%360;
+  const _ig=CTX.createRadialGradient(_pOX-_iR*0.22,_pOY-_iR*0.22,1,_pOX,_pOY,_iR);
+  _ig.addColorStop(0,`hsl(${_iH},100%,58%)`);
+  _ig.addColorStop(1,`hsl(${_iH+50},100%,20%)`);
+  CTX.fillStyle=_ig; CTX.fill();
+
+  // Pupil
+  CTX.beginPath(); CTX.arc(_pOX,_pOY,_iR*0.44,0,Math.PI*2);
+  CTX.fillStyle='#000'; CTX.fill();
+
+  // Catchlight
+  CTX.beginPath(); CTX.arc(_pOX-_iR*0.2,_pOY-_iR*0.2,_iR*0.14,0,Math.PI*2);
+  CTX.fillStyle='rgba(255,255,255,0.92)'; CTX.fill();
+
+  // Eyelid blink
+  if(_blA>0){
+    CTX.beginPath();
+    CTX.ellipse(0,-_eR*(1-_blA),_eR,_eR*_blA,0,Math.PI,Math.PI*2);
+    CTX.fillStyle='#7aabbf'; CTX.fill();
+  }
+
+  // Outline
+  CTX.beginPath(); CTX.arc(0,0,_eR,0,Math.PI*2);
+  CTX.strokeStyle='rgba(0,180,255,0.38)'; CTX.lineWidth=1.5; CTX.stroke();
+  CTX.restore();
+
+  // ── Speech bubble above playfield bottom ────────────────────────────────────
+  const _bH  = Math.round(R.gh * 0.13);
+  const _bW  = Math.round(R.gw * 0.90);
+  const _bX  = R.gx + (R.gw - _bW)/2;
+  const _bY  = _gapTop - _bH - _eR*0.8;
+  const _bRad= _bH * 0.32;
+  const _tX  = _eX;
+  const _tY  = _eY - _eR*_sqY - 2;
+
+  if(_bY > R.gy + R.gh * 0.55){ // only draw if it clears main gameplay area
+    CTX.save();
+    CTX.beginPath();
+    CTX.moveTo(_bX+_bRad,_bY);
+    CTX.lineTo(_bX+_bW-_bRad,_bY);
+    CTX.quadraticCurveTo(_bX+_bW,_bY,_bX+_bW,_bY+_bRad);
+    CTX.lineTo(_bX+_bW,_bY+_bH-_bRad);
+    CTX.quadraticCurveTo(_bX+_bW,_bY+_bH,_bX+_bW-_bRad,_bY+_bH);
+    CTX.lineTo(_tX+_eR*0.45, _bY+_bH);
+    CTX.lineTo(_tX, _tY);
+    CTX.lineTo(_tX-_eR*0.45, _bY+_bH);
+    CTX.lineTo(_bX+_bRad,_bY+_bH);
+    CTX.quadraticCurveTo(_bX,_bY+_bH,_bX,_bY+_bH-_bRad);
+    CTX.lineTo(_bX,_bY+_bRad);
+    CTX.quadraticCurveTo(_bX,_bY,_bX+_bRad,_bY);
+    CTX.closePath();
+    CTX.fillStyle='rgba(0,5,20,0.94)'; CTX.fill();
+    const _bp=0.5+0.5*Math.sin(t*2.6);
+    CTX.strokeStyle=`rgba(0,210,255,${_bp})`; CTX.lineWidth=1.8; CTX.stroke();
+    CTX.restore();
+
+    // Bubble text
+    const _lh1=_bH*0.40, _lh2=_bH*0.30;
+    const _hue=(t*45+200)%360;
+    CTX.shadowColor=`hsl(${_hue},100%,60%)`; CTX.shadowBlur=5;
+    _dmWordLabel(CTX,'TAP  1  2  3  4  TO PLACE YOUR PIECE',_bX+_bW*0.03,_bY+_bH*0.07,_bW*0.94,_lh1,`hsl(${_hue},100%,72%)`);
+    CTX.shadowBlur=0;
+    _dmWordLabel(CTX,'OR TAP THE GHOST ON THE BOARD',_bX+_bW*0.03,_bY+_bH*0.55,_bW*0.94,_lh2,'rgba(0,190,230,0.72)');
+  }
+
+  // ── Arrows: eyeball down to each piece slot ─────────────────────────────────
+  for(let i=0;i<4;i++){
+    const _s  = _slots[i];
+    const _oX = _eX + (i-1.5)*_eR*0.58;
+    const _oY = _eY + _eR*_sqY + 3;
+    const _aH = (i*90 + t*38) % 360;
+    const _aA = 0.50 + 0.50*Math.sin(t*2.0+i*1.2);
+    const _dash = (t*55+i*20)%18;
+    const _cpX = (_oX+_s.x)*0.5;
+    const _cpY = _oY + (_s.y-_oY)*0.55;
+
+    CTX.save();
+    CTX.setLineDash([5,5]); CTX.lineDashOffset=-_dash;
+    CTX.strokeStyle=`hsla(${_aH},100%,65%,${_aA})`;
+    CTX.lineWidth=2.0;
+    CTX.shadowColor=`hsl(${_aH},100%,60%)`; CTX.shadowBlur=5;
+    CTX.beginPath();
+    CTX.moveTo(_oX,_oY);
+    CTX.quadraticCurveTo(_cpX,_cpY,_s.x,_s.y);
+    CTX.stroke();
+    CTX.setLineDash([]); CTX.shadowBlur=0;
+
+    // Arrowhead
+    const _adx=_s.x-_cpX, _ady=_s.y-_cpY;
+    const _ang=Math.atan2(_ady,_adx);
+    const _ahl=Math.max(7,_eR*0.52);
+    CTX.beginPath();
+    CTX.moveTo(_s.x,_s.y);
+    CTX.lineTo(_s.x-_ahl*Math.cos(_ang-0.40),_s.y-_ahl*Math.sin(_ang-0.40));
+    CTX.lineTo(_s.x-_ahl*Math.cos(_ang+0.40),_s.y-_ahl*Math.sin(_ang+0.40));
+    CTX.closePath();
+    CTX.fillStyle=`hsla(${_aH},100%,65%,${_aA})`;
+    CTX.shadowColor=`hsl(${_aH},100%,55%)`; CTX.shadowBlur=5;
+    CTX.fill(); CTX.shadowBlur=0;
+
+    // Number badge at arrow origin
+    const _br=Math.max(6,_eR*0.30);
+    CTX.beginPath(); CTX.arc(_oX,_oY-_br,_br,0,Math.PI*2);
+    CTX.fillStyle=`hsl(${_aH},100%,12%)`; CTX.fill();
+    CTX.strokeStyle=`hsl(${_aH},100%,58%)`; CTX.lineWidth=1.4; CTX.stroke();
+    CTX.font=`900 ${Math.round(_br*1.15)}px "Arial Black",sans-serif`;
+    CTX.textAlign='center'; CTX.textBaseline='middle';
+    CTX.fillStyle=`hsl(${_aH},100%,82%)`;
+    CTX.fillText(String(i+1),_oX,_oY-_br);
+    CTX.restore();
+  }
+
+  // ── Glance hint → HIGH score box ────────────────────────────────────────────
+  if(_glA > 0.12){
+    const _hX = R.rHi.x + R.rHi.w*0.5;
+    const _hY = R.rHi.y + R.rHi.h*0.5;
+    CTX.save();
+    CTX.globalAlpha = _glA * 0.9;
+
+    // Dotted line eyeball → HIGH box
+    CTX.setLineDash([4,5]);
+    CTX.strokeStyle='#ffcc44'; CTX.lineWidth=1.6;
+    CTX.shadowColor='#ffcc44'; CTX.shadowBlur=8;
+    CTX.beginPath();
+    CTX.moveTo(_eX+_eR*_sqX, _eY);
+    CTX.quadraticCurveTo(_hX, _eY, _hX, _hY);
+    CTX.stroke();
+    CTX.setLineDash([]); CTX.shadowBlur=0;
+
+    // Arrowhead pointing into the box from below
+    CTX.beginPath();
+    CTX.moveTo(_hX, _hY+4);
+    CTX.lineTo(_hX-7, _hY-8); CTX.lineTo(_hX+7, _hY-8);
+    CTX.closePath();
+    CTX.fillStyle='#ffcc44'; CTX.fill();
+
+    // Label below the HIGH box
+    const _lbY = R.rHi.y + R.rHi.h + 6;
+    CTX.shadowColor='#ffcc44'; CTX.shadowBlur=10;
+    _dmWordLabel(CTX,'TAP FOR REPLAYS',
+      R.rHi.x - R.rHi.w*0.25, _lbY,
+      R.rHi.w*1.5, R.rHi.h*0.42, '#ffcc44');
+    CTX.shadowBlur=0;
+    CTX.globalAlpha=1;
+    CTX.restore();
+  }
+}
+// ── END PRE-GAME TUTORIAL ─────────────────────────────────────────────────────
+
 // ── Start screen ─────────────────────────────────────────────────────
 function drawStartScreen(t){
   const bx=R.gx, by=R.gy, bw=R.gw, bh=R.gh;
@@ -1348,249 +1558,7 @@ function drawStartScreen(t){
   ui._startBtnX=btnX; ui._startBtnY=btnY;
   ui._startBtnW=btnW; ui._startBtnH=btnH;
 
-  // ── ANIMATED ONBOARDING TUTORIAL ─────────────────────────────────────────────
-  // Only shown on start screen. Three elements:
-  //   1. Animated eyeball character with speech bubble → "tap 1 2 3 or 4!"
-  //   2. Four arrows from bubble down to piece row slot centers
-  //   3. Eyeball glances right at HIGH score box with pointer
 
-  // ── Layout: piece row slot centers (computed same way as drawPieceRow) ──────
-  const _GAP  = R.GAP;
-  const _PW   = Math.round((R.pieces.w - 3*_GAP) / 4);
-  const _slotCenters = [];
-  for(let _si=0; _si<4; _si++){
-    _slotCenters.push({
-      x: R.pieces.x + _si*(_PW+_GAP) + _PW/2,
-      y: R.pieces.y + R.pieces.h/2
-    });
-  }
-
-  // ── Eyeball position — floats in lower-center of playfield ──────────────────
-  const _eyeR   = Math.round(bw * 0.11);  // eyeball radius
-  const _eyeX   = bx + bw * 0.5;
-  const _eyeY   = by + bh * 0.60 + Math.sin(t * 1.3) * bh * 0.012; // gentle bob
-  const _bubble = { x: _eyeX, y: _eyeY - _eyeR - bh*0.04 }; // bubble sits above eye
-
-  // ── Squish/bounce scale — alive feeling ──────────────────────────────────────
-  const _squishX = 1.0 + 0.06 * Math.sin(t * 2.1);
-  const _squishY = 1.0 - 0.06 * Math.sin(t * 2.1);
-
-  CTX.save();
-  CTX.translate(_eyeX, _eyeY);
-  CTX.scale(_squishX, _squishY);
-
-  // ── White eyeball body ───────────────────────────────────────────────────────
-  CTX.beginPath();
-  CTX.arc(0, 0, _eyeR, 0, Math.PI*2);
-  const _eyeGrd = CTX.createRadialGradient(-_eyeR*0.3, -_eyeR*0.3, _eyeR*0.1, 0, 0, _eyeR);
-  _eyeGrd.addColorStop(0, '#ffffff');
-  _eyeGrd.addColorStop(1, '#ccddee');
-  CTX.fillStyle = _eyeGrd;
-  CTX.shadowColor = 'rgba(0,200,255,0.6)';
-  CTX.shadowBlur = _eyeR * 0.6;
-  CTX.fill();
-  CTX.shadowBlur = 0;
-
-  // ── Eyelid blink (blinks every ~4s) ─────────────────────────────────────────
-  const _blinkPhase = (t % 4.0) / 4.0;
-  const _blinkAmt   = _blinkPhase > 0.92 ? Math.sin((_blinkPhase-0.92)/0.08 * Math.PI) : 0;
-
-  // ── Iris + pupil — glances right toward HIGH score every ~5s ────────────────
-  const _glancePhase = (t % 5.0) / 5.0;
-  const _glanceAmt   = _glancePhase > 0.75 ? Math.sin((_glancePhase-0.75)/0.10 * Math.PI) : 0;
-  const _pupilOffX   = _glanceAmt * _eyeR * 0.35;
-  const _pupilOffY   = Math.sin(t * 0.7) * _eyeR * 0.08;
-
-  const _irisR = _eyeR * 0.52;
-  CTX.beginPath();
-  CTX.arc(_pupilOffX, _pupilOffY, _irisR, 0, Math.PI*2);
-  const _irisGrd = CTX.createRadialGradient(_pupilOffX-_irisR*0.2, _pupilOffY-_irisR*0.2, 1, _pupilOffX, _pupilOffY, _irisR);
-  const _irisHue = (t * 40) % 360;
-  _irisGrd.addColorStop(0, `hsl(${_irisHue},100%,55%)`);
-  _irisGrd.addColorStop(1, `hsl(${_irisHue+40},100%,25%)`);
-  CTX.fillStyle = _irisGrd;
-  CTX.fill();
-
-  // Pupil
-  CTX.beginPath();
-  CTX.arc(_pupilOffX, _pupilOffY, _irisR * 0.45, 0, Math.PI*2);
-  CTX.fillStyle = '#000';
-  CTX.fill();
-
-  // Catchlight
-  CTX.beginPath();
-  CTX.arc(_pupilOffX - _irisR*0.18, _pupilOffY - _irisR*0.18, _irisR*0.12, 0, Math.PI*2);
-  CTX.fillStyle = 'rgba(255,255,255,0.9)';
-  CTX.fill();
-
-  // ── Eyelid (drawn over iris when blinking) ───────────────────────────────────
-  if(_blinkAmt > 0){
-    CTX.beginPath();
-    CTX.ellipse(0, -_eyeR*(1-_blinkAmt), _eyeR, _eyeR*_blinkAmt, 0, Math.PI, Math.PI*2);
-    CTX.fillStyle = '#88aacc';
-    CTX.fill();
-  }
-
-  // ── Outline ──────────────────────────────────────────────────────────────────
-  CTX.beginPath();
-  CTX.arc(0, 0, _eyeR, 0, Math.PI*2);
-  CTX.strokeStyle = 'rgba(0,180,255,0.5)';
-  CTX.lineWidth = 2;
-  CTX.stroke();
-
-  CTX.restore(); // end eyeball transform
-
-  // ── Speech bubble ────────────────────────────────────────────────────────────
-  const _bblW = bw * 0.78;
-  const _bblH = bh * 0.11;
-  const _bblX = _bubble.x - _bblW/2;
-  const _bblY = _bubble.y - _bblH;
-  const _bblR = _bblH * 0.4;
-  const _tailX = _eyeX;
-  const _tailY = _eyeY - _eyeR * _squishY;
-
-  // Bubble body
-  CTX.beginPath();
-  CTX.moveTo(_bblX + _bblR, _bblY);
-  CTX.lineTo(_bblX + _bblW - _bblR, _bblY);
-  CTX.quadraticCurveTo(_bblX+_bblW, _bblY, _bblX+_bblW, _bblY+_bblR);
-  CTX.lineTo(_bblX+_bblW, _bblY+_bblH-_bblR);
-  CTX.quadraticCurveTo(_bblX+_bblW, _bblY+_bblH, _bblX+_bblW-_bblR, _bblY+_bblH);
-  // Tail toward eyeball
-  CTX.lineTo(_tailX + bw*0.04, _bblY+_bblH);
-  CTX.lineTo(_tailX, _tailY);
-  CTX.lineTo(_tailX - bw*0.04, _bblY+_bblH);
-  CTX.lineTo(_bblX + _bblR, _bblY+_bblH);
-  CTX.quadraticCurveTo(_bblX, _bblY+_bblH, _bblX, _bblY+_bblH-_bblR);
-  CTX.lineTo(_bblX, _bblY+_bblR);
-  CTX.quadraticCurveTo(_bblX, _bblY, _bblX+_bblR, _bblY);
-  CTX.closePath();
-  CTX.fillStyle = 'rgba(0,8,28,0.92)';
-  CTX.fill();
-  const _bubblePulse = 0.6 + 0.4*Math.sin(t*2.5);
-  CTX.strokeStyle = `rgba(0,200,255,${_bubblePulse})`;
-  CTX.lineWidth = 1.8;
-  CTX.stroke();
-
-  // Bubble text — two lines
-  const _line1 = 'TAP  \u2460 \u2461 \u2462 \u2463  TO PLACE!';
-  const _line2 = 'ARROWS SHOW WHERE EACH LANDS';
-  const _txtH1 = _bblH * 0.36;
-  const _txtH2 = _bblH * 0.28;
-  const _txtY1 = _bblY + _bblH*0.18;
-  const _txtY2 = _bblY + _bblH*0.56;
-  const _hue1 = (t*50+180)%360;
-  CTX.shadowColor = `hsl(${_hue1},100%,60%)`; CTX.shadowBlur=6;
-  _dmWordLabel(CTX, _line1, _bblX+_bblW*0.04, _txtY1, _bblW*0.92, _txtH1, `hsl(${_hue1},100%,72%)`);
-  CTX.shadowBlur=0;
-  _dmWordLabel(CTX, _line2, _bblX+_bblW*0.04, _txtY2, _bblW*0.92, _txtH2, 'rgba(0,180,220,0.75)');
-
-  // ── Four arrows from bubble bottom to piece slot centers ─────────────────────
-  // Arrow origin: evenly spaced along bubble bottom edge
-  const _arrowBaseY = _bblY + _bblH + 4;
-  for(let _ai=0; _ai<4; _ai++){
-    const _sc = _slotCenters[_ai];
-    // Spread origins across bubble width
-    const _originX = _bblX + (_bblW * (0.15 + _ai * 0.235));
-    const _targetX = _sc.x;
-    const _targetY = _sc.y - R.pieces.h * 0.35; // aim at top of slot
-
-    // Animated dash offset — marching ants feel
-    const _dashOff = (t * 40 + _ai * 15) % 16;
-    const _arrowHue = (_ai * 90 + t * 30) % 360;
-    const _arrowAlpha = 0.5 + 0.5*Math.sin(t*2.5 + _ai*1.1);
-
-    CTX.save();
-    CTX.setLineDash([6,6]);
-    CTX.lineDashOffset = -_dashOff;
-    CTX.strokeStyle = `hsla(${_arrowHue},100%,65%,${_arrowAlpha})`;
-    CTX.lineWidth = 2;
-    CTX.shadowColor = `hsl(${_arrowHue},100%,60%)`;
-    CTX.shadowBlur = 6;
-    CTX.beginPath();
-    // Curved arc: control point midway, bowing outward slightly
-    const _cpX = (_originX + _targetX)/2 + (_ai < 2 ? -bw*0.04 : bw*0.04);
-    const _cpY = (_arrowBaseY + _targetY)/2;
-    CTX.moveTo(_originX, _arrowBaseY);
-    CTX.quadraticCurveTo(_cpX, _cpY, _targetX, _targetY);
-    CTX.stroke();
-    CTX.setLineDash([]);
-    CTX.shadowBlur=0;
-
-    // Arrowhead at target
-    const _dx = _targetX - _cpX;
-    const _dy = _targetY - _cpY;
-    const _ang = Math.atan2(_dy, _dx);
-    const _ahLen = 10;
-    CTX.beginPath();
-    CTX.moveTo(_targetX, _targetY);
-    CTX.lineTo(_targetX - _ahLen*Math.cos(_ang-0.4), _targetY - _ahLen*Math.sin(_ang-0.4));
-    CTX.lineTo(_targetX - _ahLen*Math.cos(_ang+0.4), _targetY - _ahLen*Math.sin(_ang+0.4));
-    CTX.closePath();
-    CTX.fillStyle = `hsla(${_arrowHue},100%,65%,${_arrowAlpha})`;
-    CTX.shadowColor = `hsl(${_arrowHue},100%,60%)`;
-    CTX.shadowBlur = 6;
-    CTX.fill();
-    CTX.shadowBlur=0;
-
-    // Number badge at origin
-    const _badgeR = bh*0.022;
-    CTX.beginPath();
-    CTX.arc(_originX, _arrowBaseY - _badgeR, _badgeR, 0, Math.PI*2);
-    CTX.fillStyle = `hsl(${_arrowHue},100%,20%)`;
-    CTX.fill();
-    CTX.strokeStyle = `hsl(${_arrowHue},100%,65%)`;
-    CTX.lineWidth = 1.5;
-    CTX.stroke();
-    CTX.font = `900 ${Math.round(_badgeR*1.3)}px "Arial Black",sans-serif`;
-    CTX.textAlign='center'; CTX.textBaseline='middle';
-    CTX.fillStyle=`hsl(${_arrowHue},100%,80%)`;
-    CTX.fillText(String(_ai+1), _originX, _arrowBaseY - _badgeR);
-
-    CTX.restore();
-  }
-
-  // ── HIGH score eyeball glance hint ───────────────────────────────────────────
-  // When eyeball is glancing right (_glanceAmt > 0), show a little pointer
-  // toward the rHi box with "WATCH REPLAYS" text
-  if(_glanceAmt > 0.1 && R.rHi){
-    const _hiCX = R.rHi.x + R.rHi.w/2;
-    const _hiCY = R.rHi.y + R.rHi.h/2;
-    const _hintAlpha = _glanceAmt;
-
-    // Dotted line from eyeball to rHi box
-    CTX.save();
-    CTX.globalAlpha = _hintAlpha * 0.8;
-    CTX.setLineDash([4,5]);
-    CTX.strokeStyle = '#ffcc44';
-    CTX.lineWidth = 1.5;
-    CTX.shadowColor='#ffcc44'; CTX.shadowBlur=8;
-    CTX.beginPath();
-    CTX.moveTo(_eyeX + _eyeR, _eyeY);
-    CTX.quadraticCurveTo(_hiCX, _eyeY, _hiCX, _hiCY + R.rHi.h*0.3);
-    CTX.stroke();
-    CTX.setLineDash([]);
-    CTX.shadowBlur=0;
-
-    // Arrowhead at rHi
-    CTX.strokeStyle='#ffcc44'; CTX.fillStyle='#ffcc44';
-    CTX.lineWidth=1.5;
-    CTX.beginPath();
-    CTX.moveTo(_hiCX, _hiCY + R.rHi.h*0.3);
-    CTX.lineTo(_hiCX - 7, _hiCY + R.rHi.h*0.3 - 10);
-    CTX.lineTo(_hiCX + 7, _hiCY + R.rHi.h*0.3 - 10);
-    CTX.closePath();
-    CTX.fill();
-
-    // Label
-    const _lblY = _hiCY + R.rHi.h*0.3 + 10;
-    CTX.shadowColor='#ffcc44'; CTX.shadowBlur=10;
-    _dmWordLabel(CTX, 'WATCH REPLAYS!', _hiCX - R.rHi.w*1.2, _lblY, R.rHi.w*2.4, R.rHi.h*0.35, '#ffcc44');
-    CTX.shadowBlur=0;
-    CTX.globalAlpha=1;
-    CTX.restore();
-  }
-  // ── END ONBOARDING ────────────────────────────────────────────────────────────
 
   // ── small oscilloscope-style wave strip at bottom ─────────────────
   const waveY = by+bh*0.76;
