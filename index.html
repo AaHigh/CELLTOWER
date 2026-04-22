@@ -58,6 +58,7 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
 </div>
 
 <!-- ── PASTE / LOAD REPLAY OVERLAY ── -->
+
 <div id="paste-overlay">
   <div id="paste-header">LOAD REPLAY</div>
   <div id="paste-instructions">
@@ -77,11 +78,13 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
 </div>
 
 <!-- invisible keyboard sink for library import — no visible HTML, canvas draws the UI -->
+
 <textarea id="import-sink"
   autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
   tabindex="-1"></textarea>
 
 <!-- ── COPY / SHARE OVERLAY ── -->
+
 <div id="copy-overlay">
   <canvas id="copy-rain"></canvas>
   <div id="copy-card">
@@ -107,6 +110,7 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
 </div>
 
 <!-- ── IDENTITY OVERLAY ── -->
+
 <div id="id-overlay">
   <!-- Welcome / name picker — shown on startup; pre-populated -->
   <div id="id-new" class="id-view">
@@ -562,6 +566,7 @@ var _justPlayedStream=null; // verified stream from the most recent live human g
 const _KANA_RAIN='ｦｧｨｩｪｫｬｭｮｯｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ01ﾞ!?#%@';
 const _SAMPLE_STREAMS=[
   {label:'AAR · Demo', stream:"3Lw)K,\">\\K!(!`#0,AMH;q03{Zi):JaA@!y~~0hp{I-G7B2E3HM.9jP0#%}/lsC10rG2@Nf4{W8FHHH2Ej/1-[>.By#0'by)dfc(<LqdICF.YI}.4$J11g]?9v/XJc5:I>]/}HF*/0(9I0&3$$g/k$J8}MKNtB*^z&?--0g.7sv4:z4Dx'1?\\&p5Q&R~~C|6\\HB:kK15%/64/p(6(w=<#dC:3/4.ZA)KAn*5k@Swa/OwVMa5BrD0AYbDS@L4C/Ja!M$2H$J1BVS64Y^Bn/32o$J8\\G*7~0}47rG14/2-4l$5+$J^c&:9/w%@_ei-`ZB2?HE7&l$0~YH3/Z{1#vc9iM)=0N^4:$J?F@nC10b0|vd:AZ!3QMDb*$d`Dl#~~HD6M/J=7[97y0_<)$J8'[<@*B$B\\N\\5QH>64A|:20a3tNV5IMF8=fB8(0_Dx0]:sG&D]$J@&mT=?$g1]H<>|$J<}l*~~s!7TA~=zNX>T$fIP+A~~vI?$lxWMx{@bAJE@/K6=egwZYcDrN\"8`Ya<T$J5:yUBW$J5@s9<~$g5ryU@IY~<lY|B0N(4Uh[6~Gi8DZ_A/$J3`HGAyMFB]AM5dB'/qN%(6N#(UN!*+YP>o.v.3.u(tLW.3Lt*rY0@XY.-pY++R%B4</+6rNb+tk|0Dz/6jN`)z$I/(n44D%B1UA.2]NC)MM+(?0C*/NA)Ji0'C=!2m=\\&]zj)gZZ0>@h*n$^+Z192c0>(jdC-/YC4ix9*\\/&(qLe'tvA'l17*|$V+n$I:NFJ/~$H-^/~/`Y@+TJp.rie(^zf)+&K&WVN34VL+Io^$L;#?0s)s]Fq5:$_W}F{[t4wLZ(]\\&:g.<y<\\6?$3u%"},
+  {label:'JON · Robinson', stream:"YsVer,!u<W!4\"r&!,TDE;bB!!h{!!yB!!\"t!!II!!pR!!':!!zZ!!V~!!Mo!!kj!!oW!!t=!!If!!/3!!V@!!Mn!!i6!!W:!!$J!!Xp!!&y!!Vy!![$!!':!!b]!!0j!!jQ!!0.!!V\"!!1&!!Lq!!$I!!=e!!V>!!DA!!kf!!Z&!!<g!!':!!jQ!!/l!!0g!!':!!MO!!MM!!$J!!Bm!!<l!!?\\!!0i!!FU!!L5!!Nk!!zY!!YM!!MO!!1'!!':!!L8!!&@!!C+!!t<!!zW!!ZJ!!Z*!!Id!!iq!!.r!!v.!!F6!!':!!?]!!':!!1+!!Mp!!Uf!!Lu!!fg!!1+!!Ls!!M2!!Zh!!ki!!Nj!!Jb!!':!!eO!!.t!!jT!!0j!!G6!!J&!!zY!!@X!!%&!!.t!!h[!!mB!!z9!!0.!!.q!!Yj!!1G!!YN!!IF!!vl!!=e!!N*!!zv!!/P!!HO!!Xs!!zZ!!d5!!@w!!G4!!Xr!!?\\!!':!!/T!!&z!!Gq!!i<!!Bm!!':!!V~!!0l!!.u!!CL!!&z!!0k!!MS!!/T!!iX!!kj!!ur!!eM!!GR!!>b!!JC!!vN!!.r!!g`!!p/!!':!!'9!!FY!!1*!!%&!!N/!!v4!!.v!!N.!!00!![G!!b_!!$J!!&z!!V%!!c=!!ga!!JE!!IJ!!Z+!!ki!!AR!!':!!H0!!Ih!!YP!!Y1!!0/!!$J!!s{!!':!!$J!!$g!!Lu!![G!!01!!VB!!G4!!z=!![G!!![!!ma!!GT!!zZ!!$J!!J'!!l*!!@Y!!>'!!V^!!ek!!Nj!!':!!$J!!Dd!!/6!!ZL!!J'!!Ue!!%D!!t>!!t[!!01!!y|!!LX!!zw!!M4!!F:!!gb!!Ja!!$J!!00!!Y2!!tZ!!':!!00!!ma!!NL!!Xs!!Xq!!y#!!NK!!Xp!!&@!!Xp!!Xn!!!y!!/S!!ZK!!NK!!A4!!Xl!!lF!!':!!Xk!!Ml!!H-!!%b!!%&!!0i!!':!!%b!!0i!!m\\!!1H!!%E!!MS!!G4!!?\\!!%&!!1J!!Z+!!%E!!&@!!Z+!!LX!!HO!!H1!!N/!!Xs!!re!!@Z!!':!!H1!!m$!!Xs!!%&!!K\"!!s$!!?_!!Mp!!':!!yB!!N0!!&z!!L:!!le!!f+!!L:!!ZL!!&]!!':!!/T!!ZL!!zZ!!rc!!Z-!!E{!!?_!!d7!!J'!!':!!CL!!L:!!t>!!Ue!!0O!!h!!!J'!!ma!!/T!!cZ!!I-!!$I!!CK!!?z!!VA!!Zh!!t[!!':!!g&!!&z!!\"W!!bB!!pS!!VD!!Y2!!':!!cZ!!MS!!d7!!m}!!y#!!MQ!!$J!!s|!!Ap!!MP!!/R!!Ze!!$g!!/3!!x~!!MO!!uR!!GO!!//!!':!!$J!!oq!!B2!!HO!!z=!!zY!!$J!!VD!!':!!Zi!!01!!Y3!!Xs!!zZ!!0N!!1(!!@Z!!0N!!0L!!1(!!YQ!!Xs!!':!!F9!!eM!!M3!!Uc!!pP!!%b!!':!!&z!!Lu!!p4!!ot!!?_!!Ue!!&]!!VD!!Mp!!i:!!it!!':!!Yl!!zZ!!>'!!I-!!Xs!!%&!!ej!!n?!!t>!!/2!!gD!!MS!!g$!!%E!!j2!!0f!!M2!!i6!!iS!!Y-!!0(!!Lm!!mY!!/g!!GK!!MH!!Gf!!sS!!@1!!Ya!!mS!!Ma!!sl!!B1!!z)!!sh!!fW!!lp!!rV!!/B!!$J!!rT!!fV!!Nk!!Nj!!'7!!$J!!f=!!.v!!.t!!r%!!xB!!1G!![E!!ZA!!n<!!Iz!!Yb!!r&!!Y`!!Y^!!xC!!1E!!$b!!LP!!Y^!!sU!!yp!!Y\\!!LN!!m4!!ft!!YZ!!0<!!YX!!;#}Mc9j<^m:Ci[Fe/*B{y\\'\"P(}\\{C)kd\\/$*hA6^"},
 ];
 // Screen shake — 4 independent sinusoidal channels, normalized so total energy=1
 // Each channel: {phx, phy, fx, fy, mx, my} — random phase & freq per axis per layer
@@ -8358,6 +8363,10 @@ var _libraryAutoPaused=false;
 function _openLibrary(){
   _libraryScreen=true;
   _libraryScroll=0;
+  // Default to BUILT-IN tab when no user scores exist yet, so new users see content immediately.
+  // Once any real scores are recorded, default to PLAYERS — that's what they want to see.
+  const _hiEntries=Object.keys(_getHiTable());
+  _libraryTab=(_hiEntries.length===0)?'builtin':'players';
   // Auto-pause any active game so the gravity timer stops
   if(ui.gameStarted && !dead && !paused && !_replayMode){
     _libraryAutoPaused=true;
