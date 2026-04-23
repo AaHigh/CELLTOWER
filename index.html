@@ -1257,7 +1257,7 @@ function drawPreGameTutorial(t){
   if(_gapH < 6) return; // no room
   const _eR  = Math.min(Math.round(_gapH * 0.42), Math.round(SW * 0.052));
   const _eX  = SW * 0.5;
-  const _eY  = _gapTop + _gapH * 0.5 + Math.sin(t * 1.4) * _eR * 0.18;
+  const _eY  = _gapTop + _gapH * 0.5 + Math.sin(t * 1.4) * _eR * 0.18 -200;
 
   // Squish/bounce
   const _sqX = 1.0 + 0.07*Math.sin(t*2.0);
@@ -1319,12 +1319,12 @@ function drawPreGameTutorial(t){
   const _bH  = Math.round(R.gh * 0.13);
   const _bW  = Math.round(R.gw * 0.90);
   const _bX  = R.gx + (R.gw - _bW)/2;
-  const _bY  = _gapTop - _bH - _eR*0.8;
+  const _bY  = _gapTop - 200 - _bH - _eR*0.8;
   const _bRad= _bH * 0.32;
   const _tX  = _eX;
   const _tY  = _eY - _eR*_sqY - 2;
 
-  if(_bY > R.gy + R.gh * 0.55){ // only draw if it clears main gameplay area
+  if(1 || _bY > R.gy + R.gh * 0.55){ // only draw if it clears main gameplay area
     CTX.save();
     CTX.beginPath();
     CTX.moveTo(_bX+_bRad,_bY);
@@ -1357,7 +1357,7 @@ function drawPreGameTutorial(t){
   // ── Arrows: eyeball down to each piece slot ─────────────────────────────────
   for(let i=0;i<4;i++){
     const _s  = _slots[i];
-    const _oX = _eX + (i-1.5)*_eR*0.58;
+    const _oX = _eX + (i-1.5)*_eR*9.58;
     const _oY = _eY + _eR*_sqY + 3;
     const _aH = (i*90 + t*38) % 360;
     const _aA = 0.50 + 0.50*Math.sin(t*2.0+i*1.2);
