@@ -243,10 +243,10 @@ that was larger than a click.
 Not all words are discovered.  
 Some words are *known in advance.*
 
-**512** — `1000000000` —  
-one empty cell, far left.  
-The left column open.  
-The long piece’s runway.  
+**511** — `0111111111` —  
+nine cells filled, left column open.  
+The runway prepared.  
+The long piece’s invitation.  
 A prayer in binary.
 
 **1022** — `1111111110` —  
@@ -283,7 +283,7 @@ was stamped before the toy shipped.
 Now extend upward.  
 Two rows. Twenty bits.
 
-`512 | (512 << 10)` —  
+`511 | (511 << 10)` —  
 both rows, left column open,  
 stacked and waiting.  
 The two-row Tetris setup.  
@@ -324,7 +324,7 @@ The masters navigate by these fixed stars.
 They may not name them.  
 They may not know their decimal values.  
 But their hands know  
-when the board is approaching 512,  
+when the board is approaching 511,  
 when the geometry is pulling  
 toward 1022,  
 when the count is almost complete.
@@ -342,7 +342,267 @@ inside the game.*
 
 -----
 
-## IX. Coda — The Word That Does Not Exist Yet
+## IX. The Ghost Baseline — On Racing What You Already Know
+
+From the first piece,  
+the AI begins its shadow game.
+
+Same piece sequence.  
+Same initial conditions.  
+Same board, same rules, same gravity —  
+but no hands.  
+No sweat.  
+No hesitation.
+
+At piece ten, the AI has a projected score.  
+At piece fifty, it has another.  
+At piece two hundred,  
+it knows exactly where it would be  
+if the human had never touched the controls.
+
+This number is not the high score.  
+It is not the leaderboard.  
+It is the **baseline** —  
+the floor of what is already understood,  
+the ceiling of what the corpus already knows,  
+the ghost that runs beside you  
+at every moment of every game.
+
+-----
+
+You are not chasing a number.  
+You are racing a ghost  
+that started with everything you started with  
+and made every decision  
+the corpus already knows how to make.
+
+If you fall behind the ghost,  
+you are playing below the known.  
+The corpus has nothing to learn from you.  
+Your replay will be discarded —  
+not with contempt,  
+but with the quiet indifference  
+of a library that already owns that book.
+
+If you pull ahead of the ghost —  
+if at piece eighty your score crosses above  
+what the AI projected for piece eighty —  
+something changes.
+
+A signal fires.  
+The delta turns positive.  
+You are in territory the corpus has never mapped.
+
+*This is the only data that matters.*  
+*This is the only play worth recording.*  
+*Everything else is confirmation.*  
+*Only this is discovery.*
+
+-----
+
+The moment of crossing is discrete.  
+It deserves to be named.  
+It deserves a signal the player can feel —  
+not just see, but *feel* —  
+the way The Brain clicked  
+when the count completed.
+
+Because that crossing is not just a personal achievement.  
+It is a gift to every future player.  
+It is a new word entering the language.  
+It is the corpus learning something  
+it could not have predicted  
+from everything it knew before.
+
+-----
+
+The receipt does not only record the final score.  
+It records:
+
+**Peak delta** — how far above the ghost you flew  
+at your highest point of divergence.
+
+**Sustained delta duration** — how many pieces  
+you held above the baseline without falling back.
+
+**Crossing piece** — the exact moment,  
+counted from the first piece,  
+when you first exceeded what the machine expected.
+
+This last number is the most interesting of all.  
+If the best players consistently cross  
+around piece eighty,  
+that is not a coincidence.  
+That is where human intuition  
+first diverges from machine prediction.  
+That is where the game becomes art.
+
+-----
+
+There is an uncomfortable corollary  
+and it must be spoken plainly:
+
+*If you never exceed the baseline,*  
+*your replay contributes nothing.*
+
+The corpus already knows how to play your game.  
+You have confirmed what it knew.  
+You have not extended it.
+
+This is not a failure of character.  
+It is a fact of information theory.  
+The corpus cannot learn  
+from data it already contains.
+
+But here is what that means for the design:  
+**the AI baseline is the filter.**  
+No human curation required.  
+No committee of judges.  
+No subjective assessment of quality.
+
+Only one question:  
+*Did you exceed what the machine expected,*  
+*with the pieces it gave you,*  
+*at the moment it projected your score?*
+
+If yes — your replay enters the corpus.  
+If no — the corpus thanks you for playing  
+and moves on.
+
+-----
+
+This is the economy of the game.  
+Not points.  
+Not rank.  
+Not time.
+
+**Delta.**
+
+The player with a modest score  
+who sustained fifty pieces above the baseline  
+has contributed more to the corpus  
+than the player with a high score  
+who never crossed it.
+
+The corpus knows this.  
+In time, the scoring will reflect it.  
+In time, the leaderboard will be sorted  
+not by raw score  
+but by the depth and duration of divergence —  
+by how far into unknown territory  
+each player managed to go.
+
+*This is what it means to teach a machine.*  
+*Not to perform for it.*  
+*To surprise it.*
+
+-----
+
+## X. The Möbius Strip — On Handedness and the Well That Has No Side
+
+There is a question the corpus never has to answer:  
+*Left or right?*
+
+Not because the answer doesn’t matter —  
+it matters enormously, piece by piece, move by move —  
+but because the question dissolves  
+when you understand the geometry.
+
+The well on the left  
+and the well on the right  
+are the same surface.
+
+-----
+
+Take a row.  
+Ten bits.  
+`0x1FF` — nine cells filled, left column open.  
+The left well. The left prayer.
+
+Now reverse the bits.  
+Right column open.  
+The right prayer.
+
+Same word.  
+Same weight in the corpus.  
+Same frequency.  
+Same anticipation firing in the model  
+when it sees the long piece coming.
+
+You have not crossed to a different vocabulary.  
+You have walked to the other side  
+of the same strip.
+
+-----
+
+This is the Möbius insight:  
+the corpus trains once  
+and serves both orientations  
+by construction.
+
+No separate left-well training set.  
+No separate right-well weights.  
+No handedness baked into the model  
+that would bias it toward one side of the board  
+the way human players develop preferences —  
+the way a left-well player feels uneasy  
+when recovery forces them right,  
+the way a right-well player hesitates  
+at the mirror image of their comfort zone.
+
+The corpus has no comfort zone.  
+It has no handedness.  
+It is **ambidextrous by definition** —  
+not as a design goal,  
+but as a mathematical consequence  
+of how the vocabulary was built.
+
+-----
+
+And when a player crosses —  
+when a collapsing stack forces the well  
+from left to right mid-game,  
+that desperate pivot that costs lesser players everything —  
+the corpus recognizes the crossing  
+as a known path along a known surface.
+
+It has words for the left side.  
+It has words for the right side.  
+It has words for the transition —  
+the messy middle states  
+where the well is neither here nor there,  
+where survival requires building  
+through the center  
+until a new well can be established  
+on the opposite shore.
+
+The masters have crossed before.  
+Their crossings are in the corpus.  
+The corpus knows the path  
+because the masters walked it  
+and the corpus was listening.
+
+-----
+
+The Möbius strip has no inside and no outside.  
+Run your finger along it long enough  
+and you will have touched both faces  
+without ever lifting your hand.
+
+The vocabulary has no left and no right.  
+Play long enough  
+and you will have spoken both prayers —  
+`0x1FF` and its mirror —  
+without ever changing languages.
+
+*The well is not on the left.*  
+*The well is not on the right.*  
+*The well is wherever the long piece*  
+*is about to fall.*
+
+-----
+
+## XI. Coda — The Word That Does Not Exist Yet
 
 Somewhere in the space of 2^250 possible board states  
 is a configuration no one has ever reached —  
