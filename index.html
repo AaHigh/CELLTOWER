@@ -1,4 +1,5 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
+
 <html>
 <head>
 <meta charset="utf-8">
@@ -10,14 +11,14 @@
 <!-- Open Graph / iMessage / social preview -->
 <meta property="og:type" content="website">
 <meta property="og:title" content="CELLTOWER">
-<meta property="og:description" content="Competitive skill-based Tetris trainer. Cryptographically verified human play. The best player wins.">
+<meta property="og:description" content="Competitive skill-based Towres trainer. Cryptographically verified human play. The best player wins.">
 <meta property="og:image" content="https://aahigh.github.io/CELLTOWER/preview.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:url" content="https://aahigh.github.io/CELLTOWER/">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="CELLTOWER">
-<meta name="twitter:description" content="Competitive skill-based Tetris trainer. Cryptographically verified human play. The best player wins.">
+<meta name="twitter:description" content="Competitive skill-based Towres trainer. Cryptographically verified human play. The best player wins.">
 <meta name="twitter:image" content="https://aahigh.github.io/CELLTOWER/preview.png">
 <meta name="apple-mobile-web-app-title" content="CELLTOWER">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -525,7 +526,7 @@ const CTX = cv.getContext('2d');
 // ── Screen dimensions ─────────────────────────────────────────────────
 const VERSION = '0.42026';
 let SW, SH;   // screen width/height
-var CELL = 20; // tetris cell size — also declared by game logic (var hoists safely)
+var CELL = 20; // block cell size — also declared by game logic (var hoists safely)
 
 // ── Safe defaults for game globals (real values set by game logic) ────
 var score=0, level=1, lines=0, hi=0, dead=false, paused=false;
@@ -535,7 +536,7 @@ var placements=null, particles=[], explodedCells=new Set();
 var selectedPlacementIdx=null; // which slot is highlighted (null = none)
 var _navStartT=0; // AT timestamp when piece navigation animation started
 var _p10Log=[]; // per-piece log for first-10 debug audit
-var piecePot=0, tetrisPot=0;
+var piecePot=0, towresPot=0;
 var AUTO_PLAY=false, AUTO_SPEED=10.66, autoUsed=false;
 var _replayMode=false, _replayPlacements=[], _replayIdx=0, _replayTimer=null;
 var _replayThinkScale=1;    // per-piece msPerMove multiplier derived from normalized think time
@@ -564,8 +565,8 @@ var _justPlayedStream=null; // verified stream from the most recent live human g
 // JSON-encoded so backslash/quote chars survive the JS string literal.
 const _KANA_RAIN='ｦｧｨｩｪｫｬｭｮｯｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ01ﾞ!?#%@';
 const _SAMPLE_STREAMS=[
-  {label:'AAR · Demo', stream:` RkoL],"\52!*!{#k,AMH;1JGl"W20pR)t%E-^Ww+~<R4dmC2dNi){Gn*N%b+'jOIm'6*8y]-uK9-p=e*tvL*!pK-KF<0RY1*G1A.y?x5Q@o>6%B-ZYK*<Mg.8fA<WwC/Gik+R0}/\$JY"Y04N$J)^zs6u$f0fZdR~NG8}g!EZg=8_f)>7Z&fRoS3z?w6s$J0[LseQzt4d1D.ACH4K1BX+=G5[ML?(YK4\mZ9dq%<*MhFjms@lMf5#@Q2QW22/ZyAz0A5%$J3pFo@=$g.b$J9zrH>RN(50fa5&A.Ayxc0wYM2=@6=$z37\\`$J6)':H~n::x$g0~pKLLgz021B1&CH5&Z\\`@T$J1etUI_AN3/bzKl$g/%%zDv/n-gGhU8$J/5/66N/p+<zt5Yur1I/m/HG1.6$e2=$J8:f+Eo?zd"DD6M1H0Qlc.8LTS#LR1hLP0i1F2+fF02>$8O$J<5>cJoD&1Dv12uDa37'72&pk-+op*OJz+</k*pVw*:W60]HH+GK7-1=}/z>Z*Vvd9nLR+qI\\`+2IB*ZM**E?rE}0B0Lje0F$J0MWR?nvd6]cj2FNa/D0^3:N_*yHA*k>7+KtJ.Cfu4iM-0QLP+p$J4@YKD=0^/J0\4\mOBC@42WLk:}ZUOMeJ6&r".DN]6$x?*6q|+5/)2vUX64y8.iM-4PLl0)fa.#Nb7uq~7#c3.}G/6(y:12HF2sMJ.NzO25l"/:fA."L2+gL1+?L/2|A.*sZ^.C${*R/g1czn-aZC2q1A0|!S+.Z}.A!p(Iq~*]zn/s/-*cry+Ono0E"M.|sW11.l/qf^+d&73(&U.7tS6sp*/$zn3ZFQ*|?X2'0(-$0&/9C&*O/L.ukc.*D]+8zq+>0f/GtT*h>!/}Ia(kIC*4lz+=/g*u$D/-c23p[!./'4)cAN(w1"-S$})}Eu+Bzp-a$D/"J\+aZ&(:Yf*@x@+o$}+Cq()+w'+TA0):xz-!.o+o>^0i0d(N?t(oHG)-J=(<Ye'^t3'uC#'cMH(*tP'BI?)@Js(lIw0rc+-yIs*/oa'1o_#~In"O;#/[&7sq#-q<XkZ>)%De~S~Kr27/|g\\`4I*5j'KS~U `},
-  {label:'JON · Robinson', stream:` B0nkg,"P4o!6#(&5,TDE;r)72xF&h=j$(re$ny"%'@v%$b>%dEv&m$C&lLq$~W\%uW=$~FS$~r@%u':.AWZ)cJD$(@t$}/M$~Gn&l&z-I':.AV}$(<M%v$D&m'8)R&z-I'6)QyA$*cv(kpo)aj6*\w/+RV%%0Fv$(A7)cxF&mrd$~W\)cH1+Rr'&lHN(]y#$}=j't@w$o<m$}0l(kBm'ib?&""t(mUc%uc="~y!%#>H%vZh&_b=&$hv&lb:%wsB$~$A&my]%!zw-L[G->w/+S=j$(/3%u/1%un?([%C$)Dd+RL4&lZ.(l0l$~[G-I@w(liX$~/Q%"0.#1L5&nd7)d/P$}U\\`%yhW'Tb8%uy>$(q0*]d7)^r}$(q0*]>H)es\\`%tU\\`%uy{%uNN'fzw-H':)RLr$~1+)c%b%!"s(ls\\`)c>H)cDG&m.u&ph\'as#$(cX$(1J*Zj6&l!=%uHO-ZH1+RJc$~bA%uM5't':)S$H&l/5%uG6(lJ&#2/4%u@X$(&@&m1+)cD'%yt>+O$H&kn?-IrH%y/S$m00#20k$}[F-LxF&jNN+Rre%!cZ'v0O$'':)RYn$(&z-Jr(&iV$$~s"$*N0*Zg&)dAr+R':)RNM'dl*%u@w(mGT%v.v*Zh{*J01#C$J&l'9)S&z-Ko:%4ma*Z[E(XVa#2/6%e!=%tMp)c0l%!Z.(m[F(ZIh$(I-)d0l$~c<#2u9+T<R%r$I&q'9)A&z([LW%uF8%uVa#2ma*ZmD)cDc'd%E$'I)%wG6(kfg(m$I&phz&j>H%v/3%r00#1Zh&}zw-KB2-IHN(^"9&}=M#2ma*Z0O$(E"([.v&nCL)b@=(l.v&lJc$}Ci(m1J*Z>)$|bB%w@w%#q/&k0M$$%E'tCg$~l*)e.v&l[G([&]+XGT%u<R%v[G-Jb|$'?_*['9)S=M#2L9&mrd$~W\)c&z([/p$-vo*Y$I&j0l$~?|%uMS(lV}$(Lu(l1+%u':.@xG&oiv%wr&&yLu(k=L#1'8)Rt>+T&z(ggE*XMS$~'6)SC.*XLu(lpS$~H0'dL:*K0O$9Ez&qCL)o$H&\Ci(l@=$}s}*Y'8)R?{%{'4)RM5$<y_%#H1+O'1)QW>(nh]'bJ&#5[(+QCL%u$I&q?{%eK")cw/'diY(kpp%u01#2K!%tC.*V%E'u&y([nz%uJc$~Z.(l'6)UI-)e?_&iM5$)W?(l00#2gb'd1(%vy{%uF<)\\`r)&pJa$|Yn'v/6)aYn's$J&mIK$~$f%u/R$}/P$~/N$~jT'fHN([Xo&m"U'ty_(ld7)bN0&j01#2$H&hHO-J'8)QY1%vNN+UZL%hfg(qNN+AYn'uBn'ds\\`&'&z-Jzv(Xr(&l0l%!0j$}Lu(kn<([Z.(lcu$}Lu$}M4$(Z*$~$g)ceO*['8)R@=$}pp)d0l(lVD$)jT'ckk*[>G%u01#2Ig$)Ja$}JC$(zX'd0g$~Z)$~$J*Z>$$|fc$qzv(KYQ$nN)&lBm+R!>)eY3)dn?(^y#$~N+&i0.#2&y([.u*[lH$~Xs*^V_#2zw-Ju9+N%&(l':)RZL%uZJ%u1+%u.v*Zs$'t%b$~r)&m1+)cIK(lZL%uBn'ddU*[CL%uI+%un?-J?^&m1+%uMS(lfJ$(f*$~ej%uw/+ReM&lHO([>((l&!)dW\%uM5'uWy*[r(&lYQ$~/4%u.r&lLr$~Z.$}AU&lvP%u.p&ldS*[Nk-J':.@>H%tH0'd01&}Lu$zMp)dFv'uma&lr(&mV$$~s_%uld$)Nk-IL9&n':)R/S$}m}'dgE*[0k$}iY(lrH)c$J&mn?([1*%u!y't0O$)V%$~Fv'u<o$}>)$~I+%u1J*[$I&l[('dc=&~/5%u/3%u':)Rp5'tN0&]NM'd=M&}1H&mMS$~0M$(?]&m%E'tZ.$~YQ$~&]+R1J&ly|%uL:*ZM5$)1I&l%&(k"V$)os#1L:*[;!pq)OMpz[qZmHjdQlV\bi?BWtB8}(Q1qp6fsukff `}
+  {label:'AAR · Demo', stream:"3Lw)K,\">\\K!(!`#0,AMH;q03{Zi):JaA@!y~~0hp{I-G7B2E3HM.9jP0#%}/lsC10rG2@Nf4{W8FHHH2Ej/1-[>.By#0'by)dfc(<LqdICF.YI}.4$J11g]?9v/XJc5:I>]/}HF*/0(9I0&3$$g/k$J8}MKNtB*^z&?--0g.7sv4:z4Dx'1?\\&p5Q&R~~C|6\\HB:kK15%/64/p(6(w=<#dC:3/4.ZA)KAn*5k@Swa/OwVMa5BrD0AYbDS@L4C/Ja!M$2H$J1BVS64Y^Bn/32o$J8\\G*7~0}47rG14/2-4l$5+$J^c&:9/w%@_ei-`ZB2?HE7&l$0~YH3/Z{1#vc9iM)=0N^4:$J?F@nC10b0|vd:AZ!3QMDb*$d`Dl#~~HD6M/J=7[97y0_<)$J8'[<@*B$B\\N\\5QH>64A|:20a3tNV5IMF8=fB8(0_Dx0]:sG&D]$J@&mT=?$g1]H<>|$J<}l*~~s!7TA~=zNX>T$fIP+A~~vI?$lxWMx{@bAJE@/K6=egwZYcDrN\"8`Ya<T$J5:yUBW$J5@s9<~$g5ryU@IY~<lY|B0N(4Uh[6~Gi8DZ_A/$J3`HGAyMFB]AM5dB'/qN%(6N#(UN!*+YP>o.v.3.u(tLW.3Lt*rY0@XY.-pY++R%B4</+6rNb+tk|0Dz/6jN`)z$I/(n44D%B1UA.2]NC)MM+(?0C*/NA)Ji0'C=!2m=\\&]zj)gZZ0>@h*n$^+Z192c0>(jdC-/YC4ix9*\\/&(qLe'tvA'l17*|$V+n$I:NFJ/~$H-^/~/`Y@+TJp.rie(^zf)+&K&WVN34VL+Io^$L;#?0s)s]Fq5:$_W}F{[t4wLZ(]\\&:g.<y<\\6?$3u%"},
+  {label:'JON · Robinson', stream:"YsVer,!u<W!4\"r&!,TDE;bB!!h{!!yB!!\"t!!II!!pR!!':!!zZ!!V~!!Mo!!kj!!oW!!t=!!If!!/3!!V@!!Mn!!i6!!W:!!$J!!Xp!!&y!!Vy!![$!!':!!b]!!0j!!jQ!!0.!!V\"!!1&!!Lq!!$I!!=e!!V>!!DA!!kf!!Z&!!<g!!':!!jQ!!/l!!0g!!':!!MO!!MM!!$J!!Bm!!<l!!?\\!!0i!!FU!!L5!!Nk!!zY!!YM!!MO!!1'!!':!!L8!!&@!!C+!!t<!!zW!!ZJ!!Z*!!Id!!iq!!.r!!v.!!F6!!':!!?]!!':!!1+!!Mp!!Uf!!Lu!!fg!!1+!!Ls!!M2!!Zh!!ki!!Nj!!Jb!!':!!eO!!.t!!jT!!0j!!G6!!J&!!zY!!@X!!%&!!.t!!h[!!mB!!z9!!0.!!.q!!Yj!!1G!!YN!!IF!!vl!!=e!!N*!!zv!!/P!!HO!!Xs!!zZ!!d5!!@w!!G4!!Xr!!?\\!!':!!/T!!&z!!Gq!!i<!!Bm!!':!!V~!!0l!!.u!!CL!!&z!!0k!!MS!!/T!!iX!!kj!!ur!!eM!!GR!!>b!!JC!!vN!!.r!!g`!!p/!!':!!'9!!FY!!1*!!%&!!N/!!v4!!.v!!N.!!00!![G!!b_!!$J!!&z!!V%!!c=!!ga!!JE!!IJ!!Z+!!ki!!AR!!':!!H0!!Ih!!YP!!Y1!!0/!!$J!!s{!!':!!$J!!$g!!Lu!![G!!01!!VB!!G4!!z=!![G!!![!!ma!!GT!!zZ!!$J!!J'!!l*!!@Y!!>'!!V^!!ek!!Nj!!':!!$J!!Dd!!/6!!ZL!!J'!!Ue!!%D!!t>!!t[!!01!!y|!!LX!!zw!!M4!!F:!!gb!!Ja!!$J!!00!!Y2!!tZ!!':!!00!!ma!!NL!!Xs!!Xq!!y#!!NK!!Xp!!&@!!Xp!!Xn!!!y!!/S!!ZK!!NK!!A4!!Xl!!lF!!':!!Xk!!Ml!!H-!!%b!!%&!!0i!!':!!%b!!0i!!m\\!!1H!!%E!!MS!!G4!!?\\!!%&!!1J!!Z+!!%E!!&@!!Z+!!LX!!HO!!H1!!N/!!Xs!!re!!@Z!!':!!H1!!m$!!Xs!!%&!!K\"!!s$!!?_!!Mp!!':!!yB!!N0!!&z!!L:!!le!!f+!!L:!!ZL!!&]!!':!!/T!!ZL!!zZ!!rc!!Z-!!E{!!?_!!d7!!J'!!':!!CL!!L:!!t>!!Ue!!0O!!h!!!J'!!ma!!/T!!cZ!!I-!!$I!!CK!!?z!!VA!!Zh!!t[!!':!!g&!!&z!!\"W!!bB!!pS!!VD!!Y2!!':!!cZ!!MS!!d7!!m}!!y#!!MQ!!$J!!s|!!Ap!!MP!!/R!!Ze!!$g!!/3!!x~!!MO!!uR!!GO!!//!!':!!$J!!oq!!B2!!HO!!z=!!zY!!$J!!VD!!':!!Zi!!01!!Y3!!Xs!!zZ!!0N!!1(!!@Z!!0N!!0L!!1(!!YQ!!Xs!!':!!F9!!eM!!M3!!Uc!!pP!!%b!!':!!&z!!Lu!!p4!!ot!!?_!!Ue!!&]!!VD!!Mp!!i:!!it!!':!!Yl!!zZ!!>'!!I-!!Xs!!%&!!ej!!n?!!t>!!/2!!gD!!MS!!g$!!%E!!j2!!0f!!M2!!i6!!iS!!Y-!!0(!!Lm!!mY!!/g!!GK!!MH!!Gf!!sS!!@1!!Ya!!mS!!Ma!!sl!!B1!!z)!!sh!!fW!!lp!!rV!!/B!!$J!!rT!!fV!!Nk!!Nj!!'7!!$J!!f=!!.v!!.t!!r%!!xB!!1G!![E!!ZA!!n<!!Iz!!Yb!!r&!!Y`!!Y^!!xC!!1E!!$b!!LP!!Y^!!sU!!yp!!Y\\!!LN!!m4!!ft!!YZ!!0<!!YX!!;#}Mc9j<^m:Ci[Fe/*B{y\\'\"P(}\\{C)kd\\/$*hA6^"},
 ];
 // Screen shake — 4 independent sinusoidal channels, normalized so total energy=1
 // Each channel: {phx, phy, fx, fy, mx, my} — random phase & freq per axis per layer
@@ -584,7 +585,7 @@ let ui = {
   score:0, level:1, lines:0, hi:0,
   tickers:[],          // [{text,hue}]
   prevPlacements:[null,null,null,null],
-  tetrisReady:false,   // I-piece loaded
+  towresReady:false,   // I-piece loaded
   paused:false,
   dead:false,
   gameStarted:false,   // false = show start screen
@@ -1063,7 +1064,7 @@ const MARQUEE_MESSAGES = [
   'TAP A PIECE OR GHOST ON BOARD TO PLACE INSTANTLY',
   ' FRESNO  559-485-9050  ',
   'NO HOLES = BIGGER BONUS  ',
-  'TETRIS STREAKS MULTIPLY YOUR POT  ',
+  'TOWRES STREAKS MULTIPLY YOUR POT  ',
   'MADE WITH ANTHROPIC CLAUDE AI  ',
 ];
 const MARQUEE_PX_PER_SEC = 320;
@@ -1136,10 +1137,10 @@ function drawTitle(t){
       'TAP THE GHOST ON BOARD  —  SAME INSTANT PLACE',
       'SLIDER = SPEED  1.0 SLOW  TO  11 INSANE',
       'NO HOLES = CLEAN STREAK = BIGGER BONUS POT',
-      'TETRIS = 4 LINES = STREAK MULTIPLIER GROWS',
+      'TOWRES = 4 LINES = STREAK MULTIPLIER GROWS',
       'AUTO MODE = AI PLAYS  —  NO HIGH SCORE THOUGH',
       'PIECE POT FILLS WITH CLEAN DROPS  NO HOLES',
-      'TETRIS POT MULTIPLIES ON CONSECUTIVE TETRIS',
+      'TOWRES POT MULTIPLIES ON CONSECUTIVE TOWRES',
       'COLLECT YOUR POTS BY CLEARING LINES',
       'LEVEL UP EVERY 10 LINES  —  SPEED INCREASES',
       'RECEIPT SHOWS FULL SCORE BREAKDOWN AFTER GAME',
@@ -1967,7 +1968,7 @@ function drawTBonusBox(t){
   panel(r.x, r.y, r.w, r.h);
 
   const cleanVal  = piecePot  ? Math.round(piecePot/100)  : 0;
-  const tetrisVal = tetrisPot ? Math.round(tetrisPot/100) : 0;
+  const towresVal = towresPot ? Math.round(towresPot/100) : 0;
 
   // Split box into two equal halves vertically
   const halfH = r.h * 0.46;
@@ -1981,11 +1982,11 @@ function drawTBonusBox(t){
   _dmWordLabel(CTX, 'BONUS',  ax, topY,         aw, wordH, '#00ffff');
   _dmWordLabel(CTX, 'TBONUS', ax, botY,         aw, wordH, C.orange);
 
-  // LED digits — 3 digits for CLEAN (yellow), 4 for TETRIS (orange)
+  // LED digits — 3 digits for CLEAN (yellow), 4 for TOWRES (orange)
   const numH = halfH * 0.62;
   _draw7SegDigits(CTX, cleanVal,  ax, aw, topY+wordH*1.1, numH, 3,
     C.yellow, C.yellow, 'rgba(60,50,0,0.35)');
-  _draw7SegDigits(CTX, tetrisVal, ax, aw, botY+wordH*1.1, numH, 4,
+  _draw7SegDigits(CTX, towresVal, ax, aw, botY+wordH*1.1, numH, 4,
     C.orange, C.orange, 'rgba(60,25,0,0.35)');
 }
 
@@ -2225,10 +2226,10 @@ function drawPieceRow(t){
   const GAP = R.GAP;
   const PW  = Math.round((r.w - 3*GAP) / 4);
 
-  // ── TETRIS MEGA-BUTTON — full width, single placement ─────────────────────
-  // Tetris state: derived from placements — slot 0 filled, rest null. No flag dependency.
-  const _isTetrisMode = !_replayMode && !!(placements && placements[0] && !placements[1] && !placements[2] && !placements[3]);
-  if(_isTetrisMode){
+  // ── TOWRES MEGA-BUTTON — full width, single placement ─────────────────────
+  // Towres state: derived from placements — slot 0 filled, rest null. No flag dependency.
+  const _isTowresMode = !_replayMode && !!(placements && placements[0] && !placements[1] && !placements[2] && !placements[3]);
+  if(_isTowresMode){
     // Draw one giant glowing button covering all four slots
     const bx = r.x, by = r.y, bw = r.w, bh = r.h;
     const br = 12;
@@ -2253,13 +2254,13 @@ function drawPieceRow(t){
     CTX.fillStyle=grd;
     roundRect(bx,by,bw,bh,br); CTX.fill();
 
-    // TETRIS text — DM dot-matrix font with fast-moving hue wash
+    // TOWRES text — DM dot-matrix font with fast-moving hue wash
     // Compute char layout
     const dotSz = Math.max(2, Math.floor((bh*0.52) / (7+6)));
     const step  = dotSz+1;
     const charW = 5*step+2;
     const charH = 7*step;
-    const word  = 'TETRIS';
+    const word  = 'TOWRES';
     const totalTxtW = word.length * charW;
     const startX = bx + (bw-totalTxtW)/2;
     const startY = by + (bh-charH)/2;
@@ -2294,15 +2295,15 @@ function drawPieceRow(t){
     CTX.restore();
 
     // Register hit zone over full row
-    hitZones = hitZones.filter(z=>z.id!=='tetris'&&z.id!=='piece0'&&z.id!=='piece1'&&z.id!=='piece2'&&z.id!=='piece3');
-    addHit('tetris', bx, by, bw, bh);
+    hitZones = hitZones.filter(z=>z.id!=='towres'&&z.id!=='piece0'&&z.id!=='piece1'&&z.id!=='piece2'&&z.id!=='piece3');
+    addHit('towres', bx, by, bw, bh);
     return;
   }
 
   // ── REPLAY TRANSPORT BAR ─────────────────────────────────────────────────
   if(_replayMode || (_replaySource && dead) || (_justPlayedStream && dead && !_replaySource)){
     const GAP3=R.GAP, PW3=Math.round((r.w-4*GAP3)/5);
-    hitZones=hitZones.filter(z=>!z.id.startsWith('replay_')&&z.id!=='tetris'&&z.id!=='piece0'&&z.id!=='piece1'&&z.id!=='piece2'&&z.id!=='piece3');
+    hitZones=hitZones.filter(z=>!z.id.startsWith('replay_')&&z.id!=='towres'&&z.id!=='piece0'&&z.id!=='piece1'&&z.id!=='piece2'&&z.id!=='piece3');
     const _icons=['◀◀','▶','⏸','⏹','☰'];
     const _ids  =['replay_back','replay_play','replay_pause','replay_stop','replay_library'];
     // Dim play when not paused; dim pause when paused or dead
@@ -2321,7 +2322,7 @@ function drawPieceRow(t){
   // ── NORMAL FOUR SLOTS — re-register hit zones every frame ─────────────────
   const GAP2 = R.GAP;
   const PW2  = Math.round((r.w - 3*GAP2) / 4);
-  hitZones = hitZones.filter(z=>z.id!=='tetris'&&z.id!=='piece0'&&z.id!=='piece1'&&z.id!=='piece2'&&z.id!=='piece3');
+  hitZones = hitZones.filter(z=>z.id!=='towres'&&z.id!=='piece0'&&z.id!=='piece1'&&z.id!=='piece2'&&z.id!=='piece3');
   for(let i=0;i<4;i++){
     addHit('piece'+i, r.x + i*(PW2+GAP2), r.y, PW2, r.h);
   }
@@ -3048,7 +3049,7 @@ if(R && R.auto && !(_replayMode) && !(_replaySource && dead)){
       case 'receipt': break; // handled by direct coordinate check at top of handleTap
       case 'receipt_close':hideReceipt(); break;
       case 'speed_slider': break; // handled by slider path
-      // Everything else (piece0-3, tetris, ctrl_*, canvas) — silently ignored
+      // Everything else (piece0-3, towres, ctrl_*, canvas) — silently ignored
     }
     return; // never fall through to human controls
   }
@@ -3061,7 +3062,7 @@ if(R && R.auto && !(_replayMode) && !(_replaySource && dead)){
     case 'pause':     if(dead) restart(false); else if(ui.gameStarted) togglePause(); break;
     case 'piece0': case 'piece1': case 'piece2': case 'piece3':
       _ensureCommitted(); choose(parseInt(id[5])); break;
-    case 'tetris':    _ensureCommitted(); chooseTetris(); break;
+    case 'towres':    _ensureCommitted(); chooseTowres(); break;
     case 'ctrl_rotl': _ensureCommitted(); rot(-1); break;
     case 'ctrl_rotr': _ensureCommitted(); rot(1); break;
     case 'ctrl_soft': _ensureCommitted(); sdrop(); break;
@@ -3183,10 +3184,10 @@ const gx = null; // game logic should not use gx directly after our rewrite
 
 
 function updateTBDisplay(){
-  // no-op: drawTBonusBox reads piecePot / tetrisPot directly
+  // no-op: drawTBonusBox reads piecePot / towresPot directly
 }
-function hideTetrisButton(){ /* no-op: renderer reads placements directly */ }
-function showTetrisButton(){ /* no-op: renderer reads placements directly */ }
+function hideTowresButton(){ /* no-op: renderer reads placements directly */ }
+function showTowresButton(){ /* no-op: renderer reads placements directly */ }
 function drawNext(){ /* handled in draw() */ }
 function drawPrevBtn(idx, p){
   if(!placements) return;
@@ -3331,17 +3332,17 @@ const G = (() => {
 
   // ── Scoring / bonus state ─────────────────────────────────────────
   def(g,'piecePot',             ()=>piecePot,              v=>{piecePot=v;});
-  def(g,'tetrisPot',            ()=>tetrisPot,             v=>{tetrisPot=v;});
+  def(g,'towresPot',            ()=>towresPot,             v=>{towresPot=v;});
   def(g,'piecesPlaced',         ()=>piecesPlaced,          v=>{piecesPlaced=v;});
-  def(g,'tetrisStreak',         ()=>tetrisStreak,          v=>{tetrisStreak=v;});
-  def(g,'tetrisMultiplier',     ()=>tetrisMultiplier,      v=>{tetrisMultiplier=v;});
+  def(g,'towresStreak',         ()=>towresStreak,          v=>{towresStreak=v;});
+  def(g,'towresMultiplier',     ()=>towresMultiplier,      v=>{towresMultiplier=v;});
   def(g,'currentScoringHoles',  ()=>currentScoringHoles,   v=>{currentScoringHoles=v;});
   def(g,'scoringDisabledSound', ()=>scoringDisabledSound,  v=>{scoringDisabledSound=v;});
   def(g,'hfRun',                ()=>hfRun,                 v=>{hfRun=v;});
   def(g,'hfBest',               ()=>hfBest,                v=>{hfBest=v;});
   def(g,'hfAllTime',            ()=>hfAllTime,             v=>{hfAllTime=v;});
   def(g,'neverHoled',           ()=>_neverHoled,           v=>{_neverHoled=v;});
-  def(g,'tetrisLines',          ()=>_tetrisLines,          v=>{_tetrisLines=v;});
+  def(g,'towresLines',          ()=>_towresLines,          v=>{_towresLines=v;});
   def(g,'dirtyRun',             ()=>_dirtyRun,             v=>{_dirtyRun=v;});
   def(g,'dirtyBest',            ()=>_dirtyBest,            v=>{_dirtyBest=v;});
   def(g,'towerSeverity',        ()=>_towerSeverity,        v=>{_towerSeverity=v;});
@@ -3358,8 +3359,8 @@ const G = (() => {
   def(g,'moveStartT',       ()=>moveStartTime,        v=>{moveStartTime=v;});
   def(g,'labelPositions',   ()=>labelPositions,       v=>{labelPositions=v;});
   def(g,'gapList',          ()=>gapList,              v=>{gapList=v;});
-  def(g,'tetrisPrepCol',    ()=>tetrisPrepCol,        v=>{tetrisPrepCol=v;});
-  def(g,'tetrisPrepActive', ()=>tetrisPrepActive,     v=>{tetrisPrepActive=v;});
+  def(g,'towresPrepCol',    ()=>towresPrepCol,        v=>{towresPrepCol=v;});
+  def(g,'towresPrepActive', ()=>towresPrepActive,     v=>{towresPrepActive=v;});
 
   // ── Autoplay state ────────────────────────────────────────────────
   def(g,'autoPlay',  ()=>AUTO_PLAY,  v=>{AUTO_PLAY=v;});
@@ -3459,7 +3460,7 @@ const G = (() => {
       score:     score,
       holes:     currentScoringHoles,
       piecePot:  piecePot,
-      tetrisPot: tetrisPot,
+      towresPot: towresPot,
     };
   };
 
@@ -3847,7 +3848,7 @@ const NES_SC=[0,40,100,300,1200];
 const NES_SP=[800,717,633,550,467,383,300,217,133,100,83,83,83,67,67,67,50,50,50,33,33,33,33,33,33,33,33,33,33,17];
 
 // ─── NES RIGHT-HANDED ROTATION SYSTEM ────────────────────────────────────────
-// All 4 rotation states pre-defined per piece exactly as NES Tetris uses them.
+// All 4 rotation states pre-defined per piece exactly as NES Towres uses them.
 // Rotation index 0 = spawn orientation.
 // J/L/T/S/Z rotate around the center cell of their 3×3 bounding box.
 // I rotates between horizontal (1 row) and vertical (4 rows, right-biased).
@@ -4020,7 +4021,7 @@ function sndLineClear(n){
     sndLineClearReversed(n);
     return;
   }
-  // Tetris (4 lines) — original ascending fanfare unchanged
+  // Towres (4 lines) — original ascending fanfare unchanged
   const notes=[[262,0],[330,0.03],[415,0.06],[523,0.09],[659,0.12],
                [784,0.15],[988,0.18],[1319,0.21]];
   notes.forEach(([f,dt])=>blip(f,null,0.09,0.20,'square',dt));
@@ -4030,9 +4031,9 @@ function sndLineClear(n){
   blip(1047,null,0.35,0.16,'triangle',0.28);
 }
 
-// Special Tetris-button blip: ascending 3-note chip chord → silence → punch
+// Special Towres-button blip: ascending 3-note chip chord → silence → punch
 // Unique — never heard in any other context. Signals "here it comes."
-function sndTetrisBlip(){
+function sndTowresBlip(){
   // Quick ascending triad
   blip(523,null,0.045,0.28,'square',0);
   blip(659,null,0.045,0.28,'square',0.04);
@@ -4116,9 +4117,9 @@ function sndNoHole(){
   blip(784,null,0.45,0.12,'triangle',0.52);
 }
 
-// Perfect-square board — eerie "waiting for Tetris" drone
+// Perfect-square board — eerie "waiting for Towres" drone
 // Low mysterious pulse + rising sine sweep suggests tension/anticipation
-function sndWaitingTetris(){
+function sndWaitingTowres(){
   const ac=getAC();if(ac.state==='suspended')ac.resume();
   // Low pulsing drone — like holding breath
   blip(110,55,1.2,0.30,'square',0);
@@ -4133,8 +4134,8 @@ function sndWaitingTetris(){
   blip(660,null,0.4,0.15,'square',1.15);
 }
 
-// Tetris perfection — triumphant overlapping fanfare
-function sndTetrisPerfection(){
+// Towres perfection — triumphant overlapping fanfare
+function sndTowresPerfection(){
   const ac=getAC();if(ac.state==='suspended')ac.resume();
   // Massive ascending run
   [262,330,392,494,523,659,784,988,1047,1319,1568,2093]
@@ -4166,10 +4167,10 @@ function fmtK(n){
   return(n>0?'+':'')+n.toString();
 }
 
-// ── TETRIS SCORE OVERLAY ────────────────────────────────────────────────────
-// Shows TETRIS + score, then BONUS + bonus score (if piecePot+tetrisPot>0)
+// ── TOWRES SCORE OVERLAY ────────────────────────────────────────────────────
+// Shows TOWRES + score, then BONUS + bonus score (if piecePot+towresPot>0)
 // Letters appear first, values pulse in 0.25s later with rotating hue per letter
-function showTetrisScoreOverlay(){} // removed — ticker handles it
+function showTowresScoreOverlay(){} // removed — ticker handles it
 
 function updateHoleDisplay(n){
   // no-op: renderer reads currentScoringHoles directly
@@ -4213,7 +4214,7 @@ function awardLineClearBonus(cleared, rowIndices){
     score+=award;
     document.getElementById('sv').textContent=score;
     if(!autoUsed && score>hi){hi=score;document.getElementById('hv').textContent=hi;}
-    floatTetrisBonus(award);
+    floatTowresBonus(award);
     // Transaction log
     txScore('line-'+cleared, award, [
       {label:'Piece pot',       value: piecePot},
@@ -4499,14 +4500,14 @@ function checkNoHoleBonus(){
       if(isPerfectSquare&&nextIsI){
         score+=20490;
         document.getElementById('sv').textContent=score;
-        sndTetrisPerfection();
+        sndTowresPerfection();
         tickerPush([`🏆✨ PERFECT`, `+20,490`, `ATARI TRIBUTE`]);
         txScore('super-clear',20490,[
           {label:'Perfect square + I-piece next','value':''},
           {label:'Atari SF Rush 2049 tribute','value':'+20,490'},
         ]);
       } else if(isPerfectSquare){
-        sndWaitingTetris();
+        sndWaitingTowres();
       } else {
         sndNoHole();
       }
@@ -4517,7 +4518,7 @@ function checkNoHoleBonus(){
   updateHoleDisplay(newScoringHoles);
   _lastScoringHoleCheck=(newScoringHoles===0);
 
-  const pieceBonus = 100; // flat per clean piece — tetrisMultiplier only affects tetrisPot
+  const pieceBonus = 100; // flat per clean piece — towresMultiplier only affects towresPot
   piecePot+=pieceBonus;
   updateTBDisplay();
   checkTowers();
@@ -4603,10 +4604,10 @@ function checkTowers(){
 // hfBest  : longest hfRun achieved in current game
 // hfAllTime: longest run ever across all games (persists like hi)
 let hfRun=0, hfBest=0, hfAllTime=0, _gamesPlayed=0;
-let _tetrisLines=0;
-let _maxTetrisStreak=0; // highest consecutive-Tetris streak reached this game
+let _towresLines=0;
+let _maxTowresStreak=0; // highest consecutive-Towres streak reached this game
 let _dirtyRun=0, _dirtyBest=0;
-let _neverHoled=true; // stayed hole-free the entire game so far // longest run of pieces placed WITH holes present // lines cleared in 4-at-a-time Tetrises
+let _neverHoled=true; // stayed hole-free the entire game so far // longest run of pieces placed WITH holes present // lines cleared in 4-at-a-time Towreses
 // cur,cx,cy,nxt declared at top
 var dropIv,selIv,timerMax,timerLeft; // placements declared at top
 let allCands=[],shownFootprints=new Set(),_candCursor=0;
@@ -4617,10 +4618,10 @@ let labelPositions=[];
 
 // ── No-hole bonus tracking ─────────────────────────────────────────────────
 // piecePot declared at top
-// tetrisPot declared at top
+// towresPot declared at top
 let piecesPlaced=0;        // total pieces placed this game
-let tetrisStreak=0;        // consecutive Tetris clears
-let tetrisMultiplier=1;    // doubles each consecutive Tetris, cap at 16
+let towresStreak=0;        // consecutive Towres clears
+let towresMultiplier=1;    // doubles each consecutive Towres, cap at 16
 let currentScoringHoles=0; // live countScoringHoles on the board, updated each placement
 let scoringDisabledSound=false;
 // noHoleActive derived: currentScoringHoles===0
@@ -4755,9 +4756,9 @@ function buildPuzzleQueue(){
   // col (0 or 9) is always untouched — but verify col is in bounds just in case.
   // Also: if by some freak the player placed a previous piece in the well col
   // (only possible if they ignored the hint), fall back to random.
-  const tetrisPossible = (puzzleWellCol >= 0 && puzzleWellCol < COLS);
+  const towresPossible = (puzzleWellCol >= 0 && puzzleWellCol < COLS);
 
-  if(tetrisPossible){
+  if(towresPossible){
     seq.push({k:'I', rgb:[...PTYPES.I.rgb]});
     // Target will be resolved at deal time against live board (see mkPiece)
     targets.push({k:'I', rot:1, x:puzzleWellCol, dropY:BOARD_PUZZLE_TOP});
@@ -4784,16 +4785,16 @@ function mkPiece(){
 }
 
 // Called in spawn() after cur is set — if cur is the puzzle I-piece,
-// verify the board (with all 9 pieces now placed) still allows a Tetris.
+// verify the board (with all 9 pieces now placed) still allows a Towres.
 // If not, silently swap cur to a random non-I piece.
-function verifyTetrisPiece(){
+function verifyTowresPiece(){
   if(_replayMode) return; // stream defines exact piece sequence; never override nxt
   // Called right after nxt is fetched — if nxt is the puzzle I-piece,
-  // check NOW (8 pieces on board) whether a Tetris will be possible.
+  // check NOW (8 pieces on board) whether a Towres will be possible.
   // We check one piece early so the preview box never shows the wrong piece.
   if(!nxt || nxt.k!=='I') return;
   if(!puzzleTargets.length) return;
-  // Only apply to the last target (the Tetris well piece, targets.length===1)
+  // Only apply to the last target (the Towres well piece, targets.length===1)
   if(puzzleTargets.length!==1) return;
   const PUZZLE_TOP = ROWS - 4;
   // Check rows above puzzle zone are clear
@@ -4803,7 +4804,7 @@ function verifyTetrisPiece(){
     .some(c => board.slice(PUZZLE_TOP).every(row => !row[c]));
   if(!nothingAbove || !hasWell){
     const dbg=document.getElementById('proof-debug');
-    if(dbg&&PROOF_MODE) dbg.textContent+=`\n⚠ Tetris blocked — swapping I to random`;
+    if(dbg&&PROOF_MODE) dbg.textContent+=`\n⚠ Towres blocked — swapping I to random`;
     const rk = PK.filter(k=>k!=='I')[Math.random()*6|0];
     nxt = {k:rk, rot:0, c:NRS[rk][0].map(r=>[...r]), rgb:[...PTYPES[rk].rgb]};
     if(puzzleTargets.length>0) puzzleTargets[0]=null;
@@ -4865,7 +4866,7 @@ function spawn(){
 
   // Check if the upcoming I-piece (now in nxt preview) is still valid.
   // Run while 8 pieces are on the board so the preview never shows wrong piece.
-  verifyTetrisPiece();
+  verifyTowresPiece();
 
   const pw=cur.c[0].length;
   cx = pw===4 ? 3 : pw===2 ? 4 : 3;
@@ -5004,7 +5005,7 @@ function bestNextScore(piece,b){
   const rots=NRS[k].map(r=>r.map(row=>[...row]));
 
   // Activate hole-aware lookahead only when buried cells exist.
-  // Clean board = Tetris-prep strategy dominates, no interference.
+  // Clean board = Towres-prep strategy dominates, no interference.
   const buriedOnB=countBuriedCells(b);
   const holeMode=buriedOnB>0;
 
@@ -5053,13 +5054,13 @@ function bestNextScore(piece,b){
   return best===-Infinity?scoreBoard(b):best;
 }
 
-// ── Notch penalty: penalise creating depth-2+ gaps that aren't the Tetris well
+// ── Notch penalty: penalise creating depth-2+ gaps that aren't the Towres well
 // and can't be fixed by the known next piece.
 //
 // A "notch" is a column that drops 2+ rows below BOTH its neighbours on the
 // post-placement board and wasn't already that deep before the placement.
 // Exemptions:
-//   1. It is the designated Tetris well column (tetrisPrepCol)
+//   1. It is the designated Towres well column (towresPrepCol)
 //   2. The next piece (nxt) has at least one placement that fills/reduces it
 function calcNotchPenalty(boardBefore, boardAfter, nextPiece){
   // Column heights on each board
@@ -5097,8 +5098,8 @@ function calcNotchPenalty(boardBefore, boardAfter, nextPiece){
     if(depthAfter < 2) continue;            // not deep enough to matter
     if(depthAfter <= depthBefore) continue; // wasn't made worse by this move
 
-    // Exempt: this is the designated Tetris well column
-    if(tetrisPrepActive && c === tetrisPrepCol) continue;
+    // Exempt: this is the designated Towres well column
+    if(towresPrepActive && c === towresPrepCol) continue;
 
     // Exempt: the NEXT piece can fill/reduce this notch (lookahead pass)
     if(nextPiece){
@@ -5127,7 +5128,7 @@ function calcNotchPenalty(boardBefore, boardAfter, nextPiece){
 
     // New un-exempted notch: penalise by depth squared (deeper = much worse)
     const newDepth = depthAfter - Math.max(0, depthBefore);
-    penalty += newDepth * newDepth * TETRIS_PREP_PENALTY * 0.8;
+    penalty += newDepth * newDepth * TOWRES_PREP_PENALTY * 0.8;
   }
 
   return -penalty;
@@ -5189,19 +5190,19 @@ function evalP(cells,x,y){
         } else {
           // Clean board: still reward filling a deep well to prevent tower growth
           // Scales with well depth — deeper = more urgent
-          iDeepBonus = thisWell.depth * thisWell.depth * TETRIS_PREP_BONUS * 0.4;
+          iDeepBonus = thisWell.depth * thisWell.depth * TOWRES_PREP_BONUS * 0.4;
         }
       }
     }
   }
 
   // ── SURVIVAL MODE — binary switch on any hole ─────────────────────────────
-  // Any buried cell = survival mode. Tetris-prep is completely off.
+  // Any buried cell = survival mode. Towres-prep is completely off.
   // This is intentionally a hard cutoff, not a gradient.
   const inSurvival = buriedBefore > 0;
 
-  // Tetris-prep: only active on a fully clean board
-  const prepScore = inSurvival ? 0 : tetrisPrepScore(cells,x);
+  // Towres-prep: only active on a fully clean board
+  const prepScore = inSurvival ? 0 : towresPrepScore(cells,x);
 
   // Lookahead weight: heavier during survival (holes compound quickly)
   const lookaheadWeight = inSurvival ? 0.65 : 0.40;
@@ -5230,12 +5231,12 @@ function evalP(cells,x,y){
        + notchPenalty;
 }
 
-// ─── TETRIS-PREP STRATEGY ────────────────────────────────────────────────────
+// ─── TOWRES-PREP STRATEGY ────────────────────────────────────────────────────
 // ── SURVIVAL-FIRST SCORING CONSTANTS ─────────────────────────────────────────
-// Priority order: eliminate holes > stay flat/low > Tetris prep
+// Priority order: eliminate holes > stay flat/low > Towres prep
 // Any hole triggers full survival mode regardless of count.
-const TETRIS_PREP_BONUS   =  10000; // modest — only active on clean boards
-const TETRIS_PREP_PENALTY =  30000; // penalty for touching the well column
+const TOWRES_PREP_BONUS   =  10000; // modest — only active on clean boards
+const TOWRES_PREP_PENALTY =  30000; // penalty for touching the well column
 const HOLE_REDUCE_BONUS   = 100000; // per buried cell eliminated — dominant signal
 const HOLE_CREATE_PENALTY = 150000; // per new buried cell — near-fatal to create one
 const HOLE_EXIST_PENALTY  =  25000; // per buried cell still present — constant pressure
@@ -5250,8 +5251,8 @@ function slideBonus(dist){
   return SLIDE_BONUS*2;
 }
 
-let tetrisPrepCol   = -1;
-let tetrisPrepActive= false;
+let towresPrepCol   = -1;
+let towresPrepActive= false;
 
 // Count buried empty cells on board b.
 // A hole is any empty cell (row r, col c) where some filled cell exists at row < r in col c.
@@ -5372,7 +5373,7 @@ function countPermanentHoles(b){
 }
 
 // boardIsHoleFree: uses countBuriedCells — the AI strategy metric.
-// This is intentionally NOT countScoringHoles — we want Tetris-prep
+// This is intentionally NOT countScoringHoles — we want Towres-prep
 // to activate only when the board has no covered cells at all.
 function boardIsHoleFree(){return countBuriedCells(board)===0;}
 
@@ -5407,12 +5408,12 @@ function detectWells(b){
   return wells;
 }
 
-function updateTetrisPrepStrategy(){
-  // Strict rule: ANY buried cell = no Tetris prep, no well preservation.
-  // Eliminate all holes first, then build toward Tetris.
-  if(!boardIsHoleFree()){tetrisPrepActive=false;tetrisPrepCol=-1;return;}
+function updateTowresPrepStrategy(){
+  // Strict rule: ANY buried cell = no Towres prep, no well preservation.
+  // Eliminate all holes first, then build toward Towres.
+  if(!boardIsHoleFree()){towresPrepActive=false;towresPrepCol=-1;return;}
 
-  // Pick emptier edge column as the Tetris well
+  // Pick emptier edge column as the Towres well
   const leftH =_colTopRow(0);
   const rightH=_colTopRow(9);
   const reserveCol=leftH>=rightH?0:9;
@@ -5423,13 +5424,13 @@ function updateTetrisPrepStrategy(){
   for(const k of PK){
     if(k==='I') continue; // I-piece goes in the well — don't require it to fit elsewhere
     if(!_pieceCanLandIn(k,testCols)){
-      tetrisPrepActive=false;tetrisPrepCol=-1;
+      towresPrepActive=false;towresPrepCol=-1;
       return;
     }
   }
 
-  tetrisPrepActive=true;
-  tetrisPrepCol=reserveCol;
+  towresPrepActive=true;
+  towresPrepCol=reserveCol;
 }
 
 function _colTopRow(c){
@@ -5453,8 +5454,8 @@ function _pieceCanLandIn(k,allowedCols){
   return false;
 }
 
-function tetrisPrepScore(cells,px){
-  // tetrisPrepActive is only true when board is fully hole-free (countBuriedCells===0).
+function towresPrepScore(cells,px){
+  // towresPrepActive is only true when board is fully hole-free (countBuriedCells===0).
   // When holes exist this returns 0 — but we ALSO need to penalize well-creation
   // when holes exist, handled below via wellPenalty.
   
@@ -5472,14 +5473,14 @@ function tetrisPrepScore(cells,px){
     const wellsBefore = detectWells(board).length;
     const wellsAfter  = detectWells(tb).length;
     if(wellsAfter > wellsBefore){
-      wellPenalty = -(wellsAfter - wellsBefore) * TETRIS_PREP_PENALTY * 0.6;
+      wellPenalty = -(wellsAfter - wellsBefore) * TOWRES_PREP_PENALTY * 0.6;
     }
   }
 
   // ── Dual-well I-piece rule ────────────────────────────────────────────────
   // If 2+ wells exist (regardless of holes), always prioritize dropping
   // I-piece vertically into the DEEPEST well to consolidate to one well.
-  // This applies even when tetrisPrepActive is false.
+  // This applies even when towresPrepActive is false.
   let dualWellBonus = 0;
   if(cur && cur.k === 'I'){
     const wells = detectWells(board);
@@ -5492,14 +5493,14 @@ function tetrisPrepScore(cells,px){
         dualWellBonus = HOLE_REDUCE_BONUS * 1.5; // same magnitude as uncovering holes
       } else if(wells.length >= 2 && !isVertical){
         // Penalize non-vertical I-piece when 2+ wells — don't waste it flat
-        dualWellBonus = -TETRIS_PREP_BONUS * 0.5;
+        dualWellBonus = -TOWRES_PREP_BONUS * 0.5;
       }
     }
   }
 
-  if(!tetrisPrepActive) return wellPenalty + dualWellBonus;
+  if(!towresPrepActive) return wellPenalty + dualWellBonus;
 
-  // ── Standard Tetris-prep: hole-free board, preserve well column ───────────
+  // ── Standard Towres-prep: hole-free board, preserve well column ───────────
   // Well preservation gets MORE important as the board fills, not less.
   // We NEVER fade the penalty for invading the well column.
   // The bonus for staying out scales UP with board height (urgency grows).
@@ -5512,30 +5513,30 @@ function tetrisPrepScore(cells,px){
   // urgency: 0 at empty board, 1 at row 15+. Well is more sacred as board fills.
   const urgency = Math.max(0, Math.min(1, maxH / 15));
 
-  // ── I-piece vertical INTO the well = Tetris setup — check FIRST ─────────
+  // ── I-piece vertical INTO the well = Towres setup — check FIRST ─────────
   // This must come before the invasion check or it gets wrongly penalised.
   const isIVertical = cur && cur.k==='I' && cells.length===4 && (cells[0]||[]).length===1;
-  const isIntoWell  = px === tetrisPrepCol;
+  const isIntoWell  = px === towresPrepCol;
   if(isIVertical && isIntoWell){
-    // Highest value move on a clean board: I drops into well, board is Tetris-ready.
+    // Highest value move on a clean board: I drops into well, board is Towres-ready.
     // Bonus scales with urgency — more valuable as board fills.
-    const tetrisSetupBonus = HOLE_REDUCE_BONUS * (1.5 + urgency * 2.0);
-    return tetrisSetupBonus + wellPenalty + dualWellBonus;
+    const towresSetupBonus = HOLE_REDUCE_BONUS * (1.5 + urgency * 2.0);
+    return towresSetupBonus + wellPenalty + dualWellBonus;
   }
 
   // ── Any other piece touching the well column = invasion ──────────────────
   let invades=false;
   outer:for(let r=0;r<cells.length;r++)for(let c=0;c<cells[r].length;c++){
-    if(cells[r][c]&&px+c===tetrisPrepCol){invades=true;break outer;}
+    if(cells[r][c]&&px+c===towresPrepCol){invades=true;break outer;}
   }
 
   if(invades){
     // Invading the well is always penalised — full penalty, no fade
-    return -TETRIS_PREP_PENALTY + wellPenalty + dualWellBonus;
+    return -TOWRES_PREP_PENALTY + wellPenalty + dualWellBonus;
   }
 
   // Staying out of the well: base bonus + urgency scaling
-  const wellBonus = TETRIS_PREP_BONUS * (1 + urgency * 2);
+  const wellBonus = TOWRES_PREP_BONUS * (1 + urgency * 2);
   return wellBonus + wellPenalty + dualWellBonus;
 }
 
@@ -5822,7 +5823,7 @@ function calcPlacements(fresh=false, _forceRun=false){
   if(puzzleActive && puzzleTargets.length>0 && puzzleTargets[0]!==null){
     const t=puzzleTargets[0];
     let tx=t.x, trot=t.rot;
-    // Only override rotation/x for the 10th piece (the Tetris well I-piece)
+    // Only override rotation/x for the 10th piece (the strategic well I-piece)
     if(t.k==='I' && puzzleTargets.length===1){
       const PUZZLE_TOP=ROWS-4;
       const openCol=Array.from({length:COLS},(_,c)=>c)
@@ -5980,18 +5981,18 @@ function pickOptions(sdCand, sdFp){
 }
 
 function applyNextOptions(){
-  // ── TETRIS LOCK: if any candidate clears exactly 4 lines right now,
+  // ── TOWRES LOCK: if any candidate clears exactly 4 lines right now,
   //    show ONLY that placement — no other options, no cycling. ────────────────
-  const tetrisCand=_findTetrisCand();
-  if(tetrisCand){
-    placements=[tetrisCand,null,null,null];
+  const towresCand=_findTowresCand();
+  if(towresCand){
+    placements=[towresCand,null,null,null];
     shownFootprints.clear();
-    shownFootprints.add(tetrisCand.fpKey);
+    shownFootprints.add(towresCand.fpKey);
     for(let i=0;i<4;i++)drawPrevBtn(i,placements[i]);
-    showTetrisButton();
+    showTowresButton();
     return;
   }
-  hideTetrisButton();
+  hideTowresButton();
 
   // ── Compute straight-drop candidate (only after player has moved) ──────────
   let sdCand=null, sdFp=null;
@@ -6061,20 +6062,20 @@ function applyNextOptions(){
   for(let i=0;i<4;i++)drawPrevBtn(i,placements[i]);
 }
 
-// Called when the player taps the big TETRIS button
-function chooseTetris(){
+// Called when the player taps the big TOWRES button
+function chooseTowres(){
   if(dead||paused||clearAnimating||!cur)return;
-  const tc=_findTetrisCand();
+  const tc=_findTowresCand();
   if(!tc)return;
   stopSelTimer();stopDrop();
   cur.c=tc.c; cur.rot=tc.rotation||0; cx=tc.x; cy=tc.dropY;
-  sndTetrisBlip();
+  sndTowresBlip();
   lock();
 }
 
 // Return the first candidate that clears exactly 4 lines, or null.
-function _findTetrisCand(){
-  // Tetris button ONLY for I-piece clearing exactly 4 lines
+function _findTowresCand(){
+  // Towres button ONLY for I-piece clearing exactly 4 lines
   if(!cur || cur.k !== 'I') return null;
   for(const ca of allCands){
     const tb=board.map(r=>[...r]);
@@ -6086,10 +6087,10 @@ function _findTetrisCand(){
 }
 
 // Called when player taps the board outside a label — cycle to fresh set of options.
-// Blocked when a Tetris is available — no escape from that.
+// Blocked when a Towres is available — no escape from that.
 function cycleOptions(){
   if(dead||paused||!allCands.length)return;
-  if(_findTetrisCand())return; // Tetris is on the table — no cycling allowed
+  if(_findTowresCand())return; // Towres is on the table — no cycling allowed
   applyNextOptions();
 }
 
@@ -6234,7 +6235,7 @@ function lock(){
     piecesPlaced++;
     addScore(0);
     rebuildGapList();
-    updateTetrisPrepStrategy();
+    updateTowresPrepStrategy();
     checkNoHoleBonus();
     spawn();scheduleDrop();
   } else {
@@ -6257,39 +6258,39 @@ function lock(){
       piecesPlaced++;
       addScore(cleared);
       rebuildGapList();
-      updateTetrisPrepStrategy();
+      updateTowresPrepStrategy();
 
-      const tetrisPoints=NES_SC[Math.min(cleared,4)]*level;
+      const towresPoints=NES_SC[Math.min(cleared,4)]*level;
       if(cleared===4){
-        // Perfect board on move 10: board is empty after Tetris
+        // Perfect board on move 10: board is empty after Towres
         const boardEmpty=board.every(row=>row.every(v=>!v));
         if(boardEmpty&&piecesPlaced<=10){
           score+=20490;
           document.getElementById('sv').textContent=score;
-          sndTetrisPerfection();
+          sndTowresPerfection();
           tickerPush([`👾 ATARI OG`, `+20,490`, `≤10 PCS CLEAR`]);
           txScore('atari-og',20490,[
             {label:'Atari OG Bonus','value':''},
-            {label:'Perfect Tetris in <=10 pieces','value':''},
+            {label:'Perfect Towres in <=10 pieces','value':''},
             {label:'SF Rush 2049 tribute','value':'+20,490'},
           ]);
         }
-        fanfare(tetrisPoints);
+        fanfare(towresPoints);
       } else {
-        // Non-Tetris clear: award hole-fractional piecePot bonus
+        // Non-Towres clear: award hole-fractional piecePot bonus
         awardLineClearBonus(cleared, completeRows);
-        // Break streak, reset multiplier, zero tetrisPot
-        tetrisStreak=0;
-        tetrisMultiplier=1;
+        // Break streak, reset multiplier, zero towresPot
+        towresStreak=0;
+        towresMultiplier=1;
         
-        tetrisPot=0;
+        towresPot=0;
         updateTBDisplay();
       }
       // After any line clear, reset scoring-hole check so next call
       // treats the new board state as a fresh evaluation.
       _lastScoringHoleCheck=false;
 
-      // Always run checkNoHoleBonus after any clear — both Tetris and non-Tetris
+      // Always run checkNoHoleBonus after any clear — both Towres and non-Towres
       checkNoHoleBonus();
 
       // P10 audit suppressed
@@ -6842,7 +6843,7 @@ function _syncAutoUI(){
 }
 
 // ─── FANFARE ─────────────────────────────────────────────────────────────────
-function floatTetrisBonus(amount){
+function floatTowresBonus(amount){
   const cs=Math.round(piecePot/100);
   tickerPush([fmtK(amount), `${cs}CS 4T`]);
   // Also briefly flash the tb-float for visibility
@@ -6865,57 +6866,57 @@ function floatTetrisBonus(amount){
 
 function updateTBDisplay(){
   const ep=document.getElementById('tbv-pieces');
-  const et=document.getElementById('tbv-tetris');
+  const et=document.getElementById('tbv-towres');
   // CLEAN: number of clean pieces placed (piecePot ÷ 100, since each piece adds 100)
   if(ep) ep.textContent=Math.round(piecePot/100).toLocaleString();
-  // TETRIS: compact K format (drop trailing zeros, add K)
+  // TOWRES: compact K format (drop trailing zeros, add K)
   if(et){
-    const v=tetrisPot;
+    const v=towresPot;
     et.textContent=v>=1000?(v/1000)+'k':v.toString();
   }
 }
 
-function fanfare(tetrisPoints){
-  triggerShake(11, 420); // Tetris shake: 11px amplitude, 420ms duration
-  tetrisStreak++;
-  if(tetrisStreak > _maxTetrisStreak) _maxTetrisStreak = tetrisStreak;
-  _tetrisLines += 4; // track lines cleared via Tetris for receipt %
+function fanfare(towresPoints){
+  triggerShake(11, 420); // Towres shake: 11px amplitude, 420ms duration
+  towresStreak++;
+  if(towresStreak > _maxTowresStreak) _maxTowresStreak = towresStreak;
+  _towresLines += 4; // track lines cleared via Towres for receipt %
 
   // Collect both pots into score NOW (before adding next virtual credit)
-  const collected = piecePot + tetrisPot;
+  const collected = piecePot + towresPot;
   if(collected > 0){
     score += collected;
     document.getElementById('sv').textContent=score;
     // Ticker fanfare — streak indicator via gem emojis (1 per streak, max 5)
     const gems=['💎','💎💎','💎💎💎','💎💎💎💎','💎💎💎💎💎'];
-    const gemStr=gems[Math.min(tetrisStreak-1,4)];
+    const gemStr=gems[Math.min(towresStreak-1,4)];
     const cs=Math.round(piecePot/100);
-    tickerPush([`🎯 TETRIS ${gemStr}`, fmtK(collected), `${cs}CS 4T`]);
-    txScore('tetris', collected, [
+    tickerPush([`🎯 TOWRES ${gemStr}`, fmtK(collected), `${cs}CS 4T`]);
+    txScore('towres', collected, [
       {label:'Piece pot',        value: fmtAmt(piecePot)},
-      {label:'Tetris streak pot',value: fmtAmt(tetrisPot)},
-      {label:'Streak x'+tetrisStreak+' (mult '+tetrisMultiplier+'x)', value:''},
+      {label:'Towres streak pot',value: fmtAmt(towresPot)},
+      {label:'Streak x'+towresStreak+' (mult '+towresMultiplier+'x)', value:''},
       {label:'Total collected',  value: fmtAmt(collected)},
     ]);
   } else {
-    tickerPush([`🎯 TETRIS`, `4T 0 bonus`]);
+    tickerPush([`🎯 TOWRES`, `4T 0 bonus`]);
   }
 
-  // piecePot carries over through Tetrises — only holes reset it
+  // piecePot carries over through Towreses — only holes reset it
 
-  // Add virtual credit for next Tetris at CURRENT multiplier (before doubling)
-  // Tetris #1 (mult=1): +2,000 → display 2,000
-  // Tetris #2 (mult=2): +4,000 → display 6,000
-  // Tetris #3 (mult=4): +8,000 → display 14,000
-  const virtualCredit = Math.min(20 * 100 * tetrisMultiplier, 32000);
-  tetrisPot += virtualCredit;
+  // Add virtual credit for next Towres at CURRENT multiplier (before doubling)
+  // Towres #1 (mult=1): +2,000 → display 2,000
+  // Towres #2 (mult=2): +4,000 → display 6,000
+  // Towres #3 (mult=4): +8,000 → display 14,000
+  const virtualCredit = Math.min(20 * 100 * towresMultiplier, 32000);
+  towresPot += virtualCredit;
 
   // Now double multiplier (cap at 16) — next pieces earn at new rate
-  tetrisMultiplier = Math.min(tetrisMultiplier * 2, 16);
+  towresMultiplier = Math.min(towresMultiplier * 2, 16);
 
   updateTBDisplay();
 
-  // After Tetris, re-evaluate scoring holes on current board
+  // After Towres, re-evaluate scoring holes on current board
   currentScoringHoles=countScoringHoles(board);
   updateHoleDisplay(currentScoringHoles);
   _lastScoringHoleCheck=(currentScoringHoles===0);
@@ -6974,12 +6975,12 @@ function init(){
   score=0;level=1;lines=0;dead=false;paused=false;
   selectedPlacementIdx=null; _navStartT=0;
   particles=[];explodedCells.clear();clearAnimating=false;
-  gapList=[];tetrisPrepActive=false;tetrisPrepCol=-1;
-  piecePot=0;tetrisPot=0;piecesPlaced=0;_lastScoringHoleCheck=false;_p10Log=[];
+  gapList=[];towresPrepActive=false;towresPrepCol=-1;
+  piecePot=0;towresPot=0;piecesPlaced=0;_lastScoringHoleCheck=false;_p10Log=[];
   _gameCommitted=false;
-  tetrisStreak=0;tetrisMultiplier=1;
+  towresStreak=0;towresMultiplier=1;
   currentScoringHoles=0;scoringDisabledSound=false;
-  hfRun=0;hfBest=0;_tetrisLines=0;_maxTetrisStreak=0;_dirtyRun=0;_dirtyBest=0;_neverHoled=true;
+  hfRun=0;hfBest=0;_towresLines=0;_maxTowresStreak=0;_dirtyRun=0;_dirtyBest=0;_neverHoled=true;
   _towerSeverity=0;
   // Verification chain reset — 5 random B92 chars as game seed
   const _sv = crypto.getRandomValues(new Uint8Array(5));
@@ -7009,7 +7010,7 @@ function init(){
   updateHoleDisplay(0);updateTBDisplay();
   txReset();
   puzzleQueue=[];puzzleTargets=[];puzzleActive=false;buildPuzzleQueue();
-  hideTetrisButton();
+  hideTowresButton();
   document.getElementById('sv').textContent='0';
   document.getElementById('lv').textContent='1';
   document.getElementById('lnv').textContent='0';
@@ -7491,7 +7492,7 @@ function _txSection(evType) {
   if (evType === 'atari-og')           return 'EASTER EGG BONUS';
   if (evType === 'super-clear')        return 'SUPER BONUS';
   if (evType.startsWith('line-'))      return 'LINE CLEAR AWARDS';
-  if (evType === 'tetris')             return 'TETRIS BONUS';
+  if (evType === 'towres')             return 'TOWRES BONUS';
   return 'MISC';
 }
 
@@ -7936,7 +7937,7 @@ function buildReceiptDOM() {
         ['THANK YOU FOR TESTING','THE FLOOR DETECTION CODE.','IT WORKS. YOU MAY GO.'],
         ['GAME OVER IN '+piecesPlaced+' MOVES.','THAT IS TECHNICALLY PLAYING.','WE GUESS.'],
         ['PARTICIPATION TROPHY: DENIED.','TRY PLACING A PIECE SIDEWAYS.','REVOLUTIONARY IDEA.'],
-        ['TETRIS? NO.  LINES? NO.','SCORE? ALSO NO.','VERY CONSISTENT THOUGH.'],
+        ['TOWRES? NO.  LINES? NO.','SCORE? ALSO NO.','VERY CONSISTENT THOUGH.'],
         ['THE AI WATCHED THIS.','IT IS EMBARRASSED FOR YOU.','AND FOR ITSELF.'],
         [''+piecesPlaced+' PIECES. ZERO POINTS.','YOU HAVE DISCOVERED THE FLOOR.','IT WAS ALREADY THERE.'],
         ['THE PIECES DID NOT ASK','TO BE DROPPED LIKE THAT.','THEY HAVE FEELINGS.'],
@@ -7998,7 +7999,7 @@ function buildReceiptDOM() {
       SP(2);
       L('  3. LEAVE A WELL ON ONE SIDE.');
       SP(1);
-      L('     ONE COLUMN EMPTY = TETRIS.');
+      L('     ONE COLUMN EMPTY = TOWRES.');
       L('     4 LINES AT ONCE = BIG SCORE.');
       L('     THAT IS THE WHOLE GAME.');
       SP(4);
@@ -8009,11 +8010,11 @@ function buildReceiptDOM() {
       L('  NOT: SCORE 100 POINTS AT ONCE.');
       SP(1);
       L('  YES: STACK CLEAN FOR 20 PIECES.');
-      L('       THEN TETRIS.');
+      L('       THEN TOWRES.');
       L('       THEN DO IT AGAIN.');
       SP(2);
       L('  THE T-BONUS REWARDS YOU FOR');
-      L('  DOING TWO TETRISES IN A ROW.');
+      L('  DOING TWO TOWRESES IN A ROW.');
       L('  THAT IS THE MULTIPLIER.');
       L('  THAT IS HOW BIG SCORES HAPPEN.');
       SP(4);
@@ -8122,7 +8123,7 @@ function buildReceiptDOM() {
   // Hole-free streak only meaningful if lines were cleared
   // "Perfect game" requires: hole-free AND T-bonus (streak ≥2 at least once)
   if(lines > 0){
-    const _isPerfect = _neverHoled && _maxTetrisStreak >= 2;
+    const _isPerfect = _neverHoled && _maxTowresStreak >= 2;
     if(_isPerfect){
       L(dmRow('  HOLE-FREE STREAK', 'PERFECT GAME! '+piecesPlaced+'CS'), {bold:true});
     } else if(_neverHoled){
@@ -8132,8 +8133,8 @@ function buildReceiptDOM() {
     } else if(hfBest > 0){
       L(dmRow('  HOLE-FREE STREAK', hfBest+'CS'));
     }
-    const _tetrisPct = Math.round(_tetrisLines / lines * 100);
-    L(dmRow('  TETRIS %', _tetrisPct+'%  ('+_tetrisLines+' of '+lines+' lines)'));
+    const _towresPct = Math.round(_towresLines / lines * 100);
+    L(dmRow('  TOWRES %', _towresPct+'%  ('+_towresLines+' of '+lines+' lines)'));
   }
   HR('-');
   L(dmRow('  SUBTOTAL', score.toLocaleString()));
@@ -8260,7 +8261,7 @@ function _txDesc(tx) {
   if (e === 'line-1-blocked') return '1-LINE BLOCKED (10+ HOLES)';
   if (e === 'line-2-blocked') return '2-LINE BLOCKED';
   if (e === 'line-3-blocked') return '3-LINE BLOCKED';
-  if (e === 'tetris')       return 'TETRIS! 4-LINE BONUS';
+  if (e === 'towres')       return 'TOWRES! 4-LINE BONUS';
   if (e === 'super-clear')  return 'PERFECT CLEAR: 20,490';
   return tx.desc || e.toUpperCase();
 }
@@ -9141,6 +9142,19 @@ window.addEventListener('DOMContentLoaded', function(){
       ctx2.fillStyle='#500';
       ctx2.fillRect(0,0,cv2.width||390,80);
       ctx2.fillStyle='#fff';
+      ctx2.font='12px monospace';
+      ctx2.textAlign='left';
+      ctx2.fillText('STARTUP ERR: '+e.message, 6, 20);
+      ctx2.fillText(e.stack ? e.stack.split('\n')[1] : '', 6, 40);
+    }
+  }
+});
+window.addEventListener('resize', function(){ resize(); layout(); });
+
+</script>
+
+</body>
+</html>#fff';
       ctx2.font='12px monospace';
       ctx2.textAlign='left';
       ctx2.fillText('STARTUP ERR: '+e.message, 6, 20);
