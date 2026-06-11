@@ -539,6 +539,10 @@ var _p10Log=[]; // per-piece log for first-10 debug audit
 var piecePot=0, towresPot=0;
 var AUTO_PLAY=false, AUTO_SPEED=10.66, autoUsed=false;
 var _replayMode=false, _replayPlacements=[], _replayIdx=0, _replayTimer=null;
+// True during the replay-end kill screen window. _replayMode is already false
+// by then, so the HUD needs this flag to keep showing the REPLAY score and
+// the replayed player's initials instead of the live HIGH score.
+var _replayKillScreen=false;
 var _replayThinkScale=1;    // per-piece msPerMove multiplier derived from normalized think time
 var _replayMinMs=0;         // min think time across all pieces in current replay
 var _replayMaxMs=0;         // max think time across all pieces in current replay
@@ -1801,7 +1805,7 @@ function drawIdentityScreen(t) {
 }
 
 function drawPlayerBadge(t){
-  const displayName = _replayMode ? _replayDisplayName : (_currentPlayer && _currentPlayer.name);
+  const displayName = (_replayMode||_replayKillScreen) ? _replayDisplayName : (_currentPlayer && _currentPlayer.name);
   if(!displayName) return;
   const r = R.lTicker;
   const nameSz = Math.round(r.h * 0.14);
@@ -1829,7 +1833,11 @@ function drawPlayerBadge(t){
 }
 
 function drawLeftPanel(t){
-  draw7SegScore(R.lScore, 'SCORE', score);  // default pink
+  // During the replay-end kill screen, the live re-simulated score can lag
+  // the recorded final score (pot scoring is timing-sensitive). The stream's
+  // recorded stats are the authority — show them.
+  const _scoreShown = (_replayKillScreen && _replayMeta && _replayMeta.score) ? _replayMeta.score : score;
+  draw7SegScore(R.lScore, 'SCORE', _scoreShown);  // default pink
   draw7SegScore(R.lLevel, 'LEVEL', level,   {litColor:'#00ffff', glowColor:'#00ffff', dimColor:'rgba(0,50,60,0.35)', labelColor:'#00ffff'});
   draw7SegScore(R.lLines, 'LINES', lines,   {litColor:'#00ffff', glowColor:'#00ffff', dimColor:'rgba(0,50,60,0.35)', labelColor:'#00ffff'});
   drawTicker(t);
@@ -1925,7 +1933,7 @@ function drawRightPanel(t){
   drawNextPiece(t);
   // During replay: show the replay's final score labeled "FINAL SCORE" so a
   // screenshot viewer knows this is a replay, not the phone's live high score.
-  if(_replayMode && _replayMeta && _replayMeta.score){
+  if((_replayMode||_replayKillScreen) && _replayMeta && _replayMeta.score){
     draw7SegScore(R.rHi, 'REPLAY', _replayMeta.score);
   } else {
     draw7SegScore(R.rHi, 'HIGH', hi);
@@ -3563,6 +3571,82 @@ function _bytesToB92(bytes, width) {
   return s;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// v3.0 DETERMINISTIC CORE — xoshiro128** PRNG + 256-slot timing table
+// Spec authority: stream.md Part II. Game and verifier MUST share this code
+// byte-for-byte. The PRNG call sequence is part of the protocol — see
+// stream.md "v3.0 Piece Sequence" for the exact call order, including the
+// two conditional fallback calls (Towres-impossible, Towres-blocked swap).
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Seed derivation: splitmix32 over the five B92 alphabet indices of seed5
+// expands into the four 32-bit words of xoshiro128** state. All-zero state
+// is impossible because splitmix32 output of a nonzero stream never yields
+// four zero words for any seed5 (guarded anyway).
+let _x128s = new Uint32Array(4);
+function _splitmix32(a){
+  return function(){
+    a |= 0; a = (a + 0x9e3779b9) | 0;
+    let t = a ^ (a >>> 16); t = Math.imul(t, 0x21f0aaad);
+    t = t ^ (t >>> 15);     t = Math.imul(t, 0x735a2d97);
+    return ((t = t ^ (t >>> 15)) >>> 0);
+  };
+}
+function _ctkRngSeed(seed5){
+  let acc = 0;
+  for(let i = 0; i < seed5.length; i++)
+    acc = (Math.imul(acc, 92) + _B92_ALPHABET.indexOf(seed5[i])) | 0;
+  const sm = _splitmix32(acc);
+  for(let i = 0; i < 4; i++) _x128s[i] = sm();
+  if(!(_x128s[0]|_x128s[1]|_x128s[2]|_x128s[3])) _x128s[0] = 1; // never all-zero
+}
+function _rotl32(x, k){ return ((x << k) | (x >>> (32 - k))) >>> 0; }
+// xoshiro128** 1.0 — returns float in [0,1), 32 bits of state output
+function _ctkRand(){
+  const s = _x128s;
+  const result = _rotl32(Math.imul(s[1], 5) >>> 0, 7);
+  const r = (Math.imul(result, 9) >>> 0);
+  const t = (s[1] << 9) >>> 0;
+  s[2] = (s[2] ^ s[0]) >>> 0;
+  s[3] = (s[3] ^ s[1]) >>> 0;
+  s[1] = (s[1] ^ s[2]) >>> 0;
+  s[0] = (s[0] ^ s[3]) >>> 0;
+  s[2] = (s[2] ^ t) >>> 0;
+  s[3] = _rotl32(s[3], 11);
+  return r / 4294967296;
+}
+// Canonical non-I draw (protocol order O,T,S,Z,J,L) — consumes ONE call.
+const _CTK_NON_I = ['O','T','S','Z','J','L'];
+function _ctkNonI(){ return _CTK_NON_I[_ctkRand() * 6 | 0]; }
+
+// ── 256-slot timing table (stream.md zones A–D) ─────────────────────────────
+// Zone A slots   0- 59:    0- 150ms @ 2.5ms   — bot fingerprint resolution
+// Zone B slots  60-179:  150- 800ms @ ~5.4ms  — human performance range
+// Zone C slots 180-219:  800-3000ms @ 55ms    — thinking pause
+// Zone D slots 220-255: 3000-8000ms @ ~139ms  — long pause, coarse
+// Quantization contract: hash record stores TIMING_TABLE[slot], never raw ms.
+const TIMING_TABLE = (() => {
+  const t = new Uint16Array(256);
+  for(let i =   0; i <  60; i++) t[i] = Math.round(i * 2.5);
+  for(let i =  60; i < 180; i++) t[i] = Math.round(150 + (i - 60) * 650 / 120);
+  for(let i = 180; i < 220; i++) t[i] = 800 + (i - 180) * 55;
+  for(let i = 220; i < 256; i++) t[i] = Math.round(3000 + (i - 220) * 5000 / 36);
+  return t;
+})();
+// Nearest-slot quantizer — binary search over the monotonic table.
+function _msToSlot(ms){
+  if(ms <= 0) return 0;
+  if(ms >= TIMING_TABLE[255]) return 255;
+  let lo = 0, hi = 255;
+  while(lo < hi){
+    const mid = (lo + hi) >> 1;
+    if(TIMING_TABLE[mid] < ms) lo = mid + 1; else hi = mid;
+  }
+  // lo = first slot >= ms; check if the slot below is closer
+  return (lo > 0 && ms - TIMING_TABLE[lo-1] <= TIMING_TABLE[lo] - ms) ? lo - 1 : lo;
+}
+const _MODE_CHAR = '!'; // B92 value 0 — Mode 0 seeded deterministic
+
 // Quick structural check — does this look like a CELLTOWER stream?
 function _streamReject(t){
   if(!t||typeof t!=='string') return 'empty input';
@@ -3604,11 +3688,57 @@ function _looksLikeStream_orig(t){
   return true;
 }
 
+// ── v3.0 piece derivation ───────────────────────────────────────────────────
+// Pure function: replays the seeded PRNG call sequence to reconstruct the
+// piece types that are deliberately absent from a v3.0 stream. Mirrors
+// buildPuzzleQueue()'s draw order exactly (grid index, mirror flag, 9
+// bottom-up pulls, free 10th I) then next()*7|0 for post-puzzle pieces.
+// NOTE: the two conditional fallback draws (Towres impossible / Towres
+// blocked) depend on live board state and are NOT modeled here — they are
+// handled by the full validator, which replays physics. For visual replay
+// this common-path derivation is exact for all games where the player did
+// not break the Towres well. Re-seeds the global PRNG state — call only
+// outside of live play (paused / game over / replay load).
+function _v3DerivePieces(seed5, nPieces){
+  _ctkRngSeed(seed5);
+  const out = [];
+  const si = _ctkRand()*PUZZLE_GRIDS.length|0;      // call #1
+  const mirror = _ctkRand()<0.5;                    // call #2
+  const mirrorType = {I:'I',O:'O',T:'T',S:'Z',Z:'S',J:'L',L:'J'};
+  const baseTypeMap = PUZZLE_PIECE_TYPES[si];
+  const typeMap = mirror
+    ? Object.fromEntries(Object.entries(baseTypeMap).map(([k,v])=>[k,mirrorType[v]]))
+    : baseTypeMap;
+  const grid = PUZZLE_GRIDS[si].map(row => mirror ? row.split('').reverse().join('') : row);
+  const g = grid.map(row=>row.split(''));
+  const R=4, C=9;
+  const cellsOf = lbl => { const a=[]; for(let r=0;r<R;r++) for(let c=0;c<C;c++) if(g[r][c]===lbl) a.push([r,c]); return a; };
+  const pullable = () => {
+    const lbls=[...new Set(g.flat().filter(ch=>ch!=='.'))];
+    return lbls.filter(lbl=>cellsOf(lbl).every(([r,c])=>r===R-1||g[r+1][c]==='.'||g[r+1][c]===lbl));
+  };
+  while(out.length<9){
+    const avail=pullable();
+    if(!avail.length) break;
+    const chosen=avail[_ctkRand()*avail.length|0];  // calls #3-#11
+    out.push(typeMap[chosen]);
+    for(let r=0;r<R;r++) for(let c=0;c<C;c++) if(g[r][c]===chosen) g[r][c]='.';
+  }
+  out.push('I');                                    // 10th piece: free, no call
+  const PO=['I','O','T','S','Z','J','L'];
+  while(out.length<nPieces) out.push(PO[_ctkRand()*7|0]);
+  return out.slice(0,nPieces);
+}
+
 // Parse stream into placements array + header meta for visual replay.
+// Branches on seed length: 5 chars = v2.0 (4 chars/piece, type in stream),
+// 6 chars = v3.0 (3 chars/piece, type derived from seeded PRNG).
 function _parseStreamForReplay(streamText){
   try{
     const sections=streamText.trim().split(';');
     const hdrParts=sections[0].split(',');
+    const seedField=hdrParts[0]||'';
+    const isV3=seedField.length===6;
     const stats=hdrParts[1]||'';
     const replayScore=stats.length>=4?_fromB92(stats.slice(0,4)):0;
     const replayLevel=stats.length>=6?_fromB92(stats.slice(4,6)):1;
@@ -3617,16 +3747,32 @@ function _parseStreamForReplay(streamText){
     const block=sections[1]||'';
     const PO=['I','O','T','S','Z','J','L'];
     const pieces=[];
-    for(let n=0;n<nPieces;n++){
-      const chunk=block.slice(n*4,n*4+4);
-      if(chunk.length<4)break;
-      const posIdx=_fromB92(chunk.slice(0,2));
-      const rot=Math.floor((posIdx%1160)/290);
-      const x=Math.floor((posIdx%290)/29);
-      const drop_y=(posIdx%29)-4;
-      const k=PO[Math.floor(posIdx/1160)]||'I';
-      const ms=_fromB92(chunk.slice(2,4));
-      pieces.push({k,rot,x,drop_y,ms});
+    if(isV3){
+      const seed5=seedField.slice(0,5);
+      const types=_v3DerivePieces(seed5,nPieces);
+      for(let n=0;n<nPieces;n++){
+        const chunk=block.slice(n*3,n*3+3);
+        if(chunk.length<3)break;
+        const posIdx=_fromB92(chunk.slice(0,2));
+        const rot=Math.floor(posIdx/290);
+        const x=Math.floor((posIdx%290)/29);
+        const drop_y=(posIdx%29)-4;
+        const tSlot=_B92_ALPHABET.indexOf(chunk[2]);
+        const ms=tSlot>=0?TIMING_TABLE[tSlot]:0;
+        pieces.push({k:types[n]||'I',rot,x,drop_y,ms});
+      }
+    } else {
+      for(let n=0;n<nPieces;n++){
+        const chunk=block.slice(n*4,n*4+4);
+        if(chunk.length<4)break;
+        const posIdx=_fromB92(chunk.slice(0,2));
+        const rot=Math.floor((posIdx%1160)/290);
+        const x=Math.floor((posIdx%290)/29);
+        const drop_y=(posIdx%29)-4;
+        const k=PO[Math.floor(posIdx/1160)]||'I';
+        const ms=_fromB92(chunk.slice(2,4));
+        pieces.push({k,rot,x,drop_y,ms});
+      }
     }
     const playerName=(hdrParts[2]||'').slice(0,3);
     return{pieces,score:replayScore,level:replayLevel,lines:replayLines,playerName};
@@ -3676,8 +3822,13 @@ function _boardComplexityFromWords(words) {
 
 // Record format matches stream.md spec: 6 bytes placement + 50 bytes board = 56 bytes.
 async function _advanceHashChain(k, rot, x, drop_y, spawnT, slot, boardWords) {
-  const ms = Math.min(8463, Math.round(performance.now() - spawnT));
-  _gameHistory.push({k, slot: slot||0, rot, x, drop_y, ms, dpc: _currentDPC});
+  // v3.0 quantization contract: hash record and stream both carry the
+  // quantized value TIMING_TABLE[tSlot] — never raw ms. Game and verifier
+  // decode the identical value, so the chains always agree.
+  const rawMs = Math.min(8463, Math.round(performance.now() - spawnT));
+  const tSlot = _msToSlot(rawMs);
+  const ms = TIMING_TABLE[tSlot];
+  _gameHistory.push({k, slot: slot||0, rot, x, drop_y, ms, tSlot, dpc: _currentDPC});
   // AI games have no verifiable input — skip hash chain and leave receipt invalid.
   if(autoUsed) return;
   const PIECE_ORDER = ['I','O','T','S','Z','J','L'];
@@ -4717,8 +4868,8 @@ const PROOF_MODE = false;
 const PROWS=4, PCOLS=9;
 
 function buildPuzzleQueue(){
-  const si = Math.random()*PUZZLE_GRIDS.length|0;
-  const mirror = Math.random()<0.5;
+  const si = _ctkRand()*PUZZLE_GRIDS.length|0;   // v3.0 call #1 (13 grids — protocol constant)
+  const mirror = _ctkRand()<0.5;                 // v3.0 call #2
   const rawGrid = PUZZLE_GRIDS[si];
   // When mirroring, S↔Z and J↔L (chirality flips)
   const mirrorType = {I:'I',O:'O',T:'T',S:'Z',Z:'S',J:'L',L:'J'};
@@ -4774,7 +4925,7 @@ function buildPuzzleQueue(){
   while(true){
     const avail=pullable(g);
     if(!avail.length) break;
-    const chosen=avail[Math.random()*avail.length|0];
+    const chosen=avail[_ctkRand()*avail.length|0]; // v3.0 calls #3-#11 (9 pulls)
     const cells=getPieceCells(g)[chosen];
     const k=typeMap[chosen];
     const{rot,x}=findRotX(k,cells);
@@ -4800,7 +4951,7 @@ function buildPuzzleQueue(){
     // Target will be resolved at deal time against live board (see mkPiece)
     targets.push({k:'I', rot:1, x:puzzleWellCol, dropY:BOARD_PUZZLE_TOP});
   } else {
-    const rk=PK.filter(k=>k!=='I')[Math.random()*6|0];
+    const rk=_ctkNonI();                           // v3.0 conditional call (Towres impossible)
     seq.push({k:rk, rgb:[...PTYPES[rk].rgb]});
     targets.push(null); // no hint — normal AI takes over
   }
@@ -4817,7 +4968,7 @@ function mkPiece(){
     // calcPlacements needs it to build _proofCorrectCand for the last piece(s)
     return{k:p.k,rot:0,c:NRS[p.k][0].map(r=>[...r]),rgb:p.rgb};
   }
-  const k=PK[Math.random()*PK.length|0];
+  const k=PK[_ctkRand()*7|0];                    // v3.0 post-puzzle: I=0 O=1 T=2 S=3 Z=4 J=5 L=6
   return{k,rot:0,c:NRS[k][0].map(r=>[...r]),rgb:[...PTYPES[k].rgb]};
 }
 
@@ -4842,7 +4993,7 @@ function verifyTowresPiece(){
   if(!nothingAbove || !hasWell){
     const dbg=document.getElementById('proof-debug');
     if(dbg&&PROOF_MODE) dbg.textContent+=`\n⚠ Towres blocked — swapping I to random`;
-    const rk = PK.filter(k=>k!=='I')[Math.random()*6|0];
+    const rk = _ctkNonI();                         // v3.0 conditional call (Towres blocked swap)
     nxt = {k:rk, rot:0, c:NRS[rk][0].map(r=>[...r]), rgb:[...PTYPES[rk].rgb]};
     if(puzzleTargets.length>0) puzzleTargets[0]=null;
   }
@@ -6438,7 +6589,10 @@ function addScore(cl){
   // NES base line-clear points removed — scoring handled by T-bonus pot fractions
   lines+=cl;
   const nl=Math.floor(lines/10)+1;if(nl>level)level=nl;
-  if(level>=20 && !_killScreenActive && !dead) _startKillScreen();
+  // Kill screen is a live-play rule. In replay the stream is the authority —
+  // legacy streams recorded before the kill screen legitimately play past
+  // level 20, and ending them early misreports the recorded final score.
+  if(level>=20 && !_killScreenActive && !dead && !_replayMode) _startKillScreen();
   document.getElementById('sv').textContent=score;
   document.getElementById('lv').textContent=level;
   document.getElementById('lnv').textContent=lines;
@@ -7024,9 +7178,12 @@ function init(){
   const _sv = crypto.getRandomValues(new Uint8Array(5));
   _gameSeed5 = Array.from(_sv).map(b => _B92_ALPHABET[b % 92]).join('');
   G.gameSeed = _gameSeed5;
+  // v3.0: seed the deterministic PRNG BEFORE buildPuzzleQueue()/mkPiece() run.
+  // Every piece this game deals now derives from seed5 — reproducible by verifier.
+  _ctkRngSeed(_gameSeed5);
   G.hashChain = ''; G.receiptCode = '-----'; _stripeBytes = null; _spawnT = performance.now(); _gameHistory = [];
   _prevDecadeHash = null; _decadeRecs = []; _decadeTms = []; _decadeComplx = []; G.blockLedger = [];
-  _killScreenActive = false; _wasKillScreen = false;
+  _killScreenActive = false; _wasKillScreen = false; _replayKillScreen = false;
   autoUsed = AUTO_PLAY;
   const _seedStr = _gameSeed5 + ((_currentPlayer&&_currentPlayer.name)||'');
   _chainPromise = crypto.subtle.digest('SHA-256', new TextEncoder().encode(_seedStr)).then(buf => {
@@ -7553,24 +7710,23 @@ function _buildStream() {
   const statLines  = _toB92(Math.min(lines,  92**2-1), 2);
   const statPieces = _toB92(Math.min(_gameHistory.length, 92**2-1), 2);
   const playerName  = (_currentPlayer&&_currentPlayer.name)||'';
-  const header = `${_gameSeed5},${statScore}${statLevel}${statLines}${statPieces},${playerName}`;
+  // v3.0 header: seed6 = seed5 + modeChar. '!' (B92 value 0) = Mode 0 seeded.
+  const header = `${_gameSeed5}${_MODE_CHAR},${statScore}${statLevel}${statLines}${statPieces},${playerName}`;
 
-  // ── Placements ──────────────────────────────────────────────────────────
-  // Each piece: 2 chars position + 2 chars timing.
-  // Position packing: type*1160 + rot*290 + x*29 + (drop_y+4)
-  //   drop_y range -4..24 → stored 0..28 (29 slots, base-29 digit)
-  //   max posIdx = 6*1160 + 3*290 + 9*29 + 28 = 8119 < 8464 (2-char B92 cap) ✓
-  // Using base-29 for drop_y (not base-25) prevents overflow when drop_y > 20.
+  // ── Placements (v3.0) ────────────────────────────────────────────────────
+  // Each piece: 2 chars position + 1 char timing slot. Piece type is NOT in
+  // the stream — the verifier derives it by replaying the seeded PRNG.
+  // Position packing: rot*290 + x*29 + (drop_y+4)
+  //   max posIdx = 3*290 + 9*29 + 28 = 1159 < 8464 (2-char B92 cap) ✓
   let placements = '';
   for(const rec of _gameHistory) {
     if(!rec.k) continue;  // skip any non-piece records
-    const typeIdx = PIECE_ORDER.indexOf(rec.k);
     const rot     = rec.rot   || 0;
     const x       = rec.x    !== undefined ? rec.x    : 0;
     const drop_y  = rec.drop_y !== undefined ? rec.drop_y : 0;
-    const ms      = rec.ms   || 0;
-    const posIdx  = typeIdx * 1160 + rot * 290 + x * 29 + (drop_y + 4);
-    placements += _toB92(posIdx, 2) + _toB92(Math.min(ms, 92**2-1), 2);
+    const tSlot   = rec.tSlot !== undefined ? rec.tSlot : _msToSlot(rec.ms || 0);
+    const posIdx  = rot * 290 + x * 29 + (drop_y + 4);
+    placements += _toB92(posIdx, 2) + _B92_ALPHABET[tSlot];
   }
 
   // ── Terminal hash ────────────────────────────────────────────────────────
@@ -8011,26 +8167,44 @@ function buildReceiptDOM() {
       SP(8);
 
     } else {
-      // Tried but scored nothing — coaching receipt
+      // Tried but scored nothing — coaching receipt.
+      // NOTE: score===0 does NOT imply lines===0. Line clears award no direct
+      // points (scoring flows through the T-bonus pot), so a player can clear
+      // lines with an empty pot and still land here. Report the truth.
       _header();
       L(center('\x04 ZERO SCORE REPORT \x05'));
       L(center(new Date().toLocaleTimeString()));
       HR('=');
       SP(2);
       L('  PIECES PLACED:  '+piecesPlaced, {bold:true});
-      L('  LINES CLEARED:  0');
+      L('  LINES CLEARED:  '+lines);
       L('  SCORE:          0');
       SP(4);
       HR('-');
       L('  ** WHAT HAPPENED **', {bold:true});
       HR('-');
       SP(2);
-      L('  YOU STACKED '+piecesPlaced+' PIECES AND');
-      L('  DID NOT CLEAR A SINGLE LINE.');
-      SP(2);
-      L('  THAT MEANS EVERY PIECE ADDED');
-      L('  HEIGHT WITHOUT CLEARING SPACE.');
-      L('  THE BOARD FILLED. GAME OVER.');
+      if(lines > 0){
+        L('  YOU CLEARED '+lines+' LINE'+(lines===1?'':'S')+' BUT THEY');
+        L('  PAID NOTHING. YOUR POT WAS');
+        L('  EMPTY WHEN THEY CLEARED.');
+        SP(2);
+        L('  LINES DO NOT PAY DIRECTLY.');
+        L('  CLEAN PIECES FILL THE POT.');
+        L('  CLEARS CASH THE POT OUT.');
+        L('  HOLES ZERO THE POT.');
+        SP(2);
+        L('  AN EMPTY POT MEANS HOLES ATE');
+        L('  YOUR EARNINGS BEFORE YOU');
+        L('  COULD COLLECT THEM.');
+      } else {
+        L('  YOU STACKED '+piecesPlaced+' PIECES AND');
+        L('  DID NOT CLEAR A SINGLE LINE.');
+        SP(2);
+        L('  THAT MEANS EVERY PIECE ADDED');
+        L('  HEIGHT WITHOUT CLEARING SPACE.');
+        L('  THE BOARD FILLED. GAME OVER.');
+      }
       SP(4);
       HR('-');
       L('  ** WHAT TO FOCUS ON NEXT **', {bold:true});
@@ -8077,6 +8251,16 @@ function buildReceiptDOM() {
       L(center('TAP 1 FOR THE AI\'S TOP PICK.'));
       L(center('TRUST THE NUMBERS.'));
       SP(4);
+      // Zero-score human games still carry a valid hash chain — print it.
+      const _rc0 = (!autoUsed && typeof G !== 'undefined' && G.receiptCode && G.receiptCode !== '-----') ? G.receiptCode : null;
+      if(_rc0){
+        HR('-');
+        L(center('VERIFICATION CODE'));
+        SP(1);
+        L(center(_rc0));
+        L(center('PIECES: '+piecesPlaced));
+        SP(1);
+      }
       HR('~');
       SP(8);
     }
@@ -8262,8 +8446,10 @@ function buildReceiptDOM() {
     SP(2);
   }
 
-  // Verification receipt code — only meaningful if a score was actually earned
-  const _rc = (score > 0 && typeof G !== 'undefined' && G.receiptCode && G.receiptCode !== '-----') ? G.receiptCode : null;
+  // Verification receipt code — valid for ANY human game with a live hash
+  // chain, including zero-score games. A line clear that paid nothing is
+  // still signed human play. Score is not the gate; chain validity is.
+  const _rc = (!autoUsed && typeof G !== 'undefined' && G.receiptCode && G.receiptCode !== '-----') ? G.receiptCode : null;
   if (_rc) {
     HR('-');
     L(center('VERIFICATION CODE'));
@@ -8363,6 +8549,17 @@ function _startReplayPlay(){
     // All recorded pieces exhausted — end the replay cleanly
     _replayMode=false;
     stopSelTimer(); stopDrop(); cur=null;
+    // If the recorded game reached kill-screen territory, show the kill
+    // screen at the stream's natural end — after the full score accrued.
+    if(level>=20 && !_killScreenActive){
+      _wasKillScreen=true; _killScreenActive=true; _killScreenT=performance.now();
+      _replayKillScreen=true;
+      // 2.5s animation + 5s extra dwell — replay viewers may never have seen
+      // a kill screen; give them time to read it before the summary appears.
+      setTimeout(()=>{ _killScreenActive=false; _replayKillScreen=false;
+        const _g=document.getElementById('gov'); if(_g)_g.style.display='flex';
+      }, 7500);
+    }
     dead=true; _deadAt=performance.now();
     // Save replayed performance under the original player's name
     if(_replayDisplayName&&_replayMeta&&_replaySource){
@@ -8371,9 +8568,9 @@ function _startReplayPlay(){
                     _replayMeta.lines,_replayMeta.level,_replayMeta.pieces);
     }
     const _gov=document.getElementById('gov');
-    if(_gov) _gov.style.display='flex';
+    if(_gov) _gov.style.display=_killScreenActive?'none':'flex';
     const _fst=document.getElementById('fst');
-    if(_fst) _fst.textContent='REPLAY COMPLETE';
+    if(_fst) _fst.textContent=_wasKillScreen?'KILL SCREEN REPLAY':'REPLAY COMPLETE';
       return;
   }
   const p=_replayPlacements[_replayIdx++];
@@ -8837,6 +9034,7 @@ function _handleLibraryTap(hit){
 }
 
 function _stopReplayMode(){
+  _replayKillScreen=false;
   _replayMode=false; _replayPaused=false; _replaySource=null;
   clearTimeout(_replayTimer); _replayTimer=null;
   _replayThinkScale=1;
@@ -8924,8 +9122,10 @@ function showReceipt() {
   try {
     dbg('showReceipt: txLog='+txLog.length);
     buildReceiptDOM();
-    // Silently copy stream proof to clipboard whenever a scored non-AUTO game receipt is shown
-    if(score > 0 && !autoUsed){
+    // Silently copy stream proof to clipboard whenever a verifiable human
+    // game receipt is shown. Gate on chain validity, not score — zero-score
+    // human games (empty pot at clear time) are still signed play.
+    if(!autoUsed && _gameHistory.length > 0){
       const _s=_buildStream();
       if(_s) navigator.clipboard.writeText(_s).catch(()=>{});
     }
