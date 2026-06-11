@@ -3647,6 +3647,70 @@ function _msToSlot(ms){
 }
 const _MODE_CHAR = '!'; // B92 value 0 — Mode 0 seeded deterministic
 
+// ── v3.0 spacetime fields (formerly the v4.20 spec — folded into v3.0) ─────
+// Green Minute: minutes since the CELLTOWER epoch, 2026-04-20T04:20:00Z.
+const _GM_EPOCH_MS = 1776658800000;
+function _greenMinute(){ return Math.max(0, Math.floor((Date.now() - _GM_EPOCH_MS) / 60000)); }
+// Geolocation step encodings (~30.5m resolution). Sentinels = physically
+// impossible coordinates: AI game, permission absent, or location unavailable.
+const _LAT_SENTINEL = 656972, _LON_SENTINEL = 1313942;
+function _latSteps(deg){ return Math.round((deg + 90.0)  * (656971.0  / 180.0)); }
+function _lonSteps(deg){ return Math.round((deg + 180.0) * (1313941.0 / 360.0)); }
+let _gameGM = 0;                    // Green Minute at game start — bound into H_0
+let _gameLatSteps = _LAT_SENTINEL;  // header-attested only (async permission)
+let _gameLonSteps = _LON_SENTINEL;
+// Capture location ONLY if the player already granted it to this page —
+// never prompt mid-game. The value lives solely in the stream string the
+// player controls; nothing is transmitted anywhere.
+function _captureGeo(){
+  _gameLatSteps = _LAT_SENTINEL; _gameLonSteps = _LON_SENTINEL;
+  try{
+    if(!navigator.geolocation || !navigator.permissions) return;
+    navigator.permissions.query({name:'geolocation'}).then(p=>{
+      if(p.state!=='granted') return;
+      navigator.geolocation.getCurrentPosition(pos=>{
+        _gameLatSteps = _latSteps(pos.coords.latitude);
+        _gameLonSteps = _lonSteps(pos.coords.longitude);
+      }, ()=>{}, {timeout:5000, maximumAge:600000});
+    }).catch(()=>{});
+  }catch(e){}
+}
+// Terminal hash: first 9 bytes (72 bits) of H_N as 12 B92 chars.
+// 72-bit second-preimage cost ≈ 2^72 chain recomputations — unreachable.
+// 12 chars ≈ 78-bit capacity, so 9 bytes encode with no modular bias.
+const _TERM_HASH_BYTES = 9, _TERM_HASH_CHARS = 12;
+
+// ── v3.0 rules/scoring enumerations + auxiliary section ────────────────────
+// One B92 char each. 0 = current default. 1-90 reserved for future versions.
+// 91 ('~', the last alphabet symbol) = ESCAPE: the value lives in the aux
+// section as a named variable. (One B92 char maxes at 91 — the 0-255-with-
+// escape-at-255 framing needs 2 chars; 0-90 keeps it to one.)
+const _ENUM_ESCAPE = 91;
+let _gameRules   = 0;   // rules enumeration   (key 'R' when escaped)
+let _gameScoring = 0;   // scoring enumeration (key 'S' when escaped)
+let _gameAuxVars = {};  // named vars: short keys, e.g. {T:'FRESNO26'} for tournament ID
+// Canonical aux serialization — EXACTLY ONE legal encoding per variable set:
+// keys sorted, k=v pairs comma-joined, no whitespace. Keys and values must be
+// B92 chars; '=' additionally forbidden in both. The string is hash-bound
+// verbatim, so any deviation in ordering or spacing is a different game.
+function _canonAux(vars){
+  const ks = Object.keys(vars).sort();
+  const bad = /[,;=\s]/;
+  const parts = [];
+  for(const k of ks){
+    const v = String(vars[k]);
+    if(bad.test(k) || bad.test(v)) continue; // structurally invalid — drop
+    parts.push(k + '=' + v);
+  }
+  return parts.join(',');
+}
+// The two-char rules+scoring field as it appears in the header.
+function _rsChars(){
+  const r = (_gameRules   >= 0 && _gameRules   <= 91) ? _gameRules   : _ENUM_ESCAPE;
+  const c = (_gameScoring >= 0 && _gameScoring <= 91) ? _gameScoring : _ENUM_ESCAPE;
+  return _B92_ALPHABET[r] + _B92_ALPHABET[c];
+}
+
 // Quick structural check — does this look like a CELLTOWER stream?
 function _streamReject(t){
   if(!t||typeof t!=='string') return 'empty input';
@@ -3669,12 +3733,22 @@ function _streamReject(t){
   const nPieces=fromB92(stats.slice(8,10));
   if(nPieces<=0) return 'piece count is zero';
   if(nPieces>10000) return 'piece count too large';
-  const block=p[1]||'';
+  // v3.0 may carry an aux section: header;aux;placements;hash (4 sections).
+  const hasAux = seed.length===6 && p.length>=4;
+  if(seed.length===6){
+    if(hdr.length<7) return 'v3 header missing rules/scoring field (got '+hdr.length+')';
+    if((hdr[6]||'').length!==2) return 'rules/scoring field wrong length';
+    if(hasAux && !/^[!-~]*$/.test(p[1])) return 'aux has invalid chars';
+  }
+  const block=(hasAux?p[2]:p[1])||'';
   const cpp=seed.length===6?3:4;
   if(block.length<nPieces*cpp) return 'placements short: need '+(nPieces*cpp)+' got '+block.length;
   if(!b92ok(block)) return 'placements has invalid chars';
   const termHash=p[p.length-1];
-  if(termHash.length!==40) return 'hash wrong length ('+termHash.length+')';
+  // v2.0 (5-char seed): 40-char terminal hash. v3.0 (6-char seed): 12 chars.
+  const expectHash = seed.length===6 ? 12 : 40;
+  if(termHash.length!==expectHash) return 'hash wrong length ('+termHash.length+', expected '+expectHash+')';
+  if(seed.length===6 && hdr.length<6) return 'v3 header missing spacetime fields (got '+hdr.length+')';
   return null;
 }
 function _looksLikeStream(t){return _streamReject(t)===null;}
@@ -3744,7 +3818,8 @@ function _parseStreamForReplay(streamText){
     const replayLevel=stats.length>=6?_fromB92(stats.slice(4,6)):1;
     const replayLines=stats.length>=8?_fromB92(stats.slice(6,8)):0;
     const nPieces=stats.length>=10?_fromB92(stats.slice(8,10)):0;
-    const block=sections[1]||'';
+    const hasAux=isV3&&sections.length>=4;
+    const block=(hasAux?sections[2]:sections[1])||'';
     const PO=['I','O','T','S','Z','J','L'];
     const pieces=[];
     if(isV3){
@@ -3753,12 +3828,13 @@ function _parseStreamForReplay(streamText){
       for(let n=0;n<nPieces;n++){
         const chunk=block.slice(n*3,n*3+3);
         if(chunk.length<3)break;
-        const posIdx=_fromB92(chunk.slice(0,2));
+        const triple=_fromB92(chunk);
+        const posIdx=Math.floor(triple/256);
+        const tSlot=triple%256;
         const rot=Math.floor(posIdx/290);
         const x=Math.floor((posIdx%290)/29);
         const drop_y=(posIdx%29)-4;
-        const tSlot=_B92_ALPHABET.indexOf(chunk[2]);
-        const ms=tSlot>=0?TIMING_TABLE[tSlot]:0;
+        const ms=TIMING_TABLE[Math.min(255,tSlot)];
         pieces.push({k:types[n]||'I',rot,x,drop_y,ms});
       }
     } else {
@@ -7181,11 +7257,23 @@ function init(){
   // v3.0: seed the deterministic PRNG BEFORE buildPuzzleQueue()/mkPiece() run.
   // Every piece this game deals now derives from seed5 — reproducible by verifier.
   _ctkRngSeed(_gameSeed5);
+  // v3.0 spacetime: Green Minute at game start, hash-bound via H_0.
+  // Location is captured opportunistically (header-attested, never blocks).
+  _gameGM = _greenMinute();
+  _captureGeo();
   G.hashChain = ''; G.receiptCode = '-----'; _stripeBytes = null; _spawnT = performance.now(); _gameHistory = [];
   _prevDecadeHash = null; _decadeRecs = []; _decadeTms = []; _decadeComplx = []; G.blockLedger = [];
   _killScreenActive = false; _wasKillScreen = false; _replayKillScreen = false;
   autoUsed = AUTO_PLAY;
-  const _seedStr = _gameSeed5 + ((_currentPlayer&&_currentPlayer.name)||'');
+  // v3.0: H_0 = SHA-256(UTF-8(seed5 + player_name + gm4)) — binds identity
+  // AND time-of-play. A stream stored on ice carries its true Green Minute;
+  // changing gm to fit a tournament window invalidates the entire chain.
+  // H_0 = SHA-256(UTF-8(seed5 + name + gm4 + rs + aux)) — binds identity,
+  // time-of-play, AND the rules/scoring regime the score was earned under.
+  // A casual game cannot be re-labeled as tournament play; a score earned
+  // under one rule set cannot verify under another.
+  const _seedStr = _gameSeed5 + ((_currentPlayer&&_currentPlayer.name)||'')
+                 + _toB92(_gameGM, 4) + _rsChars() + _canonAux(_gameAuxVars);
   _chainPromise = crypto.subtle.digest('SHA-256', new TextEncoder().encode(_seedStr)).then(buf => {
     _hashChainBuf = buf;
     _prevDecadeHash = new Uint8Array(buf);  // H_0 seeds the decade chain
@@ -7711,7 +7799,13 @@ function _buildStream() {
   const statPieces = _toB92(Math.min(_gameHistory.length, 92**2-1), 2);
   const playerName  = (_currentPlayer&&_currentPlayer.name)||'';
   // v3.0 header: seed6 = seed5 + modeChar. '!' (B92 value 0) = Mode 0 seeded.
-  const header = `${_gameSeed5}${_MODE_CHAR},${statScore}${statLevel}${statLines}${statPieces},${playerName}`;
+  // v3.0 header: seed6 , stats , player_name , gm , lat , lon
+  const gm4  = _toB92(_gameGM, 4);
+  const lat3 = _toB92(Math.min(_gameLatSteps, 92**3-1), 3);
+  const lon4 = _toB92(Math.min(_gameLonSteps, 92**4-1), 4);
+  const rs   = _rsChars();
+  const aux  = _canonAux(_gameAuxVars);
+  const header = `${_gameSeed5}${_MODE_CHAR},${statScore}${statLevel}${statLines}${statPieces},${playerName},${gm4},${lat3},${lon4},${rs}`;
 
   // ── Placements (v3.0) ────────────────────────────────────────────────────
   // Each piece: 2 chars position + 1 char timing slot. Piece type is NOT in
@@ -7726,13 +7820,19 @@ function _buildStream() {
     const drop_y  = rec.drop_y !== undefined ? rec.drop_y : 0;
     const tSlot   = rec.tSlot !== undefined ? rec.tSlot : _msToSlot(rec.ms || 0);
     const posIdx  = rot * 290 + x * 29 + (drop_y + 4);
-    placements += _toB92(posIdx, 2) + _B92_ALPHABET[tSlot];
+    // Pack position AND timing into one 3-char B92 triple:
+    //   triple = posIdx*256 + tSlot, max = 1159*256+255 = 296,959 < 92^3 ✓
+    // (A bare 256-slot value cannot fit one B92 char — that was a spec bug.)
+    placements += _toB92(posIdx * 256 + tSlot, 3);
   }
 
-  // ── Terminal hash ────────────────────────────────────────────────────────
-  const termHash = _bytesToB92(new Uint8Array(_hashChainBuf), 40);
+  // ── Terminal hash — first 9 bytes of H_N as 12 B92 chars (72 bits) ──────
+  const termHash = _bytesToB92(new Uint8Array(_hashChainBuf).slice(0, _TERM_HASH_BYTES), _TERM_HASH_CHARS);
 
-  return `${header};${placements};${termHash}`;
+  // Aux section present only when non-empty: header;aux;placements;hash
+  return aux
+    ? `${header};${aux};${placements};${termHash}`
+    : `${header};${placements};${termHash}`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -7762,6 +7862,7 @@ const _V_B92 = (() => {
   return a;
 })();
 function _vFromB92(s) { let n = 0; for (const c of s) n = n * 92 + _V_B92.indexOf(c); return n; }
+function _vB92Idx(c) { return _V_B92.indexOf(c); }
 
 // Board complexity score [0,1] from flat 25×10 board (Uint8Array, index=row*10+col).
 // Higher = harder: tall stacks, many holes, uneven columns.
@@ -7934,14 +8035,37 @@ async function _verifyStream(streamText) {
     const headerParts = sections[0].split(',');
     if (headerParts.length < 2) return { valid: false, error: 'bad header fields' };
 
-    const seed5           = headerParts[0];             // 5 B92 chars
+    const seedField       = headerParts[0];             // 5 chars = v2.0, 6 = v3.0
+    const isV3            = seedField.length === 6;
+    const seed5           = seedField.slice(0, 5);
     const stats           = headerParts[1];             // 10 B92 chars
     const nPieces         = _vFromB92(stats.slice(8,10));
-    const placementsBlock = sections[1];
+    // v3.0 with aux: header;aux;placements;hash. Without: header;placements;hash.
+    const hasAux          = isV3 && sections.length >= 4;
+    const auxStr          = hasAux ? sections[1] : '';
+    const placementsBlock = hasAux ? sections[2] : sections[1];
     const termHashB92     = sections[sections.length - 1];
+    const cpp             = isV3 ? 3 : 4;                // chars per placement
+    const rsStr           = isV3 ? (headerParts[6]||'') : '';
+    // Surface decoded regime for the caller / receipt display
+    const rulesEnum   = isV3 && rsStr.length===2 ? _vB92Idx(rsStr[0]) : 0;
+    const scoringEnum = isV3 && rsStr.length===2 ? _vB92Idx(rsStr[1]) : 0;
+    const auxVars = {};
+    if(auxStr) for(const pair of auxStr.split(',')){
+      const eq = pair.indexOf('='); if(eq>0) auxVars[pair.slice(0,eq)] = pair.slice(eq+1);
+    }
 
-    // H_0 = SHA-256(seed5 + playerName as UTF-8)
-    const _seedStr = seed5 + (headerParts[2]||'');
+    // v3.0: piece types are not in the stream — derive from the seeded PRNG.
+    // (Common path; the rare Towres fallback draws need full physics replay
+    // and will surface as a hash mismatch here — flagged, not silently passed.)
+    const v3Types = isV3 ? _v3DerivePieces(seed5, nPieces) : null;
+
+    // H_0 binds identity (+ time-of-play in v3.0):
+    //   v2.0: SHA-256(UTF-8(seed5 + playerName))
+    //   v3.0: SHA-256(UTF-8(seed5 + playerName + gm4))
+    const _seedStr = isV3
+      ? seed5 + (headerParts[2]||'') + (headerParts[3]||'') + rsStr + auxStr
+      : seed5 + (headerParts[2]||'');
     let H = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(_seedStr));
 
     // Fresh board — no game state
@@ -7957,15 +8081,28 @@ async function _verifyStream(streamText) {
     let npfHits = 0;
 
     for (let n = 0; n < nPieces; n++) {
-      const chunk = placementsBlock.slice(n*4, n*4+4);
-      if (chunk.length < 4) return { valid: false, error: 'short placement block at piece ' + n };
+      const chunk = placementsBlock.slice(n*cpp, n*cpp+cpp);
+      if (chunk.length < cpp) return { valid: false, error: 'short placement block at piece ' + n };
 
-      const posIdx  = _vFromB92(chunk.slice(0,2));
-      const ms      = _vFromB92(chunk.slice(2,4));
-      const typeIdx = Math.floor(posIdx / 1160);
-      const rot     = Math.floor((posIdx % 1160) / 290);
-      const x       = Math.floor((posIdx % 290) / 29);
-      const drop_y  = (posIdx % 29) - 4;  // 29-slot field, offset 4 → range -4..24
+      let typeIdx, rot, x, drop_y, ms;
+      if (isV3) {
+        // v3.0: 3 chars = posIdx*256 + tSlot. No type; no raw ms.
+        const triple = _vFromB92(chunk);
+        const posIdx = Math.floor(triple / 256);
+        const tSlot  = triple % 256;
+        typeIdx = _V_PIECE_ORDER.indexOf(v3Types[n] || 'I');
+        rot     = Math.floor(posIdx / 290);
+        x       = Math.floor((posIdx % 290) / 29);
+        drop_y  = (posIdx % 29) - 4;
+        ms      = TIMING_TABLE[tSlot];
+      } else {
+        const posIdx = _vFromB92(chunk.slice(0,2));
+        typeIdx = Math.floor(posIdx / 1160);
+        rot     = Math.floor((posIdx % 1160) / 290);
+        x       = Math.floor((posIdx % 290) / 29);
+        drop_y  = (posIdx % 29) - 4;  // 29-slot field, offset 4 → range -4..24
+        ms      = _vFromB92(chunk.slice(2,4));
+      }
 
       // DPC: how much conflict did this placement pose? Computed pre-placement.
       const dpc = _vDPC(board, typeIdx);
@@ -8013,7 +8150,10 @@ async function _verifyStream(streamText) {
       }
     }
 
-    const computedB92 = _vBytesToB92(new Uint8Array(H), 40);
+    // Terminal compare: v3.0 = first 9 bytes as 12 chars; v2.0 = full 40.
+    const computedB92 = isV3
+      ? _vBytesToB92(new Uint8Array(H).slice(0, 9), 12)
+      : _vBytesToB92(new Uint8Array(H), 40);
     const valid = computedB92 === termHashB92;
     const hps = _vComputeHPS(_hpTimings, _hpDPC);
     const hpsLabel = hps === null ? 'N/A' : hps >= 0.72 ? 'PASS' : hps >= 0.50 ? 'REVIEW' : 'FAIL';
@@ -8021,6 +8161,7 @@ async function _verifyStream(streamText) {
     const npfFlag  = npfRatio >= 0.05 ? 'NPF_SUSPECT' : null;
     return {
       valid,
+      rulesEnum, scoringEnum, auxVars,
       piecesReplayed: nPieces,
       hps, hpsLabel,
       blockLedger,
