@@ -1,9 +1,8 @@
 # 📱 CELLTOWER
 
-### v0.420 — *First Playable Release*
+### v0.6112026 — *First Playable Release*
 
-> **“Get high at the Tower.”**
-> *— THC Magazine (a wholly fictitious publication)*
+> FABLE IS OUT .. but still pre-fable
 
 -----
 
