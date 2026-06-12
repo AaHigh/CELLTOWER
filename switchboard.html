@@ -1,0 +1,1337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>SWITCHBOARD · CELLTOWER Tournament Operations</title>
+<!--
+  ═══════════════════════════════════════════════════════════════════════════
+  SWITCHBOARD v0.2 — CELLTOWER Tournament Operations Console
+  the High Tower District · Fresno CA 93728 · SINGLE FILE, NO DEPENDENCIES
+
+  The protocol core (ct-core.js) is EMBEDDED below, generated verbatim from
+  the canonical copy. Single-file doctrine: open this file anywhere and the
+  console runs. v0 is the dummy server: every command is typed by a human
+  operator; gatekeeping IS the operator.
+
+  HARD GATES (v0): canonical score recompute NOT implemented (header scores
+  PROVISIONAL) · legal template is a PLACEHOLDER · DO NOT MOVE REAL MONEY.
+  ═══════════════════════════════════════════════════════════════════════════
+-->
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;background:#000;overflow:hidden}
+  body{font-family:'Courier New',monospace;color:#ddd;display:flex;flex-direction:column}
+  #errdiv{position:fixed;top:0;left:0;right:0;z-index:999;background:#900;color:#fff;
+          font:12px monospace;padding:8px;display:none;white-space:pre-wrap}
+  #mast{background:#000;border-bottom:2px solid #ff8800;padding:7px 10px 5px;flex:0 0 auto}
+  #mast h1{font-size:1.05rem;font-weight:900;color:#ff8800;letter-spacing:.18em}
+  #mast h1 .dim{color:#7a4400}
+  #mast .sub{font-size:.62rem;color:#aaccff;letter-spacing:.14em;margin-top:2px}
+  #gate{background:#2a1500;border:1px solid #ff8800;color:#ffb866;font-size:.58rem;
+        padding:4px 8px;margin-top:6px;line-height:1.5;letter-spacing:.04em}
+  #gate b{color:#ff8800}
+  #tickwrap{flex:0 0 auto;background:#0a0a14;border-bottom:1px solid #223;overflow:hidden;height:22px;position:relative}
+  #tick{position:absolute;white-space:nowrap;font-size:.7rem;font-weight:900;line-height:22px;
+        color:#00ccff;text-shadow:0 0 8px #00ccff;will-change:transform}
+  #spin{flex:0 0 auto;background:#05050d;border-bottom:1px solid #223;font-size:.6rem;color:#88aa88;
+        padding:3px 10px;display:none;letter-spacing:.08em}
+  #spin b{color:#00ff88}
+  #wallwrap{flex:0 0 auto;display:none;background:#000;border-bottom:2px solid #223;padding:4px}
+  #wall{width:100%;height:42vh;display:block}
+  #tapewrap{flex:1 1 auto;overflow-y:auto;background:#1a1a1a;padding:10px 8px;-webkit-overflow-scrolling:touch}
+  #tape{background:#f5f0e8;color:#222;max-width:560px;margin:0 auto;padding:14px 12px 18px;
+        font-size:.72rem;line-height:1.45;white-space:pre-wrap;word-break:break-all;
+        box-shadow:0 0 24px rgba(0,0,0,.8);
+        background-image:repeating-linear-gradient(0deg,transparent,transparent 23px,rgba(0,0,0,.025) 24px)}
+  #tape .hd{font-weight:900;text-align:center}
+  #tape .c{text-align:center}
+  #tape .ok{color:#0a6e2a;font-weight:900}
+  #tape .bad{color:#a01010;font-weight:900}
+  #tape .warn{color:#a05a00;font-weight:900}
+  #tape .op{color:#5500aa;font-weight:900}
+  #tape .ledg{color:#333}
+  #tape .faint{color:#999}
+  #cmdbar{flex:0 0 auto;background:rgba(0,4,16,.97);border-top:2px solid #ff8800;padding:8px 10px;display:flex;gap:8px;align-items:center}
+  #prompt{color:#00ff88;font-weight:900;font-size:.85rem;flex:0 0 auto}
+  #cmd{flex:1 1 auto;background:transparent;border:none;outline:none;color:#00ff88;
+       caret-color:#00ff88;font-family:'Courier New',monospace;font-size:.85rem}
+  #go{flex:0 0 auto;background:#ff8800;color:#000;border:none;font-family:'Courier New',monospace;
+      font-weight:900;font-size:.75rem;padding:6px 14px;letter-spacing:.1em;cursor:pointer}
+  #go:active{background:#ffb866}
+</style>
+</head>
+<body>
+<div id="errdiv"></div>
+<div id="mast">
+  <h1>SWITCHBOARD <span class="dim">· CELLTOWER TOURNAMENT OPS</span></h1>
+  <div class="sub">EVERY CALL CONNECTS · EVERY CLAIM VERIFIES · the High Tower District</div>
+  <div id="gate"><b>v0 GATES:</b> CANONICAL SCORE RECOMPUTE NOT IMPLEMENTED — HEADER SCORES PROVISIONAL ·
+LEGAL TEMPLATE IS A PLACEHOLDER · <b>DO NOT MOVE REAL MONEY ON v0.</b></div>
+</div>
+<div id="tickwrap"><div id="tick"></div></div>
+<div id="spin">NOW SPINNING: <b id="spintxt"></b></div>
+<div id="wallwrap"><canvas id="wall"></canvas></div>
+<div id="tapewrap"><div id="tape"></div></div>
+<div id="cmdbar">
+  <span id="prompt">OPR&gt;</span>
+  <input id="cmd" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="HELP for the board rules">
+  <button id="go" type="button">SEND</button>
+</div>
+<audio id="jukebox" preload="none"></audio>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// CT-CORE.JS — CELLTOWER shared protocol core (v3.0)
+// Extracted VERBATIM from index.html (game v0.6122026). Canonical shared
+// copy: B92 codec, xoshiro128** seeded PRNG, 256-slot timing table,
+// spacetime fields, rules/scoring enums + canonical aux, v3.0 piece
+// derivation, structural reject, replay parser, and the full PORTABLE
+// VERIFICATION CORE (physics replay + hash chain + HPS + NPF).
+//
+// SYNC DOCTRINE: index.html keeps its own inlined copy (air-gapped single-
+// file game doctrine). Any change to either copy MUST be mirrored to the
+// other — the protocol lives in this code, not in any server.
+// Consumers: SWITCHBOARD operator console; future standalone validator.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const _B92_ALPHABET = (()=>{
+  let s = '';
+  for(let i=33;i<=126;i++) if(i!==44&&i!==59) s+=String.fromCharCode(i);
+  return s;
+})();  // exactly 92 characters
+
+function _toB92(value, width) {
+  let v = value, s = '';
+  for(let i = 0; i < width; i++) { s = _B92_ALPHABET[v % 92] + s; v = Math.floor(v / 92); }
+  return s;
+}
+
+function _fromB92(str) {
+  let n = 0;
+  for(let i = 0; i < str.length; i++) n = n * 92 + _B92_ALPHABET.indexOf(str[i]);
+  return n;
+}
+
+// Encode arbitrary bytes (Uint8Array) as a fixed-width B92 string via BigInt.
+function _bytesToB92(bytes, width) {
+  let v = 0n;
+  for (const b of bytes) v = (v << 8n) | BigInt(b);
+  let s = '';
+  for (let i = 0; i < width; i++) { s = _B92_ALPHABET[Number(v % 92n)] + s; v /= 92n; }
+  return s;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v3.0 DETERMINISTIC CORE — xoshiro128** PRNG + 256-slot timing table
+// Spec authority: stream.md Part II. Game and verifier MUST share this code
+// byte-for-byte. The PRNG call sequence is part of the protocol — see
+// stream.md "v3.0 Piece Sequence" for the exact call order, including the
+// two conditional fallback calls (Towres-impossible, Towres-blocked swap).
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Seed derivation: splitmix32 over the five B92 alphabet indices of seed5
+// expands into the four 32-bit words of xoshiro128** state. All-zero state
+// is impossible because splitmix32 output of a nonzero stream never yields
+// four zero words for any seed5 (guarded anyway).
+let _x128s = new Uint32Array(4);
+function _splitmix32(a){
+  return function(){
+    a |= 0; a = (a + 0x9e3779b9) | 0;
+    let t = a ^ (a >>> 16); t = Math.imul(t, 0x21f0aaad);
+    t = t ^ (t >>> 15);     t = Math.imul(t, 0x735a2d97);
+    return ((t = t ^ (t >>> 15)) >>> 0);
+  };
+}
+function _ctkRngSeed(seed5){
+  let acc = 0;
+  for(let i = 0; i < seed5.length; i++)
+    acc = (Math.imul(acc, 92) + _B92_ALPHABET.indexOf(seed5[i])) | 0;
+  const sm = _splitmix32(acc);
+  for(let i = 0; i < 4; i++) _x128s[i] = sm();
+  if(!(_x128s[0]|_x128s[1]|_x128s[2]|_x128s[3])) _x128s[0] = 1; // never all-zero
+}
+function _rotl32(x, k){ return ((x << k) | (x >>> (32 - k))) >>> 0; }
+// xoshiro128** 1.0 — returns float in [0,1), 32 bits of state output
+function _ctkRand(){
+  const s = _x128s;
+  const result = _rotl32(Math.imul(s[1], 5) >>> 0, 7);
+  const r = (Math.imul(result, 9) >>> 0);
+  const t = (s[1] << 9) >>> 0;
+  s[2] = (s[2] ^ s[0]) >>> 0;
+  s[3] = (s[3] ^ s[1]) >>> 0;
+  s[1] = (s[1] ^ s[2]) >>> 0;
+  s[0] = (s[0] ^ s[3]) >>> 0;
+  s[2] = (s[2] ^ t) >>> 0;
+  s[3] = _rotl32(s[3], 11);
+  return r / 4294967296;
+}
+// Canonical non-I draw (protocol order O,T,S,Z,J,L) — consumes ONE call.
+const _CTK_NON_I = ['O','T','S','Z','J','L'];
+function _ctkNonI(){ return _CTK_NON_I[_ctkRand() * 6 | 0]; }
+
+// ── 256-slot timing table (stream.md zones A–D) ─────────────────────────────
+// Zone A slots   0- 59:    0- 150ms @ 2.5ms   — bot fingerprint resolution
+// Zone B slots  60-179:  150- 800ms @ ~5.4ms  — human performance range
+// Zone C slots 180-219:  800-3000ms @ 55ms    — thinking pause
+// Zone D slots 220-255: 3000-8000ms @ ~139ms  — long pause, coarse
+// Quantization contract: hash record stores TIMING_TABLE[slot], never raw ms.
+const TIMING_TABLE = (() => {
+  const t = new Uint16Array(256);
+  for(let i =   0; i <  60; i++) t[i] = Math.round(i * 2.5);
+  for(let i =  60; i < 180; i++) t[i] = Math.round(150 + (i - 60) * 650 / 120);
+  for(let i = 180; i < 220; i++) t[i] = 800 + (i - 180) * 55;
+  for(let i = 220; i < 256; i++) t[i] = Math.round(3000 + (i - 220) * 5000 / 36);
+  return t;
+})();
+// Nearest-slot quantizer — binary search over the monotonic table.
+function _msToSlot(ms){
+  if(ms <= 0) return 0;
+  if(ms >= TIMING_TABLE[255]) return 255;
+  let lo = 0, hi = 255;
+  while(lo < hi){
+    const mid = (lo + hi) >> 1;
+    if(TIMING_TABLE[mid] < ms) lo = mid + 1; else hi = mid;
+  }
+  // lo = first slot >= ms; check if the slot below is closer
+  return (lo > 0 && ms - TIMING_TABLE[lo-1] <= TIMING_TABLE[lo] - ms) ? lo - 1 : lo;
+}
+const _MODE_CHAR = '!'; // B92 value 0 — Mode 0 seeded deterministic
+
+// ── v3.0 spacetime fields (formerly the v4.20 spec — folded into v3.0) ─────
+// Green Minute: minutes since the CELLTOWER epoch, 2026-04-20T04:20:00Z.
+const _GM_EPOCH_MS = 1776658800000;
+function _greenMinute(){ return Math.max(0, Math.floor((Date.now() - _GM_EPOCH_MS) / 60000)); }
+// Geolocation step encodings (~30.5m resolution). Sentinels = physically
+// impossible coordinates: AI game, permission absent, or location unavailable.
+const _LAT_SENTINEL = 656972, _LON_SENTINEL = 1313942;
+function _latSteps(deg){ return Math.round((deg + 90.0)  * (656971.0  / 180.0)); }
+function _lonSteps(deg){ return Math.round((deg + 180.0) * (1313941.0 / 360.0)); }
+let _gameGM = 0;                    // Green Minute at game start — bound into H_0
+let _gameLatSteps = _LAT_SENTINEL;  // header-attested only (async permission)
+let _gameLonSteps = _LON_SENTINEL;
+// Capture location ONLY if the player already granted it to this page —
+// never prompt mid-game. The value lives solely in the stream string the
+// player controls; nothing is transmitted anywhere.
+function _captureGeo(){
+  _gameLatSteps = _LAT_SENTINEL; _gameLonSteps = _LON_SENTINEL;
+  try{
+    if(!navigator.geolocation || !navigator.permissions) return;
+    navigator.permissions.query({name:'geolocation'}).then(p=>{
+      if(p.state!=='granted') return;
+      navigator.geolocation.getCurrentPosition(pos=>{
+        _gameLatSteps = _latSteps(pos.coords.latitude);
+        _gameLonSteps = _lonSteps(pos.coords.longitude);
+      }, ()=>{}, {timeout:5000, maximumAge:600000});
+    }).catch(()=>{});
+  }catch(e){}
+}
+// Terminal hash: first 9 bytes (72 bits) of H_N as 12 B92 chars.
+// 72-bit second-preimage cost ≈ 2^72 chain recomputations — unreachable.
+// 12 chars ≈ 78-bit capacity, so 9 bytes encode with no modular bias.
+const _TERM_HASH_BYTES = 9, _TERM_HASH_CHARS = 12;
+
+// ── v3.0 rules/scoring enumerations + auxiliary section ────────────────────
+// One B92 char each. 0 = current default. 1-90 reserved for future versions.
+// 91 ('~', the last alphabet symbol) = ESCAPE: the value lives in the aux
+// section as a named variable. (One B92 char maxes at 91 — the 0-255-with-
+// escape-at-255 framing needs 2 chars; 0-90 keeps it to one.)
+const _ENUM_ESCAPE = 91;
+let _gameRules   = 0;   // rules enumeration   (key 'R' when escaped)
+let _gameScoring = 0;   // scoring enumeration (key 'S' when escaped)
+let _gameAuxVars = {};  // named vars: short keys, e.g. {T:'FRESNO26'} for tournament ID
+// Canonical aux serialization — EXACTLY ONE legal encoding per variable set:
+// keys sorted, k=v pairs comma-joined, no whitespace. Keys and values must be
+// B92 chars; '=' additionally forbidden in both. The string is hash-bound
+// verbatim, so any deviation in ordering or spacing is a different game.
+function _canonAux(vars){
+  const ks = Object.keys(vars).sort();
+  const bad = /[,;=\s]/;
+  const parts = [];
+  for(const k of ks){
+    const v = String(vars[k]);
+    if(bad.test(k) || bad.test(v)) continue; // structurally invalid — drop
+    parts.push(k + '=' + v);
+  }
+  return parts.join(',');
+}
+// The two-char rules+scoring field as it appears in the header.
+function _rsChars(){
+  const r = (_gameRules   >= 0 && _gameRules   <= 91) ? _gameRules   : _ENUM_ESCAPE;
+  const c = (_gameScoring >= 0 && _gameScoring <= 91) ? _gameScoring : _ENUM_ESCAPE;
+  return _B92_ALPHABET[r] + _B92_ALPHABET[c];
+}
+
+// Quick structural check — does this look like a CELLTOWER stream?
+// Quick structural check — does this look like a CELLTOWER stream?
+function _streamReject(t){
+  if(!t||typeof t!=='string') return 'empty input';
+  const raw=t.trim();
+  if(raw.length<80) return 'too short ('+raw.length+' chars)';
+  const p=raw.split(';');
+  if(p.length<3) return 'missing sections (got '+p.length+')';
+  const hdr=p[0].split(',');
+  if(hdr.length<2) return 'bad header';
+  const seed=hdr[0];
+  if(seed.length!==5&&seed.length!==6) return 'bad seed length ('+seed.length+')';
+  const B92s=(()=>{const s=new Set();for(let i=33;i<=126;i++)if(i!==44&&i!==59)s.add(String.fromCharCode(i));return s;})();
+  const b92ok=s=>{for(const c of s)if(!B92s.has(c))return false;return true;};
+  if(!b92ok(seed)) return 'seed has invalid chars';
+  const stats=hdr[1];
+  if(stats.length!==10) return 'stats wrong length ('+stats.length+')';
+  if(!b92ok(stats)) return 'stats has invalid chars';
+  const B92a=[...B92s];
+  const fromB92=s=>{let n=0;for(const c of s)n=n*92+B92a.indexOf(c);return n;};
+  const nPieces=fromB92(stats.slice(8,10));
+  if(nPieces<=0) return 'piece count is zero';
+  if(nPieces>10000) return 'piece count too large';
+  // v3.0 may carry an aux section: header;aux;placements;hash (4 sections).
+  const hasAux = seed.length===6 && p.length>=4;
+  if(seed.length===6){
+    if(hdr.length<7) return 'v3 header missing rules/scoring field (got '+hdr.length+')';
+    if((hdr[6]||'').length!==2) return 'rules/scoring field wrong length';
+    if(hasAux && !/^[!-~]*$/.test(p[1])) return 'aux has invalid chars';
+  }
+  const block=(hasAux?p[2]:p[1])||'';
+  const cpp=seed.length===6?3:4;
+  if(block.length<nPieces*cpp) return 'placements short: need '+(nPieces*cpp)+' got '+block.length;
+  if(!b92ok(block)) return 'placements has invalid chars';
+  const termHash=p[p.length-1];
+  // v2.0 (5-char seed): 40-char terminal hash. v3.0 (6-char seed): 12 chars.
+  const expectHash = seed.length===6 ? 12 : 40;
+  if(termHash.length!==expectHash) return 'hash wrong length ('+termHash.length+', expected '+expectHash+')';
+  if(seed.length===6 && hdr.length<6) return 'v3 header missing spacetime fields (got '+hdr.length+')';
+  return null;
+}
+
+// ── Puzzle grids + type maps (protocol constants — 13 grids) ──
+const PUZZLE_GRIDS = [
+  ['ABCCCDDDD','ABBCEEEFF','AGBHHEIIF','AGGGHHIIF'],
+  ['ABCCDDDEE','ABBCCDFFE','AGBHHHFFE','AGGGHIIII'],
+  ['ABBCCCDDD','AEBBCFFGD','AEHHHFFGG','AEEHIIIIG'],
+  ['ABCDDDEEE','ABCCDFFFE','ABBCGGFHH','AIIIIGGHH'],
+  ['AABCCCDDD','AABBCEEED','FFFBGGEHH','FIIIIGGHH'],
+  ['AAABBBCCC','DAEEBFFGC','DHHEEFFGG','DDHHIIIIG'],
+  ['ABBBCCCCD','AABEEEFFD','GAHHEIIFD','GGGHHIIFD'],
+  ['ABBBCCCDD','AABEECFFD','GAHHEEFFD','GGGHHIIII'],
+  ['ABBCCCDDE','AABBCFFDE','GAHHHFFDE','GGGHIIIIE'],
+  ['AABBBCCCD','EAABFFGCD','EHHHFFGGD','EEHIIIIGD'],
+  ['ABCCCDDDD','ABBCEEEFF','AABGGEHFF','IIIIGGHHH'],
+  ['ABCCCDDDE','ABBCFFFDE','AABGGFHHE','IIIIGGHHE'],
+  ['ABCCDDDEE','ABBCCDFEE','AABGGGFFF','HHHHGIIII'],
+];
+const PUZZLE_PIECE_TYPES = [
+  {A:'I',B:'S',C:'T',D:'I',E:'T',F:'L',G:'J',H:'Z',I:'O'},
+  {A:'I',B:'S',C:'Z',D:'T',E:'L',F:'O',G:'J',H:'T',I:'I'},
+  {A:'I',B:'Z',C:'T',D:'J',E:'L',F:'O',G:'S',H:'T',I:'I'},
+  {A:'I',B:'L',C:'S',D:'T',E:'J',F:'T',G:'Z',H:'O',I:'I'},
+  {A:'O',B:'S',C:'T',D:'J',E:'T',F:'L',G:'Z',H:'O',I:'I'},
+  {A:'T',B:'T',C:'J',D:'L',E:'Z',F:'O',G:'S',H:'Z',I:'I'},
+  {A:'S',B:'T',C:'I',D:'I',E:'T',F:'L',G:'J',H:'Z',I:'O'},
+  {A:'S',B:'T',C:'T',D:'L',E:'Z',F:'O',G:'J',H:'Z',I:'I'},
+  {A:'S',B:'Z',C:'T',D:'L',E:'I',F:'O',G:'J',H:'T',I:'I'},
+  {A:'Z',B:'T',C:'J',D:'I',E:'L',F:'O',G:'S',H:'T',I:'I'},
+  {A:'L',B:'S',C:'T',D:'I',E:'T',F:'O',G:'Z',H:'J',I:'I'},
+  {A:'L',B:'S',C:'T',D:'J',E:'I',F:'T',G:'Z',H:'O',I:'I'},
+  {A:'L',B:'S',C:'Z',D:'T',E:'O',F:'J',G:'T',H:'I',I:'I'},
+];
+
+function _v3DerivePieces(seed5, nPieces){
+  _ctkRngSeed(seed5);
+  const out = [];
+  const si = _ctkRand()*PUZZLE_GRIDS.length|0;      // call #1
+  const mirror = _ctkRand()<0.5;                    // call #2
+  const mirrorType = {I:'I',O:'O',T:'T',S:'Z',Z:'S',J:'L',L:'J'};
+  const baseTypeMap = PUZZLE_PIECE_TYPES[si];
+  const typeMap = mirror
+    ? Object.fromEntries(Object.entries(baseTypeMap).map(([k,v])=>[k,mirrorType[v]]))
+    : baseTypeMap;
+  const grid = PUZZLE_GRIDS[si].map(row => mirror ? row.split('').reverse().join('') : row);
+  const g = grid.map(row=>row.split(''));
+  const R=4, C=9;
+  const cellsOf = lbl => { const a=[]; for(let r=0;r<R;r++) for(let c=0;c<C;c++) if(g[r][c]===lbl) a.push([r,c]); return a; };
+  const pullable = () => {
+    const lbls=[...new Set(g.flat().filter(ch=>ch!=='.'))];
+    return lbls.filter(lbl=>cellsOf(lbl).every(([r,c])=>r===R-1||g[r+1][c]==='.'||g[r+1][c]===lbl));
+  };
+  while(out.length<9){
+    const avail=pullable();
+    if(!avail.length) break;
+    const chosen=avail[_ctkRand()*avail.length|0];  // calls #3-#11
+    out.push(typeMap[chosen]);
+    for(let r=0;r<R;r++) for(let c=0;c<C;c++) if(g[r][c]===chosen) g[r][c]='.';
+  }
+  out.push('I');                                    // 10th piece: free, no call
+  const PO=['I','O','T','S','Z','J','L'];
+  while(out.length<nPieces) out.push(PO[_ctkRand()*7|0]);
+  return out.slice(0,nPieces);
+}
+
+// Parse stream into placements array + header meta for visual replay.
+// Branches on seed length: 5 chars = v2.0 (4 chars/piece, type in stream),
+// 6 chars = v3.0 (3 chars/piece, type derived from seeded PRNG).
+function _parseStreamForReplay(streamText){
+  try{
+    const sections=streamText.trim().split(';');
+    const hdrParts=sections[0].split(',');
+    const seedField=hdrParts[0]||'';
+    const isV3=seedField.length===6;
+    const stats=hdrParts[1]||'';
+    const replayScore=stats.length>=4?_fromB92(stats.slice(0,4)):0;
+    const replayLevel=stats.length>=6?_fromB92(stats.slice(4,6)):1;
+    const replayLines=stats.length>=8?_fromB92(stats.slice(6,8)):0;
+    const nPieces=stats.length>=10?_fromB92(stats.slice(8,10)):0;
+    const hasAux=isV3&&sections.length>=4;
+    const block=(hasAux?sections[2]:sections[1])||'';
+    const PO=['I','O','T','S','Z','J','L'];
+    const pieces=[];
+    if(isV3){
+      const seed5=seedField.slice(0,5);
+      const types=_v3DerivePieces(seed5,nPieces);
+      for(let n=0;n<nPieces;n++){
+        const chunk=block.slice(n*3,n*3+3);
+        if(chunk.length<3)break;
+        const triple=_fromB92(chunk);
+        const posIdx=Math.floor(triple/256);
+        const tSlot=triple%256;
+        const rot=Math.floor(posIdx/290);
+        const x=Math.floor((posIdx%290)/29);
+        const drop_y=(posIdx%29)-4;
+        const ms=TIMING_TABLE[Math.min(255,tSlot)];
+        pieces.push({k:types[n]||'I',rot,x,drop_y,ms});
+      }
+    } else {
+      for(let n=0;n<nPieces;n++){
+        const chunk=block.slice(n*4,n*4+4);
+        if(chunk.length<4)break;
+        const posIdx=_fromB92(chunk.slice(0,2));
+        const rot=Math.floor((posIdx%1160)/290);
+        const x=Math.floor((posIdx%290)/29);
+        const drop_y=(posIdx%29)-4;
+        const k=PO[Math.floor(posIdx/1160)]||'I';
+        const ms=_fromB92(chunk.slice(2,4));
+        pieces.push({k,rot,x,drop_y,ms});
+      }
+    }
+    const playerName=(hdrParts[2]||'').slice(0,3);
+    return{pieces,score:replayScore,level:replayLevel,lines:replayLines,playerName};
+  }catch(e){return null;}
+}
+
+
+// Piece shapes — independently defined (same data as NRS, separate object)
+const _V_SHAPES = {
+  I: [[[1,1,1,1]],         [[1],[1],[1],[1]],     [[1,1,1,1]],         [[1],[1],[1],[1]]],
+  O: [[[1,1],[1,1]],       [[1,1],[1,1]],         [[1,1],[1,1]],       [[1,1],[1,1]]],
+  T: [[[0,1,0],[1,1,1]],   [[1,0],[1,1],[1,0]],   [[1,1,1],[0,1,0]],   [[0,1],[1,1],[0,1]]],
+  S: [[[0,1,1],[1,1,0]],   [[1,0],[1,1],[0,1]],   [[0,1,1],[1,1,0]],   [[1,0],[1,1],[0,1]]],
+  Z: [[[1,1,0],[0,1,1]],   [[0,1],[1,1],[1,0]],   [[1,1,0],[0,1,1]],   [[0,1],[1,1],[1,0]]],
+  J: [[[1,0,0],[1,1,1]],   [[1,1],[1,0],[1,0]],   [[1,1,1],[0,0,1]],   [[0,1],[0,1],[1,1]]],
+  L: [[[0,0,1],[1,1,1]],   [[1,0],[1,0],[1,1]],   [[1,1,1],[1,0,0]],   [[1,1],[0,1],[0,1]]]
+};
+const _V_PIECE_ORDER = ['I','O','T','S','Z','J','L'];
+
+// Base-92 decoder — independently defined (same alphabet as _fromB92)
+const _V_B92 = (() => {
+  const a = [];
+  for (let i = 33; i <= 126; i++) { const c = String.fromCharCode(i); if (c !== ',' && c !== ';') a.push(c); }
+  return a;
+})();
+function _vFromB92(s) { let n = 0; for (const c of s) n = n * 92 + _V_B92.indexOf(c); return n; }
+function _vB92Idx(c) { return _V_B92.indexOf(c); }
+
+// Board complexity score [0,1] from flat 25×10 board (Uint8Array, index=row*10+col).
+// Higher = harder: tall stacks, many holes, uneven columns.
+function _vBoardComplexity(board) {
+  const colH = new Array(10).fill(0);
+  for (let c = 0; c < 10; c++)
+    for (let r = 0; r < 25; r++)
+      if (board[r*10+c]) { colH[c] = 25 - r; break; }
+  const maxH = Math.max(...colH) / 25;
+  const meanH = colH.reduce((a,b)=>a+b,0) / 10;
+  const stdH = Math.sqrt(colH.reduce((s,h)=>s+(h-meanH)**2,0)/10) / 25;
+  let holes = 0;
+  for (let c = 0; c < 10; c++) {
+    let blocked = false;
+    for (let r = 0; r < 25; r++) {
+      if (board[r*10+c]) blocked = true;
+      else if (blocked) holes++;
+    }
+  }
+  return maxH*0.5 + stdH*0.3 + Math.min(holes/50,1)*0.2;
+}
+
+// Humanity Probability Score [0,1] from parallel timing and pre-placement complexity arrays.
+// Signal: human players slow down on complex boards (positive correlation + natural variability).
+// Bot-Jitter: uniform timing (low CV) or variance uncorrelated with complexity (r ≈ 0).
+function _vComputeHPS(timings, complexities, minSamples = 20) {
+  const n = timings.length;
+  if (n < minSamples) return null; // insufficient sample for meaningful result
+  const meanT = timings.reduce((a,b)=>a+b,0)/n;
+  const meanC = complexities.reduce((a,b)=>a+b,0)/n;
+  let num=0, ssT=0, ssC=0;
+  for (let i=0; i<n; i++) {
+    const dt=timings[i]-meanT, dc=complexities[i]-meanC;
+    num+=dt*dc; ssT+=dt*dt; ssC+=dc*dc;
+  }
+  const r    = (ssT===0||ssC===0) ? 0 : num/Math.sqrt(ssT*ssC); // Pearson correlation
+  const cv   = meanT>0 ? Math.sqrt(ssT/n)/meanT : 0;             // coefficient of variation
+  const rNorm  = (r+1)/2;                 // -1..1 → 0..1
+  const cvNorm = Math.min(1, cv/0.4);     // CV ≥ 0.4 = full variability score
+  return Math.round((rNorm*0.7 + cvNorm*0.3)*100)/100;
+}
+function _vBytesToB92(bytes, width) {
+  let v = 0n;
+  for (const b of bytes) v = (v << 8n) | BigInt(b);
+  let s = '';
+  for (let i = 0; i < width; i++) { s = _V_B92[Number(v % 92n)] + s; v /= 92n; }
+  return s;
+}
+
+// Port of game's scoreBoard() for flat 25×10 Uint8Array. No game globals used.
+function _vScoreBoard(b) {
+  let totalH=0, bump=0;
+  const colH=new Array(10).fill(0);
+  for (let c=0; c<10; c++) {
+    for (let r=0; r<25; r++) if (b[r*10+c]) { colH[c]=25-r; break; }
+    totalH+=colH[c];
+  }
+  for (let c=0; c<9; c++) bump+=Math.abs(colH[c]-colH[c+1]);
+  const maxH=Math.max(...colH), minH=Math.min(...colH);
+  const danger=Math.max(0,Math.min(1,(maxH-12)/10)), dSq=danger*danger;
+  const hPen=totalH*80*(1+dSq*8);
+  const mhB=Math.max(0,maxH-8); const mhPen=mhB*mhB*120*(1+dSq*4);
+  let cPen=0;
+  for (let c=1; c<9; c++) {
+    const ld=colH[c-1]-colH[c], rd=colH[c+1]-colH[c];
+    if(ld>0&&rd>0){const d=Math.min(ld,rd);if(d>=2)cPen+=d*d*400*(1+dSq*2);}
+  }
+  const sp=maxH-minH;
+  const sPen=sp>4?(sp-4)*(sp-4)*200*(1+dSq*3):0;
+  let spkPen=0;
+  for (let c=0; c<10; c++) {
+    const lh=c>0?colH[c-1]:null, rh=c<9?colH[c+1]:null;
+    const avg=(lh!==null&&rh!==null)?(lh+rh)/2:(lh!==null?lh:rh);
+    const spk=colH[c]-avg;
+    if(spk>=2) spkPen+=spk*spk*300*(1+dSq*4);
+  }
+  return -(hPen+bump*150*(1+dSq*2)+mhPen+cPen+sPen+spkPen);
+}
+
+// Decision-Path Conflict [0,1]: 0 = obvious best move, 1.0 = perfect toss-up.
+// Evaluates all straight-drop placements for the piece type using base score
+// (lines×800 + scoreBoard) — no next-piece lookahead (nxt not in stream).
+function _vDPC(board, typeIdx) {
+  const shapes = _V_SHAPES[_V_PIECE_ORDER[typeIdx]];
+  const fitsAt = (cells, x, gy) => {
+    for (let r=0; r<cells.length; r++)
+      for (let c=0; c<cells[r].length; c++) {
+        if (!cells[r][c]) continue;
+        const br=gy+r, bc=x+c;
+        if (br<0) continue;
+        if (br>=25 || bc<0 || bc>=10 || board[br*10+bc]) return false;
+      }
+    return true;
+  };
+  const scores=[];
+  for (let rot=0; rot<shapes.length; rot++) {
+    const cells=shapes[rot], cw=cells[0].length;
+    for (let x=0; x<=10-cw; x++) {
+      if (!fitsAt(cells,x,0)) continue;
+      let gy=0; while(fitsAt(cells,x,gy+1)) gy++;
+      const tb=new Uint8Array(board);
+      for (let r=0; r<cells.length; r++)
+        for (let c=0; c<cw; c++)
+          if (cells[r][c]&&gy+r>=0&&gy+r<25) tb[(gy+r)*10+x+c]=1;
+      const nb=new Uint8Array(250);
+      let dr=24, cl=0;
+      for (let r=24; r>=0; r--) {
+        let full=true;
+        for (let c=0; c<10; c++) if(!tb[r*10+c]){full=false;break;}
+        if(!full){nb.set(tb.subarray(r*10,r*10+10),dr*10);dr--;}else cl++;
+      }
+      scores.push(cl*800+_vScoreBoard(nb));
+    }
+  }
+  if (scores.length<2) return 0;
+  scores.sort((a,b)=>b-a);
+  const range=Math.max(1,scores[0]-scores[scores.length-1]);
+  return Math.max(0,Math.min(1,1.0-(scores[0]-scores[1])/range));
+}
+
+// Convert flat 25×10 board (Uint8Array, index=row*10+col) to 50-byte word array
+function _vBoardToWords(b) {
+  const out = new Uint8Array(50);
+  for (let r = 0; r < 25; r++) {
+    let w = 0;
+    for (let c = 0; c < 10; c++) if (b[r*10+c]) w |= (1 << (9-c));
+    out[r*2] = (w >> 8) & 0xFF; out[r*2+1] = w & 0xFF;
+  }
+  return out;
+}
+
+// Apply one placement to the board, clear complete rows, return lines cleared.
+// Mirrors game's placeOn bounds check — cells above row 0 (drop_y+r < 0) are skipped.
+function _vApply(board, typeIdx, rot, x, drop_y) {
+  const cells = _V_SHAPES[_V_PIECE_ORDER[typeIdx]][rot];
+  for (let r = 0; r < cells.length; r++)
+    for (let c = 0; c < cells[r].length; c++) {
+      const br = drop_y + r, bc = x + c;
+      if (cells[r][c] && br >= 0 && br < 25 && bc >= 0 && bc < 10) board[br * 10 + bc] = 1;
+    }
+  let cleared = 0;
+  for (let r = 24; r >= 0; r--) {
+    let full = true;
+    for (let c = 0; c < 10; c++) if (!board[r*10+c]) { full = false; break; }
+    if (full) {
+      for (let rr = r; rr > 0; rr--) for (let c = 0; c < 10; c++) board[rr*10+c] = board[(rr-1)*10+c];
+      for (let c = 0; c < 10; c++) board[c] = 0;
+      r++; cleared++;
+    }
+  }
+  return cleared;
+}
+
+// Build the 56-byte hash record for one placement (same layout as _advanceHashChain)
+function _vRecord(typeIdx, rot, x, drop_y, ms, boardWords) {
+  const rec = new Uint8Array(56);
+  rec[0]=typeIdx&0xFF; rec[1]=rot&0xFF; rec[2]=x&0xFF; rec[3]=drop_y&0xFF;
+  rec[4]=(ms>>8)&0xFF; rec[5]=ms&0xFF;
+  rec.set(boardWords, 6);
+  return rec;
+}
+
+// Verify a stream text. Returns {valid, piecesReplayed, error}.
+// No game globals referenced — pass the raw stream string returned by _buildStream().
+async function _verifyStream(streamText) {
+  try {
+    const sections = streamText.split(';');
+    if (sections.length < 3) return { valid: false, error: 'bad section count: ' + sections.length };
+
+    const headerParts = sections[0].split(',');
+    if (headerParts.length < 2) return { valid: false, error: 'bad header fields' };
+
+    const seedField       = headerParts[0];             // 5 chars = v2.0, 6 = v3.0
+    const isV3            = seedField.length === 6;
+    const seed5           = seedField.slice(0, 5);
+    const stats           = headerParts[1];             // 10 B92 chars
+    const nPieces         = _vFromB92(stats.slice(8,10));
+    // v3.0 with aux: header;aux;placements;hash. Without: header;placements;hash.
+    const hasAux          = isV3 && sections.length >= 4;
+    const auxStr          = hasAux ? sections[1] : '';
+    const placementsBlock = hasAux ? sections[2] : sections[1];
+    const termHashB92     = sections[sections.length - 1];
+    const cpp             = isV3 ? 3 : 4;                // chars per placement
+    const rsStr           = isV3 ? (headerParts[6]||'') : '';
+    // Surface decoded regime for the caller / receipt display
+    const rulesEnum   = isV3 && rsStr.length===2 ? _vB92Idx(rsStr[0]) : 0;
+    const scoringEnum = isV3 && rsStr.length===2 ? _vB92Idx(rsStr[1]) : 0;
+    const auxVars = {};
+    if(auxStr) for(const pair of auxStr.split(',')){
+      const eq = pair.indexOf('='); if(eq>0) auxVars[pair.slice(0,eq)] = pair.slice(eq+1);
+    }
+
+    // v3.0: piece types are not in the stream — derive from the seeded PRNG.
+    // (Common path; the rare Towres fallback draws need full physics replay
+    // and will surface as a hash mismatch here — flagged, not silently passed.)
+    const v3Types = isV3 ? _v3DerivePieces(seed5, nPieces) : null;
+
+    // H_0 binds identity (+ time-of-play in v3.0):
+    //   v2.0: SHA-256(UTF-8(seed5 + playerName))
+    //   v3.0: SHA-256(UTF-8(seed5 + playerName + gm4))
+    const _seedStr = isV3
+      ? seed5 + (headerParts[2]||'') + (headerParts[3]||'') + rsStr + auxStr
+      : seed5 + (headerParts[2]||'');
+    let H = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(_seedStr));
+
+    // Fresh board — no game state
+    const board = new Uint8Array(250);  // 25 rows × 10 cols
+    const _hpTimings = [], _hpDPC = [];
+
+    // Decade Merkle-Root state
+    let prevDecadeHash = new Uint8Array(H);  // seeded from H_0
+    let decadeRecs = [], decadeTms = [], decadeComplx = [];
+    const blockLedger = [];
+
+    // Neural Processing Floor — neurologically impossible: high-conflict choice resolved <150ms
+    let npfHits = 0;
+
+    for (let n = 0; n < nPieces; n++) {
+      const chunk = placementsBlock.slice(n*cpp, n*cpp+cpp);
+      if (chunk.length < cpp) return { valid: false, error: 'short placement block at piece ' + n };
+
+      let typeIdx, rot, x, drop_y, ms;
+      if (isV3) {
+        // v3.0: 3 chars = posIdx*256 + tSlot. No type; no raw ms.
+        const triple = _vFromB92(chunk);
+        const posIdx = Math.floor(triple / 256);
+        const tSlot  = triple % 256;
+        typeIdx = _V_PIECE_ORDER.indexOf(v3Types[n] || 'I');
+        rot     = Math.floor(posIdx / 290);
+        x       = Math.floor((posIdx % 290) / 29);
+        drop_y  = (posIdx % 29) - 4;
+        ms      = TIMING_TABLE[tSlot];
+      } else {
+        const posIdx = _vFromB92(chunk.slice(0,2));
+        typeIdx = Math.floor(posIdx / 1160);
+        rot     = Math.floor((posIdx % 1160) / 290);
+        x       = Math.floor((posIdx % 290) / 29);
+        drop_y  = (posIdx % 29) - 4;  // 29-slot field, offset 4 → range -4..24
+        ms      = _vFromB92(chunk.slice(2,4));
+      }
+
+      // DPC: how much conflict did this placement pose? Computed pre-placement.
+      const dpc = _vDPC(board, typeIdx);
+      _hpTimings.push(ms);
+      _hpDPC.push(dpc);
+
+      // Neural Processing Floor: high-conflict decision resolved in neurologically impossible time
+      if (ms < 150 && dpc >= 0.7) npfHits++;
+
+      // Decade accumulators use DPC (same signal as full-game HPS)
+      decadeTms.push(ms);
+      decadeComplx.push(dpc);
+
+      _vApply(board, typeIdx, rot, x, drop_y);
+      const boardWords = _vBoardToWords(board);
+
+      // H_n = SHA-256(H_{n-1} || record)
+      const rec56 = _vRecord(typeIdx, rot, x, drop_y, ms, boardWords);
+      const prev  = new Uint8Array(H);
+      const msg   = new Uint8Array(88);  // 32 + 56
+      msg.set(prev, 0); msg.set(rec56, 32);
+      H = await crypto.subtle.digest('SHA-256', msg);
+
+      // Decade boundary: emit a Merkle-Root every 10 pieces
+      decadeRecs.push(rec56);
+      if (decadeRecs.length === 10) {
+        const iHPS   = _vComputeHPS(decadeTms, decadeComplx, 5);
+        const hpsU16 = iHPS === null ? 0 : Math.round(iHPS * 65535);
+        const din    = new Uint8Array(32 + 560 + 2);
+        din.set(prevDecadeHash, 0);
+        let off = 32;
+        for (const r of decadeRecs) { din.set(r, off); off += 56; }
+        din[594] = (hpsU16 >> 8) & 0xFF; din[595] = hpsU16 & 0xFF;
+        const dhBuf  = await crypto.subtle.digest('SHA-256', din);
+        const dhBytes = new Uint8Array(dhBuf);
+        prevDecadeHash = dhBytes;
+        blockLedger.push({
+          decade: blockLedger.length,
+          startPiece: n - 9,
+          endPiece:   n,
+          hps:  iHPS,
+          hash: Array.from(dhBytes).map(b=>b.toString(16).padStart(2,'0')).join('')
+        });
+        decadeRecs = []; decadeTms = []; decadeComplx = [];
+      }
+    }
+
+    // Terminal compare: v3.0 = first 9 bytes as 12 chars; v2.0 = full 40.
+    const computedB92 = isV3
+      ? _vBytesToB92(new Uint8Array(H).slice(0, 9), 12)
+      : _vBytesToB92(new Uint8Array(H), 40);
+    const valid = computedB92 === termHashB92;
+    const hps = _vComputeHPS(_hpTimings, _hpDPC);
+    const hpsLabel = hps === null ? 'N/A' : hps >= 0.72 ? 'PASS' : hps >= 0.50 ? 'REVIEW' : 'FAIL';
+    const npfRatio = nPieces > 0 ? Math.round(npfHits / nPieces * 100) / 100 : 0;
+    const npfFlag  = npfRatio >= 0.05 ? 'NPF_SUSPECT' : null;
+    return {
+      valid,
+      rulesEnum, scoringEnum, auxVars,
+      piecesReplayed: nPieces,
+      hps, hpsLabel,
+      blockLedger,
+      npfFlag, npfRatio, npfHits,
+      error: valid ? null : `hash mismatch\n  computed: ${computedB92}\n  stream:   ${termHashB92}`
+    };
+  } catch(e) {
+    return { valid: false, error: e.message };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Built-in game scores — same data the game ships (placeholder peers/data)
+const _SAMPLE_STREAMS=JSON.parse("[{\"label\": \"JON \u00b7 1.16M\", \"stream\": \"B0nkg,\\\"P4o!6#(&5,TDE;r)72xF&h=j$(re$ny\\\"%'@v%$b>%dEv&m$C&lLq$~W\\\\%uW=$~FS$~r@%u':.AWZ)cJD$(@t$}/M$~Gn&l&z-I':.AV}$(<M%v$D&m'8)R&z-I'6)QyA$*cv(kpo)aj6*\\\\w/+RV%%0Fv$(A7)cxF&mrd$~W\\\\)cH1+Rr'&lHN(]y#$}=j't@w$o<m$}0l(kBm'ib?&\\\"\\\"t(mUc%uc=\\\"~y!%#>H%vZh&_b=&$hv&lb:%wsB$~$A&my]%!zw-L[G->w/+S=j$(/3%u/1%un?([%C$)Dd+RL4&lZ.(l0l$~[G-I@w(liX$~/Q%\\\"0.#1L5&nd7)d/P$}U`%yhW'Tb8%uy>$(q0*]d7)^r}$(q0*]>H)es`%tU`%uy{%uNN'fzw-H':)RLr$~1+)c%b%!\\\"s(ls`)c>H)cDG&m.u&ph\\\\'as#$(cX$(1J*Zj6&l!=%uHO-ZH1+RJc$~bA%uM5't':)S$H&l/5%uG6(lJ&#2/4%u@X$(&@&m1+)cD'%yt>+O$H&kn?-IrH%y/S$m00#20k$}[F-LxF&jNN+Rre%!cZ'v0O$'':)RYn$(&z-Jr(&iV$$~s\\\"$*N0*Zg&)dAr+R':)RNM'dl*%u@w(mGT%v.v*Zh{*J01#C$J&l'9)S&z-Ko:%4ma*Z[E(XVa#2/6%e!=%tMp)c0l%!Z.(m[F(ZIh$(I-)d0l$~c<#2u9+T<R%r$I&q'9)A&z([LW%uF8%uVa#2ma*ZmD)cDc'd%E$'I)%wG6(kfg(m$I&phz&j>H%v/3%r00#1Zh&}zw-KB2-IHN(^\\\"9&}=M#2ma*Z0O$(E\\\"([.v&nCL)b@=(l.v&lJc$}Ci(m1J*Z>)$|bB%w@w%#q/&k0M$$%E'tCg$~l*)e.v&l[G([&]+XGT%u<R%v[G-Jb|$'?_*['9)S=M#2L9&mrd$~W\\\\)c&z([/p$-vo*Y$I&j0l$~?|%uMS(lV}$(Lu(l1+%u':.@xG&oiv%wr&&yLu(k=L#1'8)Rt>+T&z(ggE*XMS$~'6)SC.*XLu(lpS$~H0'dL:*K0O$9Ez&qCL)o$H&\\\\Ci(l@=$}s}*Y'8)R?{%{'4)RM5$<y_%#H1+O'1)QW>(nh]'bJ&#5[(+QCL%u$I&q?{%eK\\\")cw/'diY(kpp%u01#2K!%tC.*V%E'u&y([nz%uJc$~Z.(l'6)UI-)e?_&iM5$)W?(l00#2gb'd1(%vy{%uF<)`r)&pJa$|Yn'v/6)aYn's$J&mIK$~$f%u/R$}/P$~/N$~jT'fHN([Xo&m\\\"U'ty_(ld7)bN0&j01#2$H&hHO-J'8)QY1%vNN+UZL%hfg(qNN+AYn'uBn'ds`&'&z-Jzv(Xr(&l0l%!0j$}Lu(kn<([Z.(lcu$}Lu$}M4$(Z*$~$g)ceO*['8)R@=$}pp)d0l(lVD$)jT'ckk*[>G%u01#2Ig$)Ja$}JC$(zX'd0g$~Z)$~$J*Z>$$|fc$qzv(KYQ$nN)&lBm+R!>)eY3)dn?(^y#$~N+&i0.#2&y([.u*[lH$~Xs*^V_#2zw-Ju9+N%&(l':)RZL%uZJ%u1+%u.v*Zs$'t%b$~r)&m1+)cIK(lZL%uBn'ddU*[CL%uI+%un?-J?^&m1+%uMS(lfJ$(f*$~ej%uw/+ReM&lHO([>((l&!)dW\\\\%uM5'uWy*[r(&lYQ$~/4%u.r&lLr$~Z.$}AU&lvP%u.p&ldS*[Nk-J':.@>H%tH0'd01&}Lu$zMp)dFv'uma&lr(&mV$$~s_%uld$)Nk-IL9&n':)R/S$}m}'dgE*[0k$}iY(lrH)c$J&mn?([1*%u!y't0O$)V%$~Fv'u<o$}>)$~I+%u1J*[$I&l[('dc=&~/5%u/3%u':)Rp5'tN0&]NM'd=M&}1H&mMS$~0M$(?]&m%E'tZ.$~YQ$~&]+R1J&ly|%uL:*ZM5$)1I&l%&(k\\\"V$)os#1L:*[;!pq)OMpz[qZmHjdQlV\\\\bi?BWtB8}(Q1qp6fsukff\"}, {\"label\": \"AAR \u00b7 1.26M\", \"stream\": \"RkoL],\\\"\\\\52!*!{#k,AMH;1JGl\\\"W20pR)t%E-^Ww+~<R4dmC2dNi){Gn*N%b+'jOIm'6*8y]-uK9-p=e*tvL*!pK-KF<0RY1*G1A.y?x5Q@o>6%B-ZYK*<Mg.8fA<WwC/Gik+R0}/\\\\$JY\\\"Y04N$J)^zs6u$f0fZdR~NG8}g!EZg=8_f)>7Z&fRoS3z?w6s$J0[LseQzt4d1D.ACH4K1BX+=G5[ML?(YK4\\\\mZ9dq%<*MhFjms@lMf5#@Q2QW22/ZyAz0A5%$J3pFo@=$g.b$J9zrH>RN(50fa5&A.Ayxc0wYM2=@6=$z37`$J6)':H~n::x$g0~pKLLgz021B1&CH5&Z`@T$J1etUI_AN3/bzKl$g/%%zDv/n-gGhU8$J/5/66N/p+<zt5Yur1I/m/HG1.6$e2=$J8:f+Eo?zd\\\"DD6M1H0Qlc.8LTS#LR1hLP0i1F2+fF02>$8O$J<5>cJoD&1Dv12uDa37'72&pk-+op*OJz+</k*pVw*:W60]HH+GK7-1=}/z>Z*Vvd9nLR+qI`+2IB*ZM**E?rE}0B0Lje0F$J0MWR?nvd6]cj2FNa/D0^3:N_*yHA*k>7+KtJ.Cfu4iM-0QLP+p$J4@YKD=0^/J0\\\\4\\\\mOBC@42WLk:}ZUOMeJ6&r\\\".DN]6$x?*6q|+5/)2vUX64y8.iM-4PLl0)fa.#Nb7uq~7#c3.}G/6(y:12HF2sMJ.NzO25l\\\"/:fA.\\\"L2+gL1+?L/2|A.*sZ^.C${*R/g1czn-aZC2q1A0|!S+.Z}.A!p(Iq~*]zn/s/-*cry+Ono0E\\\"M.|sW11.l/qf^+d&73(&U.7tS6sp*/$zn3ZFQ*|?X2'0(-$0&/9C&*O/L.ukc.*D]+8zq+>0f/GtT*h>!/}Ia(kIC*4lz+=/g*u$D/-c23p[!./'4)cAN(w1\\\"-S$})}Eu+Bzp-a$D/\\\"J\\\\+aZ&(:Yf*@x@+o$}+Cq()+w'+TA0):xz-!.o+o>^0i0d(N?t(oHG)-J=(<Ye'^t3'uC#'cMH(*tP'BI?)@Js(lIw0rc+-yIs*/oa'1o_#~In\\\"O;#/[&7sq#-q<XkZ>)%De~S~Kr27/|g`4I*5j'KS~U\"}]");
+
+'use strict';
+/* ═══════════════════ STATE ═══════════════════ */
+const S = {
+  operator: 'THE OPERATOR',
+  contracts: {},
+  ledger: [],
+  ledgerHash: null,
+  seq: 0,
+  pubScores: [],          // PUBLIC SCORE LEDGER — validated, extractable, for everyone
+  registry: ['(builtin-demo)'],   // name-server URLs; SEARCH queries each
+  tickerLines: [
+    'STEP RIGHT UP — THE POT DOES NOT CARE WHO FILLED IT',
+    'POST A GAUNTLET · MISS YOUR OWN NUMBER · FEED THE NEXT CALLER',
+    'MATH IS THE TRUSTED PARTY · THE TAPE IS PUBLIC · THE CHAIN DOES NOT LIE',
+    'EVERY CLAIM REPLAYS OR EVERY CLAIM DIES',
+    'OPERATOR, CONNECT ME TO THE MONEY'
+  ]
+};
+function save(){ try{ localStorage.setItem('switchboard.v0', JSON.stringify(
+  {operator:S.operator,contracts:S.contracts,ledger:S.ledger,ledgerHash:S.ledgerHash,
+   seq:S.seq,pubScores:S.pubScores,registry:S.registry,tickerLines:S.tickerLines})); }catch(e){} }
+function load(){ try{ const j=localStorage.getItem('switchboard.v0'); if(j) Object.assign(S, JSON.parse(j)); }catch(e){} }
+
+/* ═══════════════════ TAPE ═══════════════════ */
+const tape = document.getElementById('tape');
+const wrapEl = document.getElementById('tapewrap');
+function L(txt, cls){ const d=document.createElement('div'); if(cls)d.className=cls; d.textContent=txt; tape.appendChild(d); }
+function HR(ch){ L((ch||'-').repeat(46)); }
+function scrollTape(){ requestAnimationFrame(()=>{ wrapEl.scrollTop=wrapEl.scrollHeight; }); }
+function stamp(){ const d=new Date(); return d.toISOString().replace('T',' ').slice(0,19)+' · GM '+_greenMinute(); }
+
+/* ═══════════════════ TICKER ═══════════════════ */
+const tick = document.getElementById('tick');
+let tickIdx=0, tickX=(window.innerWidth||400);
+function tickStep(){
+  tickX -= 1.2;
+  tick.style.transform='translateX('+tickX+'px)';
+  if(tickX < -tick.offsetWidth-40){
+    tickIdx=(tickIdx+1)%S.tickerLines.length;
+    tick.textContent='★ '+S.tickerLines[tickIdx]+' ★';
+    tickX=(window.innerWidth||400);
+  }
+  requestAnimationFrame(tickStep);
+}
+function barker(line){ S.tickerLines.unshift(line); if(S.tickerLines.length>12) S.tickerLines.pop(); }
+
+/* ═══════════════════ JUKEBOX ═══════════════════ */
+function spinCue(name){
+  if(!name) return;
+  document.getElementById('spin').style.display='block';
+  document.getElementById('spintxt').textContent=name;
+  if(/^https?:\/\/.+\.(mp3|ogg|wav|m4a)(\?.*)?$/i.test(name)){
+    const j=document.getElementById('jukebox');
+    try{ j.src=name; j.play().catch(()=>{}); }catch(e){}
+  }
+}
+
+/* ═══════════════════ HASH-CHAINED LEDGER ═══════════════════ */
+async function sha(s){
+  const b=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+async function ledgerPost(debit,credit,amount,memo,T){
+  if(!S.ledgerHash) S.ledgerHash=await sha('SWITCHBOARD-GENESIS');
+  const e={n:S.ledger.length,ts:Date.now(),gm:_greenMinute(),
+           debit,credit,amount:Math.round(amount*100)/100,memo,T:T||''};
+  const line=e.n+'|'+e.ts+'|'+e.gm+'|'+e.debit+'|'+e.credit+'|'+e.amount.toFixed(2)+'|'+e.memo+'|'+e.T;
+  e.hash=await sha(S.ledgerHash+line);
+  S.ledgerHash=e.hash; S.ledger.push(e); save(); return e;
+}
+function balances(){
+  const b={};
+  for(const e of S.ledger){ b[e.debit]=(b[e.debit]||0)-e.amount; b[e.credit]=(b[e.credit]||0)+e.amount; }
+  return b;
+}
+const fm=n=>'$'+n.toFixed(2);
+
+/* ═══════════════════ PUBLIC SCORE LEDGER ═══════════════════ */
+async function publishScore(rec){
+  // rec: {name, score, lines, pieces, T, gm, streamHash, verified, source}
+  rec.n=S.pubScores.length;
+  rec.prev=S.pubScores.length?S.pubScores[S.pubScores.length-1].hash:'GENESIS';
+  rec.hash=(await sha(rec.prev+'|'+rec.n+'|'+rec.name+'|'+rec.score+'|'+rec.T+'|'+rec.gm+'|'+rec.streamHash)).slice(0,16);
+  S.pubScores.push(rec); save();
+}
+function cmdSCORES(a){
+  HR('='); L('PUBLIC SCORE LEDGER','hd');
+  L('validated · hash-chained · extractable by anyone','c faint'); HR('=');
+  if(!S.pubScores.length){ L('  (empty — SAMPLES seeds it, SUBMIT grows it)','faint'); HR(); return; }
+  if(a[0]==='JSON'){
+    navigator.clipboard.writeText(JSON.stringify(S.pubScores,null,1)).catch(()=>{});
+    L('  JSON → CLIPBOARD ('+S.pubScores.length+' records)','ok'); HR(); return;
+  }
+  const sorted=[...S.pubScores].sort((x,y)=>y.score-x.score);
+  let rank=1;
+  for(const r of sorted)
+    L('  #'+String(rank++).padStart(2)+' '+r.name.padEnd(4)+String(r.score.toLocaleString()).padStart(11)
+      +'  '+(r.verified?'✓CHAIN':'·HDR ')+' '+(r.T||'open')+' ['+r.hash.slice(0,8)+']','ledg');
+  HR();
+}
+
+/* ═══════════════════ THE WALL — live spectator renderer ═══════════════════
+   Scalable playfield grid: 1 attempt fills the wall; up to 49 (7×7) tile
+   automatically; sizing is pure math, nothing like the game's renderer.
+   CPU doctrine: while live we only APPLY placements + show timing — no
+   hashing. Verification runs ONCE, on completion, and ONLY if the header
+   score meets the contract threshold. Below threshold = nothing to verify
+   = CPU saved. */
+const WALL={ on:false, attempts:[], speed:8, raf:0, last:0 };
+function wallAttempt(label, stream, threshold, T){
+  const p=_parseStreamForReplay(stream);
+  if(!p) return null;
+  const a={ label, T:T||'', stream, meta:p, idx:0, board:new Uint8Array(250),
+            lines:0, nextAt:0, clock:0, done:false, verified:null, threshold:threshold||0,
+            lastMs:0 };
+  WALL.attempts.push(a); return a;
+}
+function wallStep(ts){
+  if(!WALL.on) return;
+  const dt=Math.min(100, ts-(WALL.last||ts)); WALL.last=ts;
+  for(const a of WALL.attempts){
+    if(a.done) continue;
+    a.clock += dt*WALL.speed;
+    while(a.idx < a.meta.pieces.length && a.clock >= a.nextAt){
+      const pc=a.meta.pieces[a.idx];
+      const before=a.board.reduce((s,v)=>s+v,0);
+      const ti=_V_PIECE_ORDER.indexOf(pc.k);
+      try{ _vApply(a.board,ti,pc.rot,pc.x,pc.drop_y); }catch(e){}
+      const after=a.board.reduce((s,v)=>s+v,0);
+      const pcells=_V_SHAPES[pc.k]?_V_SHAPES[pc.k][pc.rot%4].flat().reduce((s,v)=>s+v,0):4;
+      a.lines += Math.max(0, Math.round((before+pcells-after)/10));
+      a.lastMs=pc.ms; a.idx++;
+      a.nextAt = a.clock + (a.meta.pieces[a.idx]?a.meta.pieces[a.idx].ms:0);
+    }
+    if(a.idx>=a.meta.pieces.length && !a.done){
+      a.done=true;
+      finishAttempt(a);
+    }
+  }
+  drawWall();
+  WALL.raf=requestAnimationFrame(wallStep);
+}
+async function finishAttempt(a){
+  // Deferred-verification doctrine: hash only if the claim could matter.
+  if(a.threshold>0 && a.meta.score < a.threshold){
+    a.verified='SKIP';
+    L('  WALL: '+a.label+' finished UNDER threshold — verification skipped (CPU saved).','faint');
+    scrollTape(); return;
+  }
+  L('  WALL: '+a.label+' finished — running deferred chain verification…','faint'); scrollTape();
+  try{
+    const r=await _verifyStream(a.stream);
+    a.verified=r.valid?'VALID':'INVALID';
+    L('  WALL: '+a.label+' chain '+(r.valid?'✓ VALID':'✗ INVALID'), r.valid?'ok':'bad');
+    if(r.valid) await publishScore({name:a.meta.playerName||a.label.slice(0,3),
+      score:a.meta.score, lines:a.meta.lines, pieces:a.meta.pieces.length,
+      T:a.T, gm:0, streamHash:(await sha(a.stream)).slice(0,16),
+      verified:true, source:'WALL'});
+  }catch(e){ a.verified='ERR'; }
+  scrollTape();
+}
+function drawWall(){
+  const cv=document.getElementById('wall'); if(!cv) return;
+  const n=WALL.attempts.length||1;
+  const cols=Math.ceil(Math.sqrt(Math.min(n,49)));
+  const rows=Math.ceil(Math.min(n,49)/cols);
+  const Wp=cv.width, Hp=cv.height;
+  const cw=Math.floor(Wp/cols), ch=Math.floor(Hp/rows);
+  const ctx=cv.getContext('2d');
+  ctx.fillStyle='#0a0a12'; ctx.fillRect(0,0,Wp,Hp);
+  WALL.attempts.slice(0,49).forEach((a,i)=>{
+    const gx=(i%cols)*cw, gy=Math.floor(i/cols)*ch;
+    const pad=Math.max(2,cw*0.04);
+    const labelH=Math.max(10,Math.min(16,ch*0.12));
+    const bw=cw-pad*2, bh=ch-pad*2-labelH;
+    const cell=Math.floor(Math.min(bw/10, bh/25));
+    const bx=gx+pad+(bw-cell*10)/2, by=gy+pad;
+    ctx.strokeStyle = a.done ? (a.verified==='VALID'?'#00ff88':a.verified==='SKIP'?'#555':'#a01010') : '#ff8800';
+    ctx.lineWidth=1;
+    ctx.strokeRect(bx-1,by-1,cell*10+2,cell*25+2);
+    ctx.fillStyle='#ffaa33';
+    for(let r=0;r<25;r++)for(let c=0;c<10;c++)
+      if(a.board[r*10+c]) ctx.fillRect(bx+c*cell, by+r*cell, cell-1<1?cell:cell-1, cell-1<1?cell:cell-1);
+    ctx.fillStyle='#aaccff';
+    ctx.font=Math.floor(labelH*0.72)+'px Courier New';
+    const status=a.done?(a.verified==='VALID'?'✓':a.verified==='SKIP'?'–':'✗')
+                       :(a.lastMs+'ms');
+    ctx.fillText((a.label+' '+a.idx+'/'+a.meta.pieces.length+' L'+a.lines+' '+status).slice(0,Math.floor(cw/6)),
+                 gx+pad, gy+ch-pad*0.6);
+  });
+}
+function wallShow(on){
+  WALL.on=on;
+  document.getElementById('wallwrap').style.display=on?'block':'none';
+  if(on){
+    const cv=document.getElementById('wall');
+    cv.width=cv.clientWidth*(window.devicePixelRatio||1);
+    cv.height=cv.clientHeight*(window.devicePixelRatio||1);
+    WALL.last=0; WALL.raf=requestAnimationFrame(wallStep);
+  } else cancelAnimationFrame(WALL.raf);
+}
+function cmdWALL(a){
+  const sub=(a[0]||'').toUpperCase();
+  if(sub==='OFF'){ wallShow(false); HR(); L('  WALL DARK.','faint'); HR(); return; }
+  if(sub==='SPEED'){ WALL.speed=Math.max(1,Math.min(64,+a[1]||8)); HR(); L('  WALL SPEED ×'+WALL.speed); HR(); return; }
+  if(sub==='CLEAR'){ WALL.attempts.length=0; HR(); L('  WALL CLEARED.'); HR(); return; }
+  // WALL DEMO [n] — tile the built-in sample streams as simulated live peers
+  if(sub==='DEMO'){
+    const n=Math.max(1,Math.min(49,+a[1]||2));
+    WALL.attempts.length=0;
+    for(let i=0;i<n;i++){
+      const s=_SAMPLE_STREAMS[i%_SAMPLE_STREAMS.length];
+      const at=wallAttempt(s.label.split(' ')[0]+'-'+(i+1), s.stream, 0, 'DEMO');
+      if(at) at.clock=-(i*1200); // stagger starts
+    }
+    wallShow(true);
+    HR(); L('  WALL LIVE — '+n+' attempt'+(n>1?'s':'')+' tiled ('+Math.ceil(Math.sqrt(n))+'×'+Math.ceil(n/Math.ceil(Math.sqrt(n)))+').');
+    L('  Live = placements+timing only. Hash deferred','faint');
+    L('  to completion; skipped below threshold.','faint'); HR();
+    return;
+  }
+  HR(); L('  WALL DEMO [n] · WALL SPEED <1-64> · WALL CLEAR · WALL OFF'); HR();
+}
+
+/* ═══════════════════ NAME SERVER / PEERS (v0 architecture) ═══════════════════
+   v0 ships the interface with a loopback peer; the wire protocol is fixed
+   now so swapping in real transport changes no rule:
+     registry: GET <url> → [{op,name,url,contracts:[{T,threshold,fee,pot}]}]
+     peer link: JSON frames {t:'hello'|'attempt'|'place'|'final', ...}
+       'place' frames carry {seq, triple} — the SAME 3-char B92 placement
+       triples as the stream, so the live feed IS the stream, incrementally.
+   Real transport target: WebRTC DataChannel, registry as signaling broker. */
+function cmdSEARCH(a){
+  const q=(a.join(' ')||'').toUpperCase();
+  HR('='); L('REGISTRY SEARCH: "'+(q||'*')+'"','hd'); HR('=');
+  L('  registry list: '+S.registry.join(', '),'faint');
+  // builtin-demo registry: this console's own board
+  let hits=0;
+  for(const T of Object.keys(S.contracts)){
+    const c=S.contracts[T];
+    if(q && !(T.toUpperCase().includes(q)||c.postedBy.toUpperCase().includes(q))) continue;
+    const b=balances();
+    L('  [local] '+T+' · need '+c.threshold.toLocaleString()+' · pot '+fm(b['POT:'+T]||0)+' · fee '+fm(c.fee)+' · '+c.status,'ledg');
+    hits++;
+  }
+  for(const url of S.registry){
+    if(url==='(builtin-demo)') continue;
+    L('  [remote] '+url+' — fetch deferred to networked build','faint');
+  }
+  if(!hits) L('  (no local matches)','faint');
+  HR();
+  L('  CONNECT <T> opens the peer link for live watch.','faint');
+  HR();
+}
+function cmdREGISTRY(a){
+  if(a[0]){ S.registry.push(a[0]); save(); }
+  HR(); L('  REGISTRY: '+S.registry.join(' · ')); HR();
+}
+function cmdCONNECT(a){
+  const c=reqContract(a[0]);
+  HR(); L('PEER LINK → '+c.T+' (v0 loopback)','hd'); HR();
+  L('  In the networked build this is a WebRTC');
+  L('  DataChannel to the player; live frames carry');
+  L('  the same B92 triples as the stream. v0 demo:');
+  L('  sample streams replayed as if live.','faint');
+  WALL.attempts.length=0;
+  _SAMPLE_STREAMS.forEach((s,i)=>{
+    const at=wallAttempt(s.label.split(' ')[0], s.stream, c.threshold, c.T);
+    if(at) at.clock=-(i*1500);
+  });
+  wallShow(true); HR();
+}
+
+/* ═══════════════════ SAMPLES — placeholder data from the game ═══════════════ */
+async function cmdSAMPLES(){
+  HR('='); L('LOADING BUILT-IN GAME SCORES','hd'); HR('=');
+  for(const s of _SAMPLE_STREAMS){
+    const p=_parseStreamForReplay(s.stream);
+    if(!p){ L('  ✗ parse failed: '+s.label,'bad'); continue; }
+    L('  '+s.label+' → name '+p.playerName+' · '+p.score.toLocaleString()+' pts · verifying chain…');
+    let verified=false;
+    try{ const r=await _verifyStream(s.stream); verified=!!r.valid; }catch(e){}
+    await publishScore({name:p.playerName, score:p.score, lines:p.lines,
+      pieces:p.pieces.length, T:'', gm:0,
+      streamHash:(await sha(s.stream)).slice(0,16), verified, source:'BUILTIN'});
+    L('    '+(verified?'✓ chain VALID — published':'· header-only — published flagged'), verified?'ok':'warn');
+  }
+  HR(); L('  SCORES to view the public ledger.','faint'); HR();
+}
+
+/* ═══════════════════ CONTRACT ENGINE ═══════════════════ */
+function reqContract(T){ const c=S.contracts[T]; if(!c) throw 'NO SUCH CONTRACT: '+T; return c; }
+
+async function cmdPOST(a){
+  const [T,th,stake,fee,rake,by,jur]=a;
+  if(!T||!th) throw 'USAGE: POST <T> <threshold> <stake$> <fee$> <rake%> [name] [jurisdiction]';
+  if(S.contracts[T]) throw 'CONTRACT '+T+' ALREADY ON THE BOARD';
+  if(/[,;=\s]/.test(T)) throw 'TOURNAMENT ID MUST BE B92 (no , ; = whitespace)';
+  const c={T,threshold:+th,stake:+(stake||0),fee:+(fee||0),rakePct:+(rake||0),
+           postedBy:(by||'HOUSE').slice(0,12),jur:(jur||'UNSET'),rs:'!!',
+           status:'OPEN',gmWindow:null,ambience:{},attempts:[],claims:[],
+           postedGM:_greenMinute(),postedSeq:++S.seq};
+  S.contracts[T]=c;
+  if(c.stake>0) await ledgerPost('CASH:'+c.postedBy,'POT:'+T,c.stake,'GAUNTLET STAKE POSTED',T);
+  HR('='); L('★ GAUNTLET POSTED ★','hd'); L(stamp(),'c faint'); HR('=');
+  L('  CONTRACT:   '+T);
+  L('  THRESHOLD:  '+(+th).toLocaleString()+' POINTS');
+  L('  STAKE:      '+fm(c.stake)+'  (seeds the pot)');
+  L('  ENTRY FEE:  '+fm(c.fee)+(c.fee===0?'  ← DEGENERATE CASE: FREE SHOTS':''));
+  L('  RAKE:       '+c.rakePct+'% of fees → HOUSE');
+  L('  POSTED BY:  '+c.postedBy+'   JURISDICTION: '+c.jur);
+  L('  RULE: challenger\'s own attempt counts like any');
+  L('  other. Miss your number, strand your stake.');
+  HR();
+  L('  '+S.operator+' SAYS: the line is open.','op');
+  barker('NEW GAUNTLET ★ '+T+' ★ '+(+th).toLocaleString()+' POINTS OR WALK');
+  spinCue(c.ambience.onpost); save();
+}
+
+async function cmdATTEMPT(a){
+  const [T,name]=a;
+  const c=reqContract(T);
+  if(c.status!=='OPEN') throw 'CONTRACT '+T+' IS '+c.status;
+  const who=(name||'WALK-IN').slice(0,12);
+  const seq=++S.seq;
+  c.attempts.push({seq,name:who,gm:_greenMinute()});
+  if(c.fee>0){
+    const rake=c.fee*c.rakePct/100, toPot=c.fee-rake;
+    await ledgerPost('CASH:'+who,'POT:'+T,toPot,'ENTRY FEE → POT (seq '+seq+')',T);
+    if(rake>0) await ledgerPost('CASH:'+who,'RAKE:HOUSE',rake,'ENTRY FEE → RAKE (seq '+seq+')',T);
+  }
+  const pot=(balances()['POT:'+T]||0);
+  HR();
+  L('CALLER #'+seq+' ON THE LINE — '+who+' attempts '+T);
+  L('  FEE '+fm(c.fee)+' COLLECTED · POT NOW '+fm(pot),'ledg');
+  L('  '+S.operator+' SAYS: chalk up, caller.','op');
+  barker(who+' STEPS UP ON '+T+' · POT '+fm(pot));
+  spinCue(c.ambience.onattempt); save();
+}
+
+async function cmdSUBMIT(a, raw){
+  const T=a[0];
+  const c=reqContract(T);
+  const stream=raw.slice(raw.indexOf(T)+T.length).trim();
+  if(!stream) throw 'USAGE: SUBMIT <T> <stream>';
+  HR('='); L('CLAIM RECEIVED ON '+T,'hd'); L(stamp(),'c faint'); HR('=');
+  const rej=_streamReject(stream);
+  if(rej){ L('  ✗ STRUCTURAL REJECT: '+rej,'bad'); HR(); return; }
+  const r=await _verifyStream(stream);
+  if(!r.valid){ L('  ✗ CHAIN INVALID — '+(r.error||'hash mismatch'),'bad');
+    L('  THE TAPE REMEMBERS WHO TRIED.','warn'); HR(); return; }
+  const hdr=stream.split(';')[0].split(',');
+  const name=(hdr[2]||'???').slice(0,3)||'???';
+  const score=_fromB92((hdr[1]||'').slice(0,4));
+  const gm=_fromB92(hdr[3]||'!');
+  const rs=hdr[6]||'';
+  const isV3=(hdr[0]||'').length===6;
+  const probs=[];
+  if(isV3 && (r.auxVars.T||'')!==T) probs.push('TOURNAMENT ID MISMATCH (stream T='+(r.auxVars.T||'∅')+')');
+  if(isV3 && rs!==c.rs) probs.push('RULES/SCORING REGIME MISMATCH (need '+c.rs+' got '+rs+')');
+  if(!isV3) probs.push('LEGACY v2.0 STREAM — no tournament binding; ineligible for cash claims');
+  if(c.gmWindow && (gm<c.gmWindow[0]||gm>c.gmWindow[1])) probs.push('GREEN MINUTE OUTSIDE WINDOW');
+  if(score<c.threshold) probs.push('SCORE '+score.toLocaleString()+' BELOW THRESHOLD '+c.threshold.toLocaleString());
+  L('  CHAIN:      ✓ VALID ('+r.piecesReplayed+' pieces replayed)','ok');
+  L('  PLAYER:     '+name+'   GM '+gm);
+  L('  HPS:        '+(r.hps===null?'N/A':r.hps.toFixed(3))+' ['+r.hpsLabel+']'
+    +(r.npfFlag?'   ⚠ '+r.npfFlag:''), r.npfFlag?'warn':undefined);
+  L('  HEADER SCORE: '+score.toLocaleString()+'  — PROVISIONAL','warn');
+  L('  (canonical recompute not implemented in v0)','faint');
+  const streamHash=(await sha(stream)).slice(0,16);
+  // every valid chain goes to the PUBLIC ledger, claim or not
+  await publishScore({name,score,lines:0,pieces:r.piecesReplayed,T:isV3?T:'',gm,
+                      streamHash,verified:true,source:'SUBMIT'});
+  if(probs.length){ for(const p of probs) L('  ✗ '+p,'bad');
+    L('  CLAIM REFUSED — but score PUBLISHED to public ledger.','warn'); HR(); return; }
+  const seq=++S.seq;
+  c.claims.push({seq,name,score,gm,provisional:true,hps:r.hpsLabel,npf:r.npfFlag||'',streamHash});
+  L('  ✓ CLAIM #'+seq+' DOCKETED — PRIORITY = RECEIPT ORDER','ok');
+  L('  PUBLISHED to public score ledger ['+streamHash.slice(0,8)+']','ok');
+  L('  '+S.operator+' SAYS: we have a contender.','op');
+  HR();
+  barker('CLAIM ON '+T+' BY '+name+' · '+score.toLocaleString()+' PTS · PROVISIONAL');
+  spinCue(c.ambience.onclaim); save();
+}
+
+async function cmdPAYOUT(a){
+  const [T,cs,conf]=a;
+  const c=reqContract(T);
+  const claim=c.claims.find(x=>String(x.seq)===String(cs));
+  if(!claim) throw 'NO CLAIM #'+cs+' ON '+T;
+  if(conf!=='CONFIRM-HEADER-SCORE')
+    throw 'v0 GATE: type PAYOUT '+T+' '+cs+' CONFIRM-HEADER-SCORE\n(acknowledges score was NOT canonically recomputed; NO REAL MONEY ON v0)';
+  const pot=balances()['POT:'+T]||0;
+  await ledgerPost('POT:'+T,'PAYABLE:'+claim.name,pot,'POT AWARDED — CLAIM #'+claim.seq+' ('+claim.streamHash+')',T);
+  c.status='PAID';
+  HR('='); L('★ PAYOUT ★','hd'); L(stamp(),'c faint'); HR('=');
+  L('  CONTRACT '+T+' → '+claim.name);
+  L('  AMOUNT: '+fm(pot),'ok');
+  L('  BASIS: claim #'+claim.seq+', stream '+claim.streamHash);
+  L('  STATUS: PROVISIONAL BASIS ACKNOWLEDGED','warn');
+  L('  LEDGER TERMINAL: '+S.ledgerHash.slice(0,16),'faint');
+  HR();
+  L('  '+S.operator+' SAYS: pay the caller. Next!','op');
+  barker(claim.name+' TAKES DOWN '+T+' FOR '+fm(pot)+' ★ NEXT GAUNTLET FORMING');
+  spinCue(c.ambience.onpayout); save();
+}
+
+async function cmdTAKEDOWN(a){
+  const c=reqContract(a[0]);
+  const pot=balances()['POT:'+c.T]||0;
+  await ledgerPost('POT:'+c.T,'HOLD:DISPOSITION',pot,'TAKEDOWN — disposition per executed legal template',c.T);
+  c.status='CLOSED';
+  HR(); L('CONTRACT '+c.T+' TAKEN DOWN — '+fm(pot)+' → HOLD:DISPOSITION','warn');
+  L('  Disposition is a legal-template term.','faint'); HR(); save();
+}
+
+function cmdLIST(){
+  HR('='); L('THE BOARD','hd'); HR('=');
+  const ts=Object.keys(S.contracts);
+  if(!ts.length){ L('  (dead air — POST something)','faint'); HR(); return; }
+  const b=balances();
+  for(const T of ts){
+    const c=S.contracts[T];
+    L('  '+T+'  ['+c.status+']  threshold '+c.threshold.toLocaleString());
+    L('     pot '+fm(b['POT:'+T]||0)+' · fee '+fm(c.fee)+' · rake '+c.rakePct
+      +'% · attempts '+c.attempts.length+' · claims '+c.claims.length,'ledg');
+    if(c.gmWindow) L('     GM window '+c.gmWindow[0]+'–'+c.gmWindow[1],'faint');
+  }
+  HR();
+}
+
+function cmdLEDGER(a){
+  HR('='); L('THE TAPE — HASH-CHAINED LEDGER','hd');
+  L('terminal: '+(S.ledgerHash?S.ledgerHash.slice(0,24):'(genesis)'),'c faint'); HR('=');
+  if(a[0]==='CSV'){
+    const rows=['n,ts,gm,debit,credit,amount,memo,T,hash'];
+    for(const e of S.ledger) rows.push([e.n,e.ts,e.gm,e.debit,e.credit,e.amount.toFixed(2),
+      '"'+e.memo.replace(/"/g,'""')+'"',e.T,e.hash].join(','));
+    navigator.clipboard.writeText(rows.join('\n')).catch(()=>{});
+    L('  CSV → CLIPBOARD ('+S.ledger.length+' entries)','ok'); HR(); return;
+  }
+  for(const e of S.ledger)
+    L('  #'+String(e.n).padStart(3,'0')+' '+fm(e.amount).padStart(10)+'  '
+      +e.debit+' → '+e.credit+'  · '+e.memo+'  ['+e.hash.slice(0,8)+']','ledg');
+  HR(); L('  BALANCES','hd');
+  const b=balances();
+  for(const k of Object.keys(b).sort()) L('   '+k.padEnd(20)+fm(b[k]).padStart(12),'ledg');
+  HR();
+}
+
+function cmdAMBIENCE(a, raw){
+  const c=reqContract(a[0]);
+  const rest=raw.slice(raw.indexOf(a[0])+a[0].length).trim();
+  for(const m of rest.matchAll(/(\w+)=("([^"]*)"|\S+)/g)){
+    const k=m[1].toLowerCase(), v=(m[3]!==undefined?m[3]:m[2]);
+    if(['bg','onpost','onattempt','onclaim','onpayout'].includes(k)) c.ambience[k]=v;
+  }
+  HR(); L('AMBIENCE SET ON '+c.T+':');
+  for(const k of Object.keys(c.ambience)) L('  '+k+' = '+c.ambience[k],'ledg');
+  HR(); if(c.ambience.bg) spinCue(c.ambience.bg); save();
+}
+
+async function cmdVERIFY(a, raw){
+  const stream=raw.slice(raw.toUpperCase().indexOf('VERIFY')+6).trim();
+  if(!stream) throw 'USAGE: VERIFY <stream>';
+  const rej=_streamReject(stream);
+  HR(); L('BARE VALIDATOR','hd'); HR();
+  if(rej){ L('  ✗ '+rej,'bad'); HR(); return; }
+  const r=await _verifyStream(stream);
+  L('  CHAIN: '+(r.valid?'✓ VALID':'✗ INVALID'), r.valid?'ok':'bad');
+  if(r.valid){
+    L('  pieces '+r.piecesReplayed+' · HPS '+(r.hps===null?'N/A':r.hps.toFixed(3))+' ['+r.hpsLabel+']'
+      +(r.npfFlag?' · ⚠ '+r.npfFlag:''));
+    L('  rules='+r.rulesEnum+' scoring='+r.scoringEnum+' aux='+JSON.stringify(r.auxVars),'ledg');
+  } else L('  '+(r.error||''),'faint');
+  HR();
+}
+
+function cmdWINDOW(a){
+  const c=reqContract(a[0]); c.gmWindow=[+a[1],+a[2]];
+  HR(); L('GM WINDOW ON '+c.T+': '+a[1]+' – '+a[2]); HR(); save();
+}
+function cmdEXPORT(){
+  navigator.clipboard.writeText(JSON.stringify(S)).catch(()=>{});
+  HR(); L('  STATE JSON → CLIPBOARD','ok'); HR();
+}
+function cmdHELP(){
+  HR('='); L('BOARD RULES — v0 MANUAL SERVER','hd'); HR('=');
+  const h=[
+   'POST <T> <threshold> <stake$> <fee$> <rake%> [name] [jur]',
+   'ATTEMPT <T> <name> · SUBMIT <T> <stream>',
+   'PAYOUT <T> <claim#> CONFIRM-HEADER-SCORE',
+   'TAKEDOWN <T> · WINDOW <T> <gmA> <gmB>',
+   'LIST · LEDGER [CSV] · VERIFY <stream> · GM',
+   'SAMPLES            load built-in game scores → public ledger',
+   'SCORES [JSON]      the public score ledger',
+   'WALL DEMO [n≤49]   live spectator wall · WALL SPEED/CLEAR/OFF',
+   'SEARCH [q]         query tournament registry (name server)',
+   'CONNECT <T>        peer link — watch attempts live (v0 loopback)',
+   'REGISTRY [url]     list/add name servers',
+   'AMBIENCE <T> bg=<song> onclaim=<song> ...',
+   'OPERATOR <handle> · BARK <line> · EXPORT'
+  ];
+  for(const x of h) L('  '+x);
+  HR();
+  L('  fee $0 = degenerate case: free shots at a','faint');
+  L('  stranded stake until somebody takes it down.','faint');
+  HR();
+}
+
+/* ═══════════════════ DISPATCH ═══════════════════ */
+async function exec(raw){
+  raw=raw.trim(); if(!raw) return;
+  L('','');
+  L('OPR> '+(raw.length>72?raw.slice(0,72)+'…':raw),'faint');
+  const parts=raw.split(/\s+/); const cmd=parts[0].toUpperCase(); const a=parts.slice(1);
+  try{
+    if(cmd==='HELP') cmdHELP();
+    else if(cmd==='POST') await cmdPOST(a);
+    else if(cmd==='ATTEMPT') await cmdATTEMPT(a);
+    else if(cmd==='SUBMIT') await cmdSUBMIT(a,raw);
+    else if(cmd==='PAYOUT') await cmdPAYOUT(a);
+    else if(cmd==='TAKEDOWN') await cmdTAKEDOWN(a);
+    else if(cmd==='LIST') cmdLIST();
+    else if(cmd==='LEDGER') cmdLEDGER(a.map(x=>x.toUpperCase()));
+    else if(cmd==='AMBIENCE') cmdAMBIENCE(a,raw);
+    else if(cmd==='VERIFY') await cmdVERIFY(a,raw);
+    else if(cmd==='WINDOW') cmdWINDOW(a);
+    else if(cmd==='SAMPLES') await cmdSAMPLES();
+    else if(cmd==='SCORES') cmdSCORES(a.map(x=>x.toUpperCase()));
+    else if(cmd==='WALL') cmdWALL(a);
+    else if(cmd==='SEARCH') cmdSEARCH(a);
+    else if(cmd==='CONNECT') cmdCONNECT(a);
+    else if(cmd==='REGISTRY') cmdREGISTRY(a);
+    else if(cmd==='GM'){ HR(); L('  GREEN MINUTE: '+_greenMinute()); HR(); }
+    else if(cmd==='OPERATOR'){ S.operator=a.join(' ')||'THE OPERATOR'; HR(); L('  VOICE ON THE LINE: '+S.operator,'op'); HR(); save(); }
+    else if(cmd==='BARK'){ barker(a.join(' ')); HR(); L('  TICKER FED.','ok'); HR(); save(); }
+    else if(cmd==='EXPORT') cmdEXPORT();
+    else L('  ? UNKNOWN: '+cmd+'  (HELP)','bad');
+  }catch(e){ L('  ✗ '+(e&&e.message||e),'bad'); }
+  scrollTape();
+}
+
+/* ═══════════════════ BOOT — handlers FIRST, then greeting ═══════════════════ */
+(function boot(){
+  const errdiv=document.getElementById('errdiv');
+  window.onerror=function(msg,src,line){
+    errdiv.style.display='block';
+    errdiv.textContent='SCRIPT ERROR: '+msg+' @ '+(src||'').split('/').pop()+':'+line;
+    return false;
+  };
+  // wire the command line BEFORE anything that could throw
+  const cmdEl=document.getElementById('cmd');
+  const fire=()=>{ const v=cmdEl.value; cmdEl.value=''; exec(v); cmdEl.focus(); };
+  document.getElementById('go').addEventListener('click',fire);
+  cmdEl.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); fire(); }});
+  try{
+    if(typeof _verifyStream!=='function') throw new Error('protocol core missing');
+    load();
+    tick.textContent='★ '+S.tickerLines[0]+' ★';
+    tickStep();
+    L('SWITCHBOARD','hd'); L('CELLTOWER TOURNAMENT OPERATIONS · v0.2','c');
+    L(stamp(),'c faint'); HR('~');
+    L('  This console is the dummy server. The human at');
+    L('  this keyboard is the authorization layer. The');
+    L('  protocol is embedded — replacing the human with');
+    L('  a server later changes no rule.');
+    HR('~');
+    L('  PRODUCED WITH ANTHROPIC CLAUDE AI · CLAUDE.AI','c faint');
+    HR('~');
+    cmdHELP();
+    L('  Try: SAMPLES · then SCORES · then WALL DEMO 9','op');
+    scrollTape();
+  }catch(e){
+    errdiv.style.display='block';
+    errdiv.textContent='BOOT ERROR: '+(e&&e.message||e);
+  }
+})();
+
+</script>
+</body>
+</html>
