@@ -1604,7 +1604,7 @@ function _showIdentityCanvas(onComplete) {
 }
 
 function _confirmIdentityCanvas() {
-  while(_nameChars.length < 3){ const r=_genRandomName(); _nameChars.push(r[_nameChars.length]||r[0]); }
+  while(_nameChars.length < 3){ _nameChars.push(' '); }
   const checked = _checkBadWord(_nameChars);
   const name = checked.join('');
   _namePreFilled = false;
@@ -2952,6 +2952,13 @@ if(R && R.auto && !(_replayMode) && !(_replaySource && dead)){
 
   // Identity screen owns all input while showing
   if(_identityScreen){
+    // Bleed-through guard: if we just arrived from the hub via same-tab navigation,
+    // the touchstart that triggered navigation also fires here. Suppress for 400ms.
+    try{
+      const arr=sessionStorage.getItem('ct_hub_arrival');
+      if(arr && Date.now()-parseInt(arr)<400){ sessionStorage.removeItem('ct_hub_arrival'); return; }
+      if(arr) sessionStorage.removeItem('ct_hub_arrival');
+    }catch(e){}
     const hit = _idHitZones.find(z => tx>=z.x && tx<=z.x+z.w && ty>=z.y && ty<=z.y+z.h);
     if(!hit) return;
     if(hit.type === 'char'){
@@ -3280,7 +3287,7 @@ function loop(ts){
 }
 
 // suppress cross-origin noise
-window.onerror=function(msg,src,line){ if(!line||line===0)return true; return false; };
+// onerror: handled by reporter above — suppressor removed so artifact errors surface
 window.addEventListener('unhandledrejection',function(e){ e.preventDefault(); });
 
 // ══════════════════════════════════════════════════════════════════════
@@ -7483,7 +7490,7 @@ function _showIdentityModal(onComplete) {
 
   document.getElementById('id-name-ok').onclick = () => {
     // If they tapped PLAY mid-selection, pad with random chars
-    while (_nameChars.length < 3) _nameChars.push(_genRandomName()[_nameChars.length]);
+    while (_nameChars.length < 3) _nameChars.push(' ');
     const checked = _checkBadWord(_nameChars);
     const name = checked.join('');
     _namePreFilled = false;
@@ -9529,7 +9536,32 @@ window.addEventListener('DOMContentLoaded', function(){
       }
     });
     // Show canvas welcome/identity screen immediately — no tap required
-    _showIdentityCanvas(() => startGame());
+    // Hub pass-through: if ahightower.com hub passed initials via sessionStorage,
+    // skip identity screen and go straight into the game.
+    (function(){
+      try {
+        const hubInit = sessionStorage.getItem('ct_initials');
+        if(hubInit && /^[A-Z0-9]{1,3}$/i.test(hubInit)){
+          const tag = hubInit.toUpperCase().slice(0,3);
+          sessionStorage.removeItem('ct_initials'); // consume — one-time use
+          sessionStorage.setItem('ct_hub_arrival', Date.now()); // bleed-through tap guard
+          // Pre-fill identity exactly as _confirmIdentityCanvas would
+          // Pad to 3 chars with spaces rather than random chars
+          const padded = (tag+'   ').slice(0,3);
+          const checked = _checkBadWord(Array.from(padded));
+          const name = checked.join('');
+          _saveIdentity({ name });
+          _addKnownName(name);
+          _currentPlayer = { name };
+          const _nameHi = _loadHiScore(name);
+          _hiStream = _nameHi ? _nameHi.stream : null;
+          hi = _nameHi ? (_nameHi.score||0) : 0;
+          startGame(); // straight in — no identity screen
+          return;
+        }
+      } catch(e) { /* sessionStorage blocked — fall through */ }
+      _showIdentityCanvas(() => startGame());
+    })();
   } catch(e) {
     // Last resort — draw error directly on canvas
     const cv2 = document.getElementById('cv');
