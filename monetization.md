@@ -62,35 +62,153 @@ I examined the full repository structure, README, all key Markdown files, the li
 - **Player-Centric** — Skilled players win from less-skilled ones in a self-sustaining way. Average players can break even. Fun thematic elements (receipts, District lore) drive engagement.
 - **Phased & Sustainable** — Bootstrap with game traction + small tournaments before heavy infra.
 
-### Primary Revenue Streams (Prioritized for Tournaments)
-1. **Tournament Listing / Publishing Fees** (Highest priority early)
-   - Flat fee for creators to list/promote tournaments on HTD leaderboards, Switchboard spectator wall, or featured sections.
-   - Low barrier to entry for creators while generating recurring platform revenue.
+### Detailed Tournament Revenue Streams
 
-2. **Oracle / Verification Fees**
-   - Small percentage (e.g., 1–5% or basis points) of prize pool, or per-submission flat fee, for HPS scoring + oracle signature/audit.
-   - High perceived value; directly tied to trust layer.
+This section expands on the primary ways to generate revenue specifically from operating and facilitating tournaments on the High Tower District platform. All streams are designed to work with the existing architecture in `platform.md` (peer-deployed piggy-bank contracts, hash-chained verification, HPS, Switchboard lifecycle) and `tos.md` (skill-based only, governance via Board, 3-char pseudonyms).
 
-3. **Ancillary High-Margin Services**
-   - **1099 Tax Filing & Reporting Service**: Per-winner or subscription fee for US winners ($600+ prizes). Huge value-add and sticky.
-   - **Age-Verification Gateway**: Per-attestation or integration fee (partner with services like Persona). Required for 18+ gated events.
-   - Future: DM per-message fees (small, transparent, for SMS routing + abuse prevention; surplus to prizes/dev per TOS).
+The model deliberately avoids taking a large percentage ("rake") of prize pools. Instead, it uses **fixed or usage-based fees** that creators and players perceive as fair value for infrastructure, trust, compliance, and discovery. This keeps the platform neutral and aligned with the core vision of skilled humans earning from skill.
 
-4. **Premium Game & Platform Features** (Complementary, not core blocker)
-   - Optional paid unlocks: Advanced training modes/analytics, custom boards/skins, priority verification, unlimited replay storage/analysis, deeper playstyle insights.
-   - Keep the core trainer completely free for maximum accessibility and virality.
+#### 1. Tournament Listing / Publishing Fees (Highest-Priority Early Revenue)
+**Description**  
+Creators pay a one-time or per-tournament fee to have their peer-deployed tournament published, discovered, and promoted on the official HTD platform. This includes visibility on the Switchboard spectator wall, multi-axis leaderboards, a dedicated "Tournaments" discovery page, and any future newsletter or social amplification.
 
-5. **Sponsorships, Streaming & Branded Events**
-   - Official/featured tournaments sponsored by brands.
-   - Verifiable streams + live spectator wall enable clean, anti-cheat streaming overlays.
-   - Revenue share, flat sponsorships, or platform facilitation fees.
+**How It Works in the Architecture**
+- Tournament Creator UI (interview flow from `platform.md`) collects details → generates self-contained contract.
+- Creator selects listing tier → pays fee via Stripe or crypto before the contract is activated in the registry.
+- Operator (initially manual via Switchboard) or automated approval publishes it with a verified badge.
+- The listing is immutable once deployed (per contract design) but can include platform endorsement.
 
-6. **Future / Expansion**
-   - Game Registry licensing or light rev-share for 3rd-party games integrating the verifiable replay format.
-   - Merch / lore (High Tower District branded items, receipt-art apparel).
-   - Long-term: Expand verifiable "Proof of Human Cognition" to non-gaming skill domains.
+**Pricing Models (Suggested Starting Ranges)**
+- **Free / Self-Promoted**: Creators can run tournaments but must share links manually. No platform discovery.
+- **Standard Listing** — $25–$75: Basic discovery in the tournaments feed + spectator wall tile.
+- **Featured Listing** — $99–$199: Prominent placement, "HTD Verified" badge, inclusion in weekly highlights.
+- **Premium / Spotlight** — $250+: Homepage hero placement, social media amplification, custom branding, priority verification queue.
+- Volume discounts or monthly subscriptions for frequent tournament creators (e.g., $199/mo for unlimited standard listings).
 
-**Important**: Do **not** take a percentage of prize pools as primary revenue. This keeps the platform neutral and aligned with the "skilled humans earn from skill" vision.
+**Implementation Notes**
+- Start simple: Manual approval + Stripe payment link in Phase 2.
+- Later: Automated checkout inside the Tournament Creator flow.
+- Tiering creates natural upsell and curation quality control.
+
+**Why It Works**  
+Low barrier for small creators, recurring revenue for the platform, and strong incentive for quality events. Directly monetizes the discovery and trust infrastructure you provide.
+
+#### 2. Oracle / Verification Fees (Core High-Value Stream)
+**Description**  
+Fees charged for the platform’s unique **Humanity Probability Score (HPS)** + hash-chain verification service (detailed in `platform.md`). This is the technological moat and the main reason players and creators will pay — provable human skill in a cash-prize environment.
+
+**How It Works**
+- During the verification phase of the contract lifecycle (Switchboard-managed), submissions are scored with HPS (timing + Decision-Path Conflict correlation).
+- Hash chain is validated.
+- Optional deeper oracle review or multi-oracle consensus for high-stakes events.
+- Fee is triggered automatically before prize distribution or payout approval.
+
+**Pricing Models**
+- **Percentage of Prize Pool** (recommended primary model): 2–5% of total prize pool, capped at a maximum dollar amount (e.g., $500 max per tournament) to stay fair on large events.
+- **Per-Submission Flat Fee**: $2–$8 per verified entry (scales with volume).
+- **Tiered Verification**:
+  - Basic HPS + hash check: Lower fee
+  - Full oracle + audit trail: Higher fee
+- **Creator Subscription**: $99–$299/month for unlimited verifications on their tournaments (great for power users running weekly events).
+- **High-Stakes Surcharge**: Additional 1% for tournaments with prize pools > $5,000.
+
+**Example Economics (for a $2,000 prize pool tournament with 40 entries)**
+- Verification fee at 3% = $60
+- Or $4 × 40 entries = $160 (choose the model that feels fairest)
+- Platform captures meaningful revenue while 95%+ of the pool still goes to skilled winners.
+
+**Implementation Notes**
+- Integrate directly into the Switchboard contract lifecycle.
+- Show transparent fee breakdown to entrants before they pay entry fees.
+- This stream becomes more valuable as prize pools grow and trust becomes critical.
+
+**Alignment with Vision**  
+Directly monetizes "Proof of Human Cognition." Creators happily pay because it protects the integrity of their event and attracts serious players.
+
+#### 3. Ancillary High-Margin Compliance & Service Fees
+These are sticky, high-margin add-ons that solve real pain points for tournament creators and winners.
+
+**A. 1099 Tax Filing & Reporting Service (US Winners)**
+- Automatic generation and e-filing of Form 1099-NEC or 1099-MISC for any winner receiving $600+ in a calendar year.
+- Fee ideas: $25–$49 per winner or a flat 1.5–2% of prize (capped).
+- Huge value — most creators do not want to handle tax compliance themselves.
+- Can be offered as an optional toggle in the Tournament Creator ("Auto 1099 filing — recommended").
+
+**B. Age-Verification Gateway**
+- Required for 18+ or jurisdiction-specific events.
+- Integrate with a compliant provider (e.g., Persona, Onfido, or similar).
+- Pricing: Per-attestation fee ($1–$4) or revenue share with the provider. Platform can take a small facilitation cut.
+- Toggle in contract setup; fee collected at entry or verification time.
+
+**C. Additional High-Margin Services (Phase 3+)**
+- Custom contract template creation or legal review assistance.
+- Priority support / dedicated account manager for large or recurring tournament series.
+- Escrow setup & fund movement assistance (even if platform doesn’t custody funds long-term).
+- Post-tournament analytics report (HPS trends, player behavior, etc.).
+
+These services have very high margins once automated and solve compliance headaches that would otherwise block adoption.
+
+#### 4. Premium Platform Features & Creator Tools
+**Description**  
+Optional paid upgrades that enhance the tournament-running or playing experience without gating core access.
+
+**Examples**
+- Advanced creator analytics dashboard (player retention, HPS distribution, entry patterns).
+- White-label / custom-branded tournament pages and receipts.
+- Enhanced spectator tools (private rooms, multi-view layouts, exportable highlights).
+- API access for external integrations (stream overlays, Discord bots, custom leaderboards).
+- Priority verification queue and faster support.
+- Unlimited replay storage + advanced playstyle analytics for players (or creators reviewing submissions).
+
+**Pricing**  
+- One-time unlocks or monthly subscriptions ($9–$49/mo for creators).
+- Keep the base CELLTOWER trainer 100% free to maximize player acquisition and training funnel into tournaments.
+
+#### 5. Sponsorships, Streaming & Branded Events
+**Description**  
+Revenue from brands that want association with verified, high-skill competition.
+
+**Models**
+- **Sponsored Prize Pools**: Brand funds part or all of the prize pool; platform takes a facilitation fee (5–10% of sponsored portion) or flat production fee.
+- **Branded Tournament Series**: "High Tower District Classic presented by Brand X" — platform charges series fee + production costs.
+- **Streaming Integrations**: Verifiable streams + live spectator wall (up to 49 boards) enable clean, anti-cheat overlays. Charge for sponsored segments, shoutouts, or branded overlay packages.
+- **Official Partner Program**: Annual or per-event fees for brands wanting recurring presence.
+
+**Why Powerful Here**  
+The verifiable nature of every score makes sponsorships more attractive than traditional gaming events (lower cheating risk, transparent results). The live spectator wall and receipt theming are natural branding surfaces.
+
+#### 6. Emerging / Future Streams
+- **DM / Community Engagement Fees** (per `tos.md`): Small per-message fee to send DMs to top 3-char pseudonym holders once the inbox system is live. Creates a micro-economy around skilled players and generates operational funds (surplus can go to prizes or development).
+- **Game Registry & Licensing**: Fees or light rev-share when other developers add games to the verifiable replay format and Game Registry.
+- **Merchandise & Lore**: High Tower District branded apparel, physical or digital "receipt art," achievement NFTs (carefully structured as skill-based collectibles).
+- **Non-Gaming Skill Verification**: Long-term expansion of the HPS + hash-chain tech into other domains (e.g., music performance, coding challenges, trading competitions) — new vertical revenue.
+
+### Example Revenue per Tournament (Conservative Illustration)
+For a mid-sized $1,500 prize pool tournament with 30 entries:
+
+| Revenue Stream              | Estimated Take          | Notes |
+|-----------------------------|-------------------------|-------|
+| Listing Fee (Featured)      | $99                     | One-time |
+| Verification (3% of pool)   | $45                     | Or $3 × 30 = $90 flat |
+| 1099 for top 3 winners      | $75–$120                | $25–$40 each |
+| Age verification (if gated) | $30–$60                 | Optional |
+| **Total Platform Revenue**  | **$250 – $380**         | ~17–25% of pool while players keep majority |
+| **Player Prize Payout**     | **$1,120 – $1,250+**    | After fees |
+
+As volume and prize pools grow, these numbers scale favorably while staying creator- and player-friendly.
+
+### Key Advantages of This Revenue Mix
+- **Fixed / Usage-Based** rather than success-based rake → aligns with vision and reduces creator risk aversion.
+- **High Perceived Value** — especially verification, compliance, and discovery.
+- **Lean Scalable** — many streams start manual in Switchboard and automate over time.
+- **Defensible** — tied directly to your unique verifiable replay + HPS technology.
+- **Compliant-Friendly** — transparent fees, clear value delivered, no hidden cuts from player winnings.
+
+**Important Reminder**: Always show fee breakdowns transparently to entrants and creators before any money moves. This builds the trust the entire platform is built on.
+
+---
+
+**This detailed section replaces and greatly expands the previous brief revenue overview.** It is now ready for you to review, refine pricing, and use in your pitchdeck or conversations with potential partners.
 
 ---
 
