@@ -8,7 +8,7 @@
 
 ## 🎮 Play Now
 
-**[▶ Launch on GitHub Pages](https://aahigh.github.io/CELLTOWER/)**
+**[▶ Launch on GitHub Pages](https://CELLTOWER.ahightower.com/)**
 
 Works in Safari on iPhone. No app install. No account. Just tap and play.
 
