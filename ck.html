@@ -1,0 +1,1346 @@
+<!DOCTYPE html>
+<!-- ═══════════════════════════════════════════════════════════════════════
+  CELLTOWER VERIFY — derivative child node of index.html (parent defines
+  authenticity). DAG contract: this file embeds the parent's deterministic
+  core VERBATIM and must be regenerated when the parent core changes.
+  PARENT_CORE_SHA256_16: 13cdb118ec2477f8
+  Regeneration: copy ct-core.js between the CORE BEGIN/END markers below,
+  update the hash above, ship. Staleness check runs on load (best effort).
+  Tiers: 1) hash-chain PASS/FAIL  2) real-time HPS + graph per placement
+  3) human visual confirmation — C64 terminal replay, PETSCII .seq export,
+  Linux-color-ANSI .ans export with plaintext millisecond timing fields.
+═══════════════════════════════════════════════════════════════════════ -->
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CELLTOWER VERIFY</title>
+<style>
+:root{--c64border:#3E31A2;--c64bg:#3E31A2;--c64ink:#7C70DA;--c64lite:#B9AFFF}
+body{background:#000;color:#ccc;font-family:monospace;margin:0;padding:12px;max-width:900px;margin:auto}
+h1{color:var(--c64lite);font-size:18px;letter-spacing:2px}
+textarea{width:100%;height:90px;background:#111;color:#8f8;border:1px solid #444;font-family:monospace;font-size:11px}
+button{background:var(--c64bg);color:var(--c64lite);border:2px solid var(--c64lite);padding:8px 14px;font-family:monospace;font-size:13px;cursor:pointer;margin:4px 4px 4px 0}
+button:disabled{opacity:.4}
+#status{margin:8px 0;font-size:13px;white-space:pre-wrap}
+.PASS{color:#5f5}.FAIL{color:#f55}.REVIEW{color:#ff5}
+#screenwrap{background:var(--c64border);padding:12px;margin-top:8px;max-width:664px}
+canvas{display:block;image-rendering:pixelated;width:100%;height:auto}
+#hpsline{color:var(--c64lite);font-size:13px;margin-top:6px}
+small{color:#777}
+
+#rcpt-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9;justify-content:center;align-items:flex-start;overflow:auto}
+#rcpt-overlay.show{display:flex}
+#rcpt-close{position:fixed;top:10px;right:14px;color:#fff;cursor:pointer;font-size:15px;z-index:10}
+#rcpt-paper{background:#f4f0e6;color:#111;font-family:"Courier New",monospace;font-size:12px;line-height:1.35;font-variant-ligatures:none;
+ padding:18px 14px;margin:40px 8px;width:38ch;box-shadow:0 0 24px #000;white-space:pre}
+.rl-inv{background:#111;color:#f4f0e6;font-weight:bold}
+.rl-green{color:#1a7a1a;font-weight:bold}
+.rl-rev{background:#111;color:#f4f0e6;font-weight:bold}
+.rl-b{font-weight:bold}
+.rl-grid{white-space:pre;letter-spacing:0}
+.rl-grid span{display:inline-block;width:1ch;text-align:center}
+.rl-cell{display:inline-block;width:1ch;text-align:center;font-weight:bold}
+</style></head><body>
+<h1>CELLTOWER VERIFY · TIER 3 BENCH</h1>
+<div><small>Derivative node · parent core 13cdb118ec2477f8 · judge = math + statistics + human eyeballs</small></div>
+<textarea id="stream" placeholder="paste receipt stream here"></textarea><br>
+<button id="btnVerify">VERIFY + REPLAY</button>
+<button id="btnFast">FAST (no delays)</button>
+<button id="btnSeq" disabled>EXPORT .SEQ (C64)</button>
+<button id="btnAns" disabled>EXPORT .ANS (LINUX)</button>
+<button id="btnPlayer" disabled>PLAYER SCRIPT</button><button id="btnReceipt" disabled>RECEIPT</button><br>
+SPEED: <button class="spd" data-s="1">1X</button><button class="spd" data-s="2">2X</button><button class="spd" data-s="5">5X</button><button class="spd" data-s="10">10X</button><button class="spd" data-s="20">20X</button>
+<div id="status"></div>
+<div id="rcpt-overlay"><div id="rcpt-close" onclick="document.getElementById('rcpt-overlay').classList.remove('show')">✕ CLOSE</div><div id="rcpt-paper"></div></div>
+<div id="screenwrap"><canvas id="scr" width="640" height="400"></canvas></div>
+<div id="hpsline"></div>
+
+<script>
+// ═══ CORE BEGIN — verbatim copy of parent ct-core.js — DO NOT EDIT HERE ═══
+// ═══════════════════════════════════════════════════════════════════════════
+// CT-CORE.JS — CELLTOWER shared protocol core (v3.0)
+// Extracted VERBATIM from index.html (game v0.6122026). Canonical shared
+// copy: B92 codec, xoshiro128** seeded PRNG, 256-slot timing table,
+// spacetime fields, rules/scoring enums + canonical aux, v3.0 piece
+// derivation, structural reject, replay parser, and the full PORTABLE
+// VERIFICATION CORE (physics replay + hash chain + HPS + NPF).
+//
+// SYNC DOCTRINE: index.html keeps its own inlined copy (air-gapped single-
+// file game doctrine). Any change to either copy MUST be mirrored to the
+// other — the protocol lives in this code, not in any server.
+// Consumers: SWITCHBOARD operator console; future standalone validator.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const _B92_ALPHABET = (()=>{
+  let s = '';
+  for(let i=33;i<=126;i++) if(i!==44&&i!==59) s+=String.fromCharCode(i);
+  return s;
+})();  // exactly 92 characters
+
+function _toB92(value, width) {
+  let v = value, s = '';
+  for(let i = 0; i < width; i++) { s = _B92_ALPHABET[v % 92] + s; v = Math.floor(v / 92); }
+  return s;
+}
+
+function _fromB92(str) {
+  let n = 0;
+  for(let i = 0; i < str.length; i++) n = n * 92 + _B92_ALPHABET.indexOf(str[i]);
+  return n;
+}
+
+// Encode arbitrary bytes (Uint8Array) as a fixed-width B92 string via BigInt.
+function _bytesToB92(bytes, width) {
+  let v = 0n;
+  for (const b of bytes) v = (v << 8n) | BigInt(b);
+  let s = '';
+  for (let i = 0; i < width; i++) { s = _B92_ALPHABET[Number(v % 92n)] + s; v /= 92n; }
+  return s;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v3.0 DETERMINISTIC CORE — xoshiro128** PRNG + 256-slot timing table
+// Spec authority: stream.md Part II. Game and verifier MUST share this code
+// byte-for-byte. The PRNG call sequence is part of the protocol — see
+// stream.md "v3.0 Piece Sequence" for the exact call order, including the
+// two conditional fallback calls (Towres-impossible, Towres-blocked swap).
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Seed derivation: splitmix32 over the five B92 alphabet indices of seed5
+// expands into the four 32-bit words of xoshiro128** state. All-zero state
+// is impossible because splitmix32 output of a nonzero stream never yields
+// four zero words for any seed5 (guarded anyway).
+let _x128s = new Uint32Array(4);
+function _splitmix32(a){
+  return function(){
+    a |= 0; a = (a + 0x9e3779b9) | 0;
+    let t = a ^ (a >>> 16); t = Math.imul(t, 0x21f0aaad);
+    t = t ^ (t >>> 15);     t = Math.imul(t, 0x735a2d97);
+    return ((t = t ^ (t >>> 15)) >>> 0);
+  };
+}
+function _ctkRngSeed(seed5){
+  let acc = 0;
+  for(let i = 0; i < seed5.length; i++)
+    acc = (Math.imul(acc, 92) + _B92_ALPHABET.indexOf(seed5[i])) | 0;
+  const sm = _splitmix32(acc);
+  for(let i = 0; i < 4; i++) _x128s[i] = sm();
+  if(!(_x128s[0]|_x128s[1]|_x128s[2]|_x128s[3])) _x128s[0] = 1; // never all-zero
+}
+function _rotl32(x, k){ return ((x << k) | (x >>> (32 - k))) >>> 0; }
+// xoshiro128** 1.0 — returns float in [0,1), 32 bits of state output
+function _ctkRand(){
+  const s = _x128s;
+  const result = _rotl32(Math.imul(s[1], 5) >>> 0, 7);
+  const r = (Math.imul(result, 9) >>> 0);
+  const t = (s[1] << 9) >>> 0;
+  s[2] = (s[2] ^ s[0]) >>> 0;
+  s[3] = (s[3] ^ s[1]) >>> 0;
+  s[1] = (s[1] ^ s[2]) >>> 0;
+  s[0] = (s[0] ^ s[3]) >>> 0;
+  s[2] = (s[2] ^ t) >>> 0;
+  s[3] = _rotl32(s[3], 11);
+  return r / 4294967296;
+}
+// Canonical non-I draw (protocol order O,T,S,Z,J,L) — consumes ONE call.
+const _CTK_NON_I = ['O','T','S','Z','J','L'];
+function _ctkNonI(){ return _CTK_NON_I[_ctkRand() * 6 | 0]; }
+
+// ── 256-slot timing table (stream.md zones A–D) ─────────────────────────────
+// Zone A slots   0- 59:    0- 150ms @ 2.5ms   — bot fingerprint resolution
+// Zone B slots  60-179:  150- 800ms @ ~5.4ms  — human performance range
+// Zone C slots 180-219:  800-3000ms @ 55ms    — thinking pause
+// Zone D slots 220-255: 3000-8000ms @ ~139ms  — long pause, coarse
+// Quantization contract: hash record stores TIMING_TABLE[slot], never raw ms.
+const TIMING_TABLE = (() => {
+  const t = new Uint16Array(256);
+  for(let i =   0; i <  60; i++) t[i] = Math.round(i * 2.5);
+  for(let i =  60; i < 180; i++) t[i] = Math.round(150 + (i - 60) * 650 / 120);
+  for(let i = 180; i < 220; i++) t[i] = 800 + (i - 180) * 55;
+  for(let i = 220; i < 256; i++) t[i] = Math.round(3000 + (i - 220) * 5000 / 36);
+  return t;
+})();
+// Nearest-slot quantizer — binary search over the monotonic table.
+function _msToSlot(ms){
+  if(ms <= 0) return 0;
+  if(ms >= TIMING_TABLE[255]) return 255;
+  let lo = 0, hi = 255;
+  while(lo < hi){
+    const mid = (lo + hi) >> 1;
+    if(TIMING_TABLE[mid] < ms) lo = mid + 1; else hi = mid;
+  }
+  // lo = first slot >= ms; check if the slot below is closer
+  return (lo > 0 && ms - TIMING_TABLE[lo-1] <= TIMING_TABLE[lo] - ms) ? lo - 1 : lo;
+}
+const _MODE_CHAR = '!'; // B92 value 0 — Mode 0 seeded deterministic
+
+// ── v3.0 spacetime fields (formerly the v4.20 spec — folded into v3.0) ─────
+// Green Minute: minutes since the CELLTOWER epoch, 2026-04-20T04:20:00Z.
+const _GM_EPOCH_MS = 1776658800000;
+function _greenMinute(){ return Math.max(0, Math.floor((Date.now() - _GM_EPOCH_MS) / 60000)); }
+// Geolocation step encodings (~30.5m resolution). Sentinels = physically
+// impossible coordinates: AI game, permission absent, or location unavailable.
+const _LAT_SENTINEL = 656972, _LON_SENTINEL = 1313942;
+function _latSteps(deg){ return Math.round((deg + 90.0)  * (656971.0  / 180.0)); }
+function _lonSteps(deg){ return Math.round((deg + 180.0) * (1313941.0 / 360.0)); }
+let _gameGM = 0;                    // Green Minute at game start — bound into H_0
+let _gameLatSteps = _LAT_SENTINEL;  // header-attested only (async permission)
+let _gameLonSteps = _LON_SENTINEL;
+// Capture location ONLY if the player already granted it to this page —
+// never prompt mid-game. The value lives solely in the stream string the
+// player controls; nothing is transmitted anywhere.
+function _captureGeo(){
+  _gameLatSteps = _LAT_SENTINEL; _gameLonSteps = _LON_SENTINEL;
+  try{
+    if(!navigator.geolocation || !navigator.permissions) return;
+    navigator.permissions.query({name:'geolocation'}).then(p=>{
+      if(p.state!=='granted') return;
+      navigator.geolocation.getCurrentPosition(pos=>{
+        _gameLatSteps = _latSteps(pos.coords.latitude);
+        _gameLonSteps = _lonSteps(pos.coords.longitude);
+      }, ()=>{}, {timeout:5000, maximumAge:600000});
+    }).catch(()=>{});
+  }catch(e){}
+}
+// Terminal hash: first 9 bytes (72 bits) of H_N as 12 B92 chars.
+// 72-bit second-preimage cost ≈ 2^72 chain recomputations — unreachable.
+// 12 chars ≈ 78-bit capacity, so 9 bytes encode with no modular bias.
+const _TERM_HASH_BYTES = 9, _TERM_HASH_CHARS = 12;
+
+// ── v3.0 rules/scoring enumerations + auxiliary section ────────────────────
+// One B92 char each. 0 = current default. 1-90 reserved for future versions.
+// 91 ('~', the last alphabet symbol) = ESCAPE: the value lives in the aux
+// section as a named variable. (One B92 char maxes at 91 — the 0-255-with-
+// escape-at-255 framing needs 2 chars; 0-90 keeps it to one.)
+const _ENUM_ESCAPE = 91;
+let _gameRules   = 0;   // rules enumeration   (key 'R' when escaped)
+let _gameScoring = 0;   // scoring enumeration (key 'S' when escaped)
+let _gameAuxVars = {};  // named vars: short keys, e.g. {T:'FRESNO26'} for tournament ID
+// Canonical aux serialization — EXACTLY ONE legal encoding per variable set:
+// keys sorted, k=v pairs comma-joined, no whitespace. Keys and values must be
+// B92 chars; '=' additionally forbidden in both. The string is hash-bound
+// verbatim, so any deviation in ordering or spacing is a different game.
+function _canonAux(vars){
+  const ks = Object.keys(vars).sort();
+  const bad = /[,;=\s]/;
+  const parts = [];
+  for(const k of ks){
+    const v = String(vars[k]);
+    if(bad.test(k) || bad.test(v)) continue; // structurally invalid — drop
+    parts.push(k + '=' + v);
+  }
+  return parts.join(',');
+}
+// The two-char rules+scoring field as it appears in the header.
+function _rsChars(){
+  const r = (_gameRules   >= 0 && _gameRules   <= 91) ? _gameRules   : _ENUM_ESCAPE;
+  const c = (_gameScoring >= 0 && _gameScoring <= 91) ? _gameScoring : _ENUM_ESCAPE;
+  return _B92_ALPHABET[r] + _B92_ALPHABET[c];
+}
+
+// Quick structural check — does this look like a CELLTOWER stream?
+// Quick structural check — does this look like a CELLTOWER stream?
+function _streamReject(t){
+  if(!t||typeof t!=='string') return 'empty input';
+  const raw=t.trim();
+  if(raw.length<80) return 'too short ('+raw.length+' chars)';
+  const p=raw.split(';');
+  if(p.length<3) return 'missing sections (got '+p.length+')';
+  const hdr=p[0].split(',');
+  if(hdr.length<2) return 'bad header';
+  const seed=hdr[0];
+  if(seed.length!==5&&seed.length!==6) return 'bad seed length ('+seed.length+')';
+  const B92s=(()=>{const s=new Set();for(let i=33;i<=126;i++)if(i!==44&&i!==59)s.add(String.fromCharCode(i));return s;})();
+  const b92ok=s=>{for(const c of s)if(!B92s.has(c))return false;return true;};
+  if(!b92ok(seed)) return 'seed has invalid chars';
+  const stats=hdr[1];
+  if(stats.length!==10) return 'stats wrong length ('+stats.length+')';
+  if(!b92ok(stats)) return 'stats has invalid chars';
+  const B92a=[...B92s];
+  const fromB92=s=>{let n=0;for(const c of s)n=n*92+B92a.indexOf(c);return n;};
+  const nPieces=fromB92(stats.slice(8,10));
+  if(nPieces<=0) return 'piece count is zero';
+  if(nPieces>10000) return 'piece count too large';
+  // v3.0 may carry an aux section: header;aux;placements;hash (4 sections).
+  const hasAux = seed.length===6 && p.length>=4;
+  if(seed.length===6){
+    if(hdr.length<7) return 'v3 header missing rules/scoring field (got '+hdr.length+')';
+    if((hdr[6]||'').length!==2) return 'rules/scoring field wrong length';
+    if(hasAux && !/^[!-~]*$/.test(p[1])) return 'aux has invalid chars';
+  }
+  const block=(hasAux?p[2]:p[1])||'';
+  const cpp=seed.length===6?3:4;
+  if(block.length<nPieces*cpp) return 'placements short: need '+(nPieces*cpp)+' got '+block.length;
+  if(!b92ok(block)) return 'placements has invalid chars';
+  const termHash=p[p.length-1];
+  // v2.0 (5-char seed): 40-char terminal hash. v3.0 (6-char seed): 12 chars.
+  const expectHash = seed.length===6 ? 12 : 40;
+  if(termHash.length!==expectHash) return 'hash wrong length ('+termHash.length+', expected '+expectHash+')';
+  if(seed.length===6 && hdr.length<6) return 'v3 header missing spacetime fields (got '+hdr.length+')';
+  return null;
+}
+
+// ── Puzzle grids + type maps (protocol constants — 13 grids) ──
+const PUZZLE_GRIDS = [
+  ['ABCCCDDDD','ABBCEEEFF','AGBHHEIIF','AGGGHHIIF'],
+  ['ABCCDDDEE','ABBCCDFFE','AGBHHHFFE','AGGGHIIII'],
+  ['ABBCCCDDD','AEBBCFFGD','AEHHHFFGG','AEEHIIIIG'],
+  ['ABCDDDEEE','ABCCDFFFE','ABBCGGFHH','AIIIIGGHH'],
+  ['AABCCCDDD','AABBCEEED','FFFBGGEHH','FIIIIGGHH'],
+  ['AAABBBCCC','DAEEBFFGC','DHHEEFFGG','DDHHIIIIG'],
+  ['ABBBCCCCD','AABEEEFFD','GAHHEIIFD','GGGHHIIFD'],
+  ['ABBBCCCDD','AABEECFFD','GAHHEEFFD','GGGHHIIII'],
+  ['ABBCCCDDE','AABBCFFDE','GAHHHFFDE','GGGHIIIIE'],
+  ['AABBBCCCD','EAABFFGCD','EHHHFFGGD','EEHIIIIGD'],
+  ['ABCCCDDDD','ABBCEEEFF','AABGGEHFF','IIIIGGHHH'],
+  ['ABCCCDDDE','ABBCFFFDE','AABGGFHHE','IIIIGGHHE'],
+  ['ABCCDDDEE','ABBCCDFEE','AABGGGFFF','HHHHGIIII'],
+];
+const PUZZLE_PIECE_TYPES = [
+  {A:'I',B:'S',C:'T',D:'I',E:'T',F:'L',G:'J',H:'Z',I:'O'},
+  {A:'I',B:'S',C:'Z',D:'T',E:'L',F:'O',G:'J',H:'T',I:'I'},
+  {A:'I',B:'Z',C:'T',D:'J',E:'L',F:'O',G:'S',H:'T',I:'I'},
+  {A:'I',B:'L',C:'S',D:'T',E:'J',F:'T',G:'Z',H:'O',I:'I'},
+  {A:'O',B:'S',C:'T',D:'J',E:'T',F:'L',G:'Z',H:'O',I:'I'},
+  {A:'T',B:'T',C:'J',D:'L',E:'Z',F:'O',G:'S',H:'Z',I:'I'},
+  {A:'S',B:'T',C:'I',D:'I',E:'T',F:'L',G:'J',H:'Z',I:'O'},
+  {A:'S',B:'T',C:'T',D:'L',E:'Z',F:'O',G:'J',H:'Z',I:'I'},
+  {A:'S',B:'Z',C:'T',D:'L',E:'I',F:'O',G:'J',H:'T',I:'I'},
+  {A:'Z',B:'T',C:'J',D:'I',E:'L',F:'O',G:'S',H:'T',I:'I'},
+  {A:'L',B:'S',C:'T',D:'I',E:'T',F:'O',G:'Z',H:'J',I:'I'},
+  {A:'L',B:'S',C:'T',D:'J',E:'I',F:'T',G:'Z',H:'O',I:'I'},
+  {A:'L',B:'S',C:'Z',D:'T',E:'O',F:'J',G:'T',H:'I',I:'I'},
+];
+
+function _v3DerivePieces(seed5, nPieces){
+  _ctkRngSeed(seed5);
+  const out = [];
+  const si = _ctkRand()*PUZZLE_GRIDS.length|0;      // call #1
+  const mirror = _ctkRand()<0.5;                    // call #2
+  const mirrorType = {I:'I',O:'O',T:'T',S:'Z',Z:'S',J:'L',L:'J'};
+  const baseTypeMap = PUZZLE_PIECE_TYPES[si];
+  const typeMap = mirror
+    ? Object.fromEntries(Object.entries(baseTypeMap).map(([k,v])=>[k,mirrorType[v]]))
+    : baseTypeMap;
+  const grid = PUZZLE_GRIDS[si].map(row => mirror ? row.split('').reverse().join('') : row);
+  const g = grid.map(row=>row.split(''));
+  const R=4, C=9;
+  const cellsOf = lbl => { const a=[]; for(let r=0;r<R;r++) for(let c=0;c<C;c++) if(g[r][c]===lbl) a.push([r,c]); return a; };
+  const pullable = () => {
+    const lbls=[...new Set(g.flat().filter(ch=>ch!=='.'))];
+    return lbls.filter(lbl=>cellsOf(lbl).every(([r,c])=>r===R-1||g[r+1][c]==='.'||g[r+1][c]===lbl));
+  };
+  while(out.length<9){
+    const avail=pullable();
+    if(!avail.length) break;
+    const chosen=avail[_ctkRand()*avail.length|0];  // calls #3-#11
+    out.push(typeMap[chosen]);
+    for(let r=0;r<R;r++) for(let c=0;c<C;c++) if(g[r][c]===chosen) g[r][c]='.';
+  }
+  out.push('I');                                    // 10th piece: free, no call
+  const PO=['I','O','T','S','Z','J','L'];
+  while(out.length<nPieces) out.push(PO[_ctkRand()*7|0]);
+  return out.slice(0,nPieces);
+}
+
+// Parse stream into placements array + header meta for visual replay.
+// Branches on seed length: 5 chars = v2.0 (4 chars/piece, type in stream),
+// 6 chars = v3.0 (3 chars/piece, type derived from seeded PRNG).
+function _parseStreamForReplay(streamText){
+  try{
+    const sections=streamText.trim().split(';');
+    const hdrParts=sections[0].split(',');
+    const seedField=hdrParts[0]||'';
+    const isV3=seedField.length===6;
+    const stats=hdrParts[1]||'';
+    const replayScore=stats.length>=4?_fromB92(stats.slice(0,4)):0;
+    const replayLevel=stats.length>=6?_fromB92(stats.slice(4,6)):1;
+    const replayLines=stats.length>=8?_fromB92(stats.slice(6,8)):0;
+    const nPieces=stats.length>=10?_fromB92(stats.slice(8,10)):0;
+    const hasAux=isV3&&sections.length>=4;
+    const block=(hasAux?sections[2]:sections[1])||'';
+    const PO=['I','O','T','S','Z','J','L'];
+    const pieces=[];
+    if(isV3){
+      const seed5=seedField.slice(0,5);
+      const types=_v3DerivePieces(seed5,nPieces);
+      for(let n=0;n<nPieces;n++){
+        const chunk=block.slice(n*3,n*3+3);
+        if(chunk.length<3)break;
+        const triple=_fromB92(chunk);
+        const posIdx=Math.floor(triple/256);
+        const tSlot=triple%256;
+        const rot=Math.floor(posIdx/290);
+        const x=Math.floor((posIdx%290)/29);
+        const drop_y=(posIdx%29)-4;
+        const ms=TIMING_TABLE[Math.min(255,tSlot)];
+        pieces.push({k:types[n]||'I',rot,x,drop_y,ms});
+      }
+    } else {
+      for(let n=0;n<nPieces;n++){
+        const chunk=block.slice(n*4,n*4+4);
+        if(chunk.length<4)break;
+        const posIdx=_fromB92(chunk.slice(0,2));
+        const rot=Math.floor((posIdx%1160)/290);
+        const x=Math.floor((posIdx%290)/29);
+        const drop_y=(posIdx%29)-4;
+        const k=PO[Math.floor(posIdx/1160)]||'I';
+        const ms=_fromB92(chunk.slice(2,4));
+        pieces.push({k,rot,x,drop_y,ms});
+      }
+    }
+    const playerName=(hdrParts[2]||'').slice(0,3);
+    return{pieces,score:replayScore,level:replayLevel,lines:replayLines,playerName};
+  }catch(e){return null;}
+}
+
+
+// Piece shapes — independently defined (same data as NRS, separate object)
+const _V_SHAPES = {
+  I: [[[1,1,1,1]],         [[1],[1],[1],[1]],     [[1,1,1,1]],         [[1],[1],[1],[1]]],
+  O: [[[1,1],[1,1]],       [[1,1],[1,1]],         [[1,1],[1,1]],       [[1,1],[1,1]]],
+  T: [[[0,1,0],[1,1,1]],   [[1,0],[1,1],[1,0]],   [[1,1,1],[0,1,0]],   [[0,1],[1,1],[0,1]]],
+  S: [[[0,1,1],[1,1,0]],   [[1,0],[1,1],[0,1]],   [[0,1,1],[1,1,0]],   [[1,0],[1,1],[0,1]]],
+  Z: [[[1,1,0],[0,1,1]],   [[0,1],[1,1],[1,0]],   [[1,1,0],[0,1,1]],   [[0,1],[1,1],[1,0]]],
+  J: [[[1,0,0],[1,1,1]],   [[1,1],[1,0],[1,0]],   [[1,1,1],[0,0,1]],   [[0,1],[0,1],[1,1]]],
+  L: [[[0,0,1],[1,1,1]],   [[1,0],[1,0],[1,1]],   [[1,1,1],[1,0,0]],   [[1,1],[0,1],[0,1]]]
+};
+const _V_PIECE_ORDER = ['I','O','T','S','Z','J','L'];
+
+// Base-92 decoder — independently defined (same alphabet as _fromB92)
+const _V_B92 = (() => {
+  const a = [];
+  for (let i = 33; i <= 126; i++) { const c = String.fromCharCode(i); if (c !== ',' && c !== ';') a.push(c); }
+  return a;
+})();
+function _vFromB92(s) { let n = 0; for (const c of s) n = n * 92 + _V_B92.indexOf(c); return n; }
+function _vB92Idx(c) { return _V_B92.indexOf(c); }
+
+// Board complexity score [0,1] from flat 25×10 board (Uint8Array, index=row*10+col).
+// Higher = harder: tall stacks, many holes, uneven columns.
+function _vBoardComplexity(board) {
+  const colH = new Array(10).fill(0);
+  for (let c = 0; c < 10; c++)
+    for (let r = 0; r < 25; r++)
+      if (board[r*10+c]) { colH[c] = 25 - r; break; }
+  const maxH = Math.max(...colH) / 25;
+  const meanH = colH.reduce((a,b)=>a+b,0) / 10;
+  const stdH = Math.sqrt(colH.reduce((s,h)=>s+(h-meanH)**2,0)/10) / 25;
+  let holes = 0;
+  for (let c = 0; c < 10; c++) {
+    let blocked = false;
+    for (let r = 0; r < 25; r++) {
+      if (board[r*10+c]) blocked = true;
+      else if (blocked) holes++;
+    }
+  }
+  return maxH*0.5 + stdH*0.3 + Math.min(holes/50,1)*0.2;
+}
+
+// Humanity Probability Score [0,1] from parallel timing and pre-placement complexity arrays.
+// Signal: human players slow down on complex boards (positive correlation + natural variability).
+// Bot-Jitter: uniform timing (low CV) or variance uncorrelated with complexity (r ≈ 0).
+function _vComputeHPS(timings, complexities, minSamples = 20) {
+  const n = timings.length;
+  if (n < minSamples) return null; // insufficient sample for meaningful result
+  const meanT = timings.reduce((a,b)=>a+b,0)/n;
+  const meanC = complexities.reduce((a,b)=>a+b,0)/n;
+  let num=0, ssT=0, ssC=0;
+  for (let i=0; i<n; i++) {
+    const dt=timings[i]-meanT, dc=complexities[i]-meanC;
+    num+=dt*dc; ssT+=dt*dt; ssC+=dc*dc;
+  }
+  const r    = (ssT===0||ssC===0) ? 0 : num/Math.sqrt(ssT*ssC); // Pearson correlation
+  const cv   = meanT>0 ? Math.sqrt(ssT/n)/meanT : 0;             // coefficient of variation
+  const rNorm  = (r+1)/2;                 // -1..1 → 0..1
+  const cvNorm = Math.min(1, cv/0.4);     // CV ≥ 0.4 = full variability score
+  return Math.round((rNorm*0.7 + cvNorm*0.3)*100)/100;
+}
+function _vBytesToB92(bytes, width) {
+  let v = 0n;
+  for (const b of bytes) v = (v << 8n) | BigInt(b);
+  let s = '';
+  for (let i = 0; i < width; i++) { s = _V_B92[Number(v % 92n)] + s; v /= 92n; }
+  return s;
+}
+
+// Port of game's scoreBoard() for flat 25×10 Uint8Array. No game globals used.
+function _vScoreBoard(b) {
+  let totalH=0, bump=0;
+  const colH=new Array(10).fill(0);
+  for (let c=0; c<10; c++) {
+    for (let r=0; r<25; r++) if (b[r*10+c]) { colH[c]=25-r; break; }
+    totalH+=colH[c];
+  }
+  for (let c=0; c<9; c++) bump+=Math.abs(colH[c]-colH[c+1]);
+  const maxH=Math.max(...colH), minH=Math.min(...colH);
+  const danger=Math.max(0,Math.min(1,(maxH-12)/10)), dSq=danger*danger;
+  const hPen=totalH*80*(1+dSq*8);
+  const mhB=Math.max(0,maxH-8); const mhPen=mhB*mhB*120*(1+dSq*4);
+  let cPen=0;
+  for (let c=1; c<9; c++) {
+    const ld=colH[c-1]-colH[c], rd=colH[c+1]-colH[c];
+    if(ld>0&&rd>0){const d=Math.min(ld,rd);if(d>=2)cPen+=d*d*400*(1+dSq*2);}
+  }
+  const sp=maxH-minH;
+  const sPen=sp>4?(sp-4)*(sp-4)*200*(1+dSq*3):0;
+  let spkPen=0;
+  for (let c=0; c<10; c++) {
+    const lh=c>0?colH[c-1]:null, rh=c<9?colH[c+1]:null;
+    const avg=(lh!==null&&rh!==null)?(lh+rh)/2:(lh!==null?lh:rh);
+    const spk=colH[c]-avg;
+    if(spk>=2) spkPen+=spk*spk*300*(1+dSq*4);
+  }
+  return -(hPen+bump*150*(1+dSq*2)+mhPen+cPen+sPen+spkPen);
+}
+
+// Decision-Path Conflict [0,1]: 0 = obvious best move, 1.0 = perfect toss-up.
+// Evaluates all straight-drop placements for the piece type using base score
+// (lines×800 + scoreBoard) — no next-piece lookahead (nxt not in stream).
+function _vDPC(board, typeIdx) {
+  const shapes = _V_SHAPES[_V_PIECE_ORDER[typeIdx]];
+  const fitsAt = (cells, x, gy) => {
+    for (let r=0; r<cells.length; r++)
+      for (let c=0; c<cells[r].length; c++) {
+        if (!cells[r][c]) continue;
+        const br=gy+r, bc=x+c;
+        if (br<0) continue;
+        if (br>=25 || bc<0 || bc>=10 || board[br*10+bc]) return false;
+      }
+    return true;
+  };
+  const scores=[];
+  for (let rot=0; rot<shapes.length; rot++) {
+    const cells=shapes[rot], cw=cells[0].length;
+    for (let x=0; x<=10-cw; x++) {
+      if (!fitsAt(cells,x,0)) continue;
+      let gy=0; while(fitsAt(cells,x,gy+1)) gy++;
+      const tb=new Uint8Array(board);
+      for (let r=0; r<cells.length; r++)
+        for (let c=0; c<cw; c++)
+          if (cells[r][c]&&gy+r>=0&&gy+r<25) tb[(gy+r)*10+x+c]=1;
+      const nb=new Uint8Array(250);
+      let dr=24, cl=0;
+      for (let r=24; r>=0; r--) {
+        let full=true;
+        for (let c=0; c<10; c++) if(!tb[r*10+c]){full=false;break;}
+        if(!full){nb.set(tb.subarray(r*10,r*10+10),dr*10);dr--;}else cl++;
+      }
+      scores.push(cl*800+_vScoreBoard(nb));
+    }
+  }
+  if (scores.length<2) return 0;
+  scores.sort((a,b)=>b-a);
+  const range=Math.max(1,scores[0]-scores[scores.length-1]);
+  return Math.max(0,Math.min(1,1.0-(scores[0]-scores[1])/range));
+}
+
+// Convert flat 25×10 board (Uint8Array, index=row*10+col) to 50-byte word array
+function _vBoardToWords(b) {
+  const out = new Uint8Array(50);
+  for (let r = 0; r < 25; r++) {
+    let w = 0;
+    for (let c = 0; c < 10; c++) if (b[r*10+c]) w |= (1 << (9-c));
+    out[r*2] = (w >> 8) & 0xFF; out[r*2+1] = w & 0xFF;
+  }
+  return out;
+}
+
+// Apply one placement to the board, clear complete rows, return lines cleared.
+// Mirrors game's placeOn bounds check — cells above row 0 (drop_y+r < 0) are skipped.
+function _vApply(board, typeIdx, rot, x, drop_y) {
+  const cells = _V_SHAPES[_V_PIECE_ORDER[typeIdx]][rot];
+  for (let r = 0; r < cells.length; r++)
+    for (let c = 0; c < cells[r].length; c++) {
+      const br = drop_y + r, bc = x + c;
+      if (cells[r][c] && br >= 0 && br < 25 && bc >= 0 && bc < 10) board[br * 10 + bc] = 1;
+    }
+  let cleared = 0;
+  for (let r = 24; r >= 0; r--) {
+    let full = true;
+    for (let c = 0; c < 10; c++) if (!board[r*10+c]) { full = false; break; }
+    if (full) {
+      for (let rr = r; rr > 0; rr--) for (let c = 0; c < 10; c++) board[rr*10+c] = board[(rr-1)*10+c];
+      for (let c = 0; c < 10; c++) board[c] = 0;
+      r++; cleared++;
+    }
+  }
+  return cleared;
+}
+
+// Build the 56-byte hash record for one placement (same layout as _advanceHashChain)
+function _vRecord(typeIdx, rot, x, drop_y, ms, boardWords) {
+  const rec = new Uint8Array(56);
+  rec[0]=typeIdx&0xFF; rec[1]=rot&0xFF; rec[2]=x&0xFF; rec[3]=drop_y&0xFF;
+  rec[4]=(ms>>8)&0xFF; rec[5]=ms&0xFF;
+  rec.set(boardWords, 6);
+  return rec;
+}
+
+// Verify a stream text. Returns {valid, piecesReplayed, error}.
+// No game globals referenced — pass the raw stream string returned by _buildStream().
+async function _verifyStream(streamText) {
+  try {
+    const sections = streamText.split(';');
+    if (sections.length < 3) return { valid: false, error: 'bad section count: ' + sections.length };
+
+    const headerParts = sections[0].split(',');
+    if (headerParts.length < 2) return { valid: false, error: 'bad header fields' };
+
+    const seedField       = headerParts[0];             // 5 chars = v2.0, 6 = v3.0
+    const isV3            = seedField.length === 6;
+    const seed5           = seedField.slice(0, 5);
+    const stats           = headerParts[1];             // 10 B92 chars
+    const nPieces         = _vFromB92(stats.slice(8,10));
+    // v3.0 with aux: header;aux;placements;hash. Without: header;placements;hash.
+    const hasAux          = isV3 && sections.length >= 4;
+    const auxStr          = hasAux ? sections[1] : '';
+    const placementsBlock = hasAux ? sections[2] : sections[1];
+    const termHashB92     = sections[sections.length - 1];
+    const cpp             = isV3 ? 3 : 4;                // chars per placement
+    const rsStr           = isV3 ? (headerParts[6]||'') : '';
+    // Surface decoded regime for the caller / receipt display
+    const rulesEnum   = isV3 && rsStr.length===2 ? _vB92Idx(rsStr[0]) : 0;
+    const scoringEnum = isV3 && rsStr.length===2 ? _vB92Idx(rsStr[1]) : 0;
+    const auxVars = {};
+    if(auxStr) for(const pair of auxStr.split(',')){
+      const eq = pair.indexOf('='); if(eq>0) auxVars[pair.slice(0,eq)] = pair.slice(eq+1);
+    }
+
+    // v3.0: piece types are not in the stream — derive from the seeded PRNG.
+    // (Common path; the rare Towres fallback draws need full physics replay
+    // and will surface as a hash mismatch here — flagged, not silently passed.)
+    const v3Types = isV3 ? _v3DerivePieces(seed5, nPieces) : null;
+
+    // H_0 binds identity (+ time-of-play in v3.0):
+    //   v2.0: SHA-256(UTF-8(seed5 + playerName))
+    //   v3.0: SHA-256(UTF-8(seed5 + playerName + gm4))
+    const _seedStr = isV3
+      ? seed5 + (headerParts[2]||'') + (headerParts[3]||'') + rsStr + auxStr
+      : seed5 + (headerParts[2]||'');
+    let H = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(_seedStr));
+
+    // Fresh board — no game state
+    const board = new Uint8Array(250);  // 25 rows × 10 cols
+    const _hpTimings = [], _hpDPC = [];
+
+    // Decade Merkle-Root state
+    let prevDecadeHash = new Uint8Array(H);  // seeded from H_0
+    let decadeRecs = [], decadeTms = [], decadeComplx = [];
+    const blockLedger = [];
+
+    // Neural Processing Floor — neurologically impossible: high-conflict choice resolved <150ms
+    let npfHits = 0;
+
+    for (let n = 0; n < nPieces; n++) {
+      const chunk = placementsBlock.slice(n*cpp, n*cpp+cpp);
+      if (chunk.length < cpp) return { valid: false, error: 'short placement block at piece ' + n };
+
+      let typeIdx, rot, x, drop_y, ms;
+      if (isV3) {
+        // v3.0: 3 chars = posIdx*256 + tSlot. No type; no raw ms.
+        const triple = _vFromB92(chunk);
+        const posIdx = Math.floor(triple / 256);
+        const tSlot  = triple % 256;
+        typeIdx = _V_PIECE_ORDER.indexOf(v3Types[n] || 'I');
+        rot     = Math.floor(posIdx / 290);
+        x       = Math.floor((posIdx % 290) / 29);
+        drop_y  = (posIdx % 29) - 4;
+        ms      = TIMING_TABLE[tSlot];
+      } else {
+        const posIdx = _vFromB92(chunk.slice(0,2));
+        typeIdx = Math.floor(posIdx / 1160);
+        rot     = Math.floor((posIdx % 1160) / 290);
+        x       = Math.floor((posIdx % 290) / 29);
+        drop_y  = (posIdx % 29) - 4;  // 29-slot field, offset 4 → range -4..24
+        ms      = _vFromB92(chunk.slice(2,4));
+      }
+
+      // DPC: how much conflict did this placement pose? Computed pre-placement.
+      const dpc = _vDPC(board, typeIdx);
+      _hpTimings.push(ms);
+      _hpDPC.push(dpc);
+
+      // Neural Processing Floor: high-conflict decision resolved in neurologically impossible time
+      if (ms < 150 && dpc >= 0.7) npfHits++;
+
+      // Decade accumulators use DPC (same signal as full-game HPS)
+      decadeTms.push(ms);
+      decadeComplx.push(dpc);
+
+      _vApply(board, typeIdx, rot, x, drop_y);
+      const boardWords = _vBoardToWords(board);
+
+      // H_n = SHA-256(H_{n-1} || record)
+      const rec56 = _vRecord(typeIdx, rot, x, drop_y, ms, boardWords);
+      const prev  = new Uint8Array(H);
+      const msg   = new Uint8Array(88);  // 32 + 56
+      msg.set(prev, 0); msg.set(rec56, 32);
+      H = await crypto.subtle.digest('SHA-256', msg);
+
+      // Decade boundary: emit a Merkle-Root every 10 pieces
+      decadeRecs.push(rec56);
+      if (decadeRecs.length === 10) {
+        const iHPS   = _vComputeHPS(decadeTms, decadeComplx, 5);
+        const hpsU16 = iHPS === null ? 0 : Math.round(iHPS * 65535);
+        const din    = new Uint8Array(32 + 560 + 2);
+        din.set(prevDecadeHash, 0);
+        let off = 32;
+        for (const r of decadeRecs) { din.set(r, off); off += 56; }
+        din[594] = (hpsU16 >> 8) & 0xFF; din[595] = hpsU16 & 0xFF;
+        const dhBuf  = await crypto.subtle.digest('SHA-256', din);
+        const dhBytes = new Uint8Array(dhBuf);
+        prevDecadeHash = dhBytes;
+        blockLedger.push({
+          decade: blockLedger.length,
+          startPiece: n - 9,
+          endPiece:   n,
+          hps:  iHPS,
+          hash: Array.from(dhBytes).map(b=>b.toString(16).padStart(2,'0')).join('')
+        });
+        decadeRecs = []; decadeTms = []; decadeComplx = [];
+      }
+    }
+
+    // Terminal compare: v3.0 = first 9 bytes as 12 chars; v2.0 = full 40.
+    const computedB92 = isV3
+      ? _vBytesToB92(new Uint8Array(H).slice(0, 9), 12)
+      : _vBytesToB92(new Uint8Array(H), 40);
+    const valid = computedB92 === termHashB92;
+    const hps = _vComputeHPS(_hpTimings, _hpDPC);
+    const hpsLabel = hps === null ? 'N/A' : hps >= 0.72 ? 'PASS' : hps >= 0.50 ? 'REVIEW' : 'FAIL';
+    const npfRatio = nPieces > 0 ? Math.round(npfHits / nPieces * 100) / 100 : 0;
+    const npfFlag  = npfRatio >= 0.05 ? 'NPF_SUSPECT' : null;
+    return {
+      valid,
+      rulesEnum, scoringEnum, auxVars,
+      piecesReplayed: nPieces,
+      hps, hpsLabel,
+      blockLedger,
+      npfFlag, npfRatio, npfHits,
+      error: valid ? null : `hash mismatch\n  computed: ${computedB92}\n  stream:   ${termHashB92}`
+    };
+  } catch(e) {
+    return { valid: false, error: e.message };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// C64 authentic 8x8 bitmap font (public-domain char ROM glyphs)
+const C64FONT={"@":[60,102,110,110,96,98,60,0],"A":[24,60,102,126,102,102,102,0],"B":[124,102,102,124,102,102,124,0],"C":[60,102,96,96,96,102,60,0],"D":[120,108,102,102,102,108,120,0],"E":[126,96,96,120,96,96,126,0],"F":[126,96,96,120,96,96,96,0],"G":[60,102,96,110,102,102,60,0],"H":[102,102,102,126,102,102,102,0],"I":[60,24,24,24,24,24,60,0],"J":[30,12,12,12,12,108,56,0],"K":[102,108,120,112,120,108,102,0],"L":[96,96,96,96,96,96,126,0],"M":[99,119,127,107,99,99,99,0],"N":[102,118,126,126,110,102,102,0],"O":[60,102,102,102,102,102,60,0],"P":[124,102,102,124,96,96,96,0],"Q":[60,102,102,102,102,60,14,0],"R":[124,102,102,124,120,108,102,0],"S":[60,102,96,60,6,102,60,0],"T":[126,24,24,24,24,24,24,0],"U":[102,102,102,102,102,102,60,0],"V":[102,102,102,102,102,60,24,0],"W":[99,99,99,107,127,119,99,0],"X":[102,102,60,24,60,102,102,0],"Y":[102,102,102,60,24,24,24,0],"Z":[126,6,12,24,48,96,126,0],"0":[60,102,110,118,102,102,60,0],"1":[24,24,56,24,24,24,126,0],"2":[60,102,6,12,48,96,126,0],"3":[60,102,6,28,6,102,60,0],"4":[6,14,30,102,127,6,6,0],"5":[126,96,124,6,6,102,60,0],"6":[60,102,96,124,102,102,60,0],"7":[126,102,12,24,24,24,24,0],"8":[60,102,102,60,102,102,60,0],"9":[60,102,102,62,6,102,60,0]," ":[0,0,0,0,0,0,0,0],".":[0,0,0,0,0,24,24,0],",":[0,0,0,0,0,24,24,48],":":[0,0,24,24,0,24,24,0],";":[0,0,24,24,0,24,24,48],"/":[0,3,6,12,24,48,96,0],"\\":[0,96,48,24,12,6,3,0],"-":[0,0,0,126,0,0,0,0],"+":[0,24,24,126,24,24,0,0],"*":[0,0,102,60,255,60,102,0],"=":[0,0,126,0,126,0,0,0],"!":[24,24,24,24,0,0,24,0],"?":[60,102,6,12,24,0,24,0],"\"":[102,102,102,0,0,0,0,0],"'":[24,24,24,0,0,0,0,0],"(":[12,24,48,48,48,24,12,0],")":[48,24,12,12,12,24,48,0],"<":[14,24,48,96,48,24,14,0],">":[112,24,12,6,12,24,112,0],"[":[60,48,48,48,48,48,60,0],"]":[60,12,12,12,12,12,60,0],"#":[102,102,255,102,255,102,102,0],"$":[24,62,96,60,6,124,24,0],"%":[98,102,12,24,48,102,70,0],"&":[60,102,60,56,103,102,63,0],"\u2190":[0,8,24,56,24,8,0,0],"\u2588":[255,255,255,255,255,255,255,255],"\u2502":[24,24,24,24,24,24,24,24],"\u2514":[24,24,24,31,31,0,0,0],"\u2500":[0,0,0,255,255,0,0,0],"\u2518":[24,24,24,248,248,0,0,0]};
+const C64LOW={"a":[0,0,60,6,62,102,62,0],"b":[0,96,96,124,102,102,124,0],"c":[0,0,60,96,96,96,60,0],"d":[0,6,6,62,102,102,62,0],"e":[0,0,60,102,126,96,60,0],"f":[0,14,24,62,24,24,24,0],"g":[0,0,62,102,102,62,6,124],"h":[0,96,96,124,102,102,102,0],"i":[0,24,0,56,24,24,60,0],"j":[0,6,0,6,6,6,102,60],"k":[0,96,96,102,108,120,102,0],"l":[0,56,24,24,24,24,60,0],"m":[0,0,102,127,127,107,99,0],"n":[0,0,124,102,102,102,102,0],"o":[0,0,60,102,102,102,60,0],"p":[0,0,124,102,102,124,96,96],"q":[0,0,62,102,102,62,6,6],"r":[0,0,124,102,96,96,96,0],"s":[0,0,62,96,60,6,124,0],"t":[0,24,126,24,24,24,14,0],"u":[0,0,102,102,102,102,62,0],"v":[0,0,102,102,102,60,24,0],"w":[0,0,99,107,127,62,54,0],"x":[0,0,102,60,24,60,102,0],"y":[0,0,102,102,102,62,6,124],"z":[0,0,126,12,24,48,126,0]};
+// ═══ CORE END ═══════════════════════════════════════════════════════════
+
+// ── 40×25 C64 text screen — authentic 8x8 bitmap font, pixel-perfect ────
+// VICE-default palette (matches the reference captures). Each cell is an
+// 8x8 glyph scaled by PX with ZERO inter-character spacing — the bitmap
+// owns all 8 horizontal pixels, so glyphs tile exactly like real hardware.
+const COLS=40,ROWS=25,GW=8,GH=8;
+const cv=document.getElementById('scr'),cx=cv.getContext('2d');
+// integer pixel scale chosen from canvas backing size / (40*8)
+let PX=2;
+function fitCanvas(){
+  const cssW=cv.clientWidth||cv.width;
+  PX=Math.max(1,Math.floor(cssW/(COLS*GW)));
+  cv.width=COLS*GW*PX;cv.height=ROWS*GH*PX;
+}
+const PAL={bg:'#6953F5',ink:'#B19EFF',lite:'#B19EFF',wht:'#FFFFFF',
+ grn:'#54FC54',red:'#FC5454',org:'#A85400',mag:'#A800A8',gry:'#A8A8A8',
+ dgry:'#545454',lgry:'#CCCCCC',cyn:'#54FCFC',yel:'#FCFC00',blu:'#5454FC',
+ lblu:'#B19EFF',blk:'#000000',lred:'#FC5454',lgrn:'#54FC54',brn:'#A85400'}
+let grid,colr,bgc,SCRBG=PAL.bg;
+function clr(bg){SCRBG=bg||PAL.bg;
+  grid=Array.from({length:ROWS},()=>Array(COLS).fill(' '));
+  colr=Array.from({length:ROWS},()=>Array(COLS).fill(PAL.ink));
+  bgc=Array.from({length:ROWS},()=>Array(COLS).fill(null));draw();}
+function put(r,c,s,col,bg){if(r<0||r>=ROWS)return;
+  for(let i=0;i<s.length&&c+i<COLS;i++){if(c+i<0)continue;
+    grid[r][c+i]=s[i];colr[r][c+i]=col||PAL.ink;bgc[r][c+i]=bg||null;}}
+const C64BOX={"─":[0,0,0,0,255,0,0,0],"━":[0,0,0,255,255,0,0,0],"│":[16,16,16,16,16,16,16,16],"┌":[0,0,0,0,31,16,16,16],"┐":[0,0,0,0,240,16,16,16],"└":[16,16,16,16,31,0,0,0],"┘":[16,16,16,16,240,0,0,0],"▔":[255,0,0,0,0,0,0,0],"▁":[0,0,0,0,0,0,0,255],"▏":[128,128,128,128,128,128,128,128],"▕":[1,1,1,1,1,1,1,1]};
+function glyph(ch){if(typeof C64BOX!=="undefined"&&C64BOX[ch])return C64BOX[ch];if(C64FONT[ch])return C64FONT[ch];if(typeof C64LOW!=='undefined'&&C64LOW[ch])return C64LOW[ch];return C64FONT[ch&&ch.toUpperCase&&ch.toUpperCase()]||null;}
+function drawCell(r,c){
+  const x0=c*GW*PX,y0=r*GH*PX;
+  const bg=bgc[r][c];
+  // cell-delineation block: fill + black line bottom+right (grid look)
+  if(bg&&typeof bg==='string'&&bg.startsWith('CELL:')){
+    const col=bg.slice(5);cx.fillStyle=col;cx.fillRect(x0,y0,GW*PX,GH*PX);
+    cx.fillStyle='#000';cx.fillRect(x0,y0+(GH-1)*PX,GW*PX,PX);
+    cx.fillRect(x0+(GW-1)*PX,y0,PX,GH*PX);return;}
+  if(bg){cx.fillStyle=bg;cx.fillRect(x0,y0,GW*PX,GH*PX);}
+  const ch=grid[r][c];
+  if(ch===' '||ch===undefined)return;
+  if(ch==='\u2588'){cx.fillStyle=colr[r][c];cx.fillRect(x0,y0,GW*PX,GH*PX);return;}
+  const g=glyph(ch);if(!g){return;}
+  cx.fillStyle=colr[r][c];
+  for(let py=0;py<8;py++){const row=g[py];
+    for(let pxi=0;pxi<8;pxi++){if(row&(0x80>>pxi))
+      cx.fillRect(x0+pxi*PX,y0+py*PX,PX,PX);}}
+}
+function draw(){cx.fillStyle=SCRBG;cx.fillRect(0,0,cv.width,cv.height);
+  for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++)drawCell(r,c);}
+window.addEventListener('resize',()=>{fitCanvas();draw();});
+fitCanvas();
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+// ── audio: key clicks + brief carrier on CONNECT (Rush 2049 doctrine) ────
+let AC=null,ACdead=false;function ac(){if(ACdead)return null;
+  try{if(!AC)AC=new(window.AudioContext||window.webkitAudioContext)();}catch(e){ACdead=true;return null;}return AC;}
+function click(){try{const a=ac();if(!a)return;const o=a.createOscillator(),g=a.createGain();
+  o.type='square';o.frequency.value=2200+Math.random()*600;
+  g.gain.setValueAtTime(0.06,a.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,a.currentTime+0.02);
+  o.connect(g).connect(a.destination);o.start();o.stop(a.currentTime+0.025);}catch(e){}}
+function carrier(){try{const a=ac();if(!a)return;const t=a.currentTime;
+  [[1200,0,.18],[2100,.2,.2],[1650,.42,.25]].forEach(([f,d,len])=>{
+    const o=a.createOscillator(),g=a.createGain();o.frequency.value=f;
+    g.gain.setValueAtTime(0.05,t+d);g.gain.setValueAtTime(0.0001,t+d+len);
+    o.connect(g).connect(a.destination);o.start(t+d);o.stop(t+d+len);});}catch(e){}}
+async function typeIn(r,c,s,col,fast){for(let i=0;i<s.length;i++){
+  put(r,c+i,s[i],col);draw();if(!fast){click();await sleep(45+Math.random()*70);}}
+  put(r,c,s,col);draw();}  // guarantee full line painted
+
+// ── boot theater: blue only long enough to load, then CCGMS 4.0 screen ──
+async function boot(fast){
+  clr(PAL.bg);
+  // Blank line before each of the three lines:
+  // (blank) banner (blank) 64K line (blank) READY.
+  put(1,4,'**** COMMODORE 64 BASIC V2 ****',PAL.ink);
+  put(3,1,'64K RAM SYSTEM  38911 BASIC BYTES FREE',PAL.ink);
+  put(5,0,'READY.',PAL.ink);draw();if(!fast)await sleep(400);
+  await typeIn(6,0,'LOAD"CCGMS",8,1',PAL.ink,fast);if(!fast)await sleep(300);
+  put(8,0,'SEARCHING FOR CCGMS',PAL.ink);
+  put(10,0,'LOADING',PAL.ink);put(12,0,'READY.',PAL.ink);draw();if(!fast)await sleep(350);
+  await typeIn(13,0,'RUN',PAL.ink,fast);if(!fast)await sleep(250);
+  ccgms(fast);if(!fast){carrier();await sleep(1000);}
+}
+// CCGMS 4.0 + background mod screen — per reference capture
+function ccgms(fast){
+  clr(PAL.blk);                                   // CCGMS sets bg to black
+  const gry=PAL.gry, blk=PAL.blk;
+  // Header is a 2-row box drawn black-on-grey (decoded cell-by-cell from ref):
+  //   row0:  |  [C][C][G][M][S][!]  |   4.0 + background mod
+  //   row1:  L------------------J   by Craig Smith
+  // Grey fills cols 0-19 on both rows; box glyphs + logo blocks sit on top.
+  for(let c=0;c<20;c++){put(0,c,' ',blk,gry);put(1,c,' ',blk,gry);}
+  // row 0 vertical bars at col 0 and col 19
+  put(0,0,'\u2502',blk,gry);
+  put(0,19,'\u2502',blk,gry);
+  // logo color blocks cols 1-18 (each letter spans 3 cols: space,letter,space)
+  const letters=['C','C','G','M','S','!'];
+  const cols=[PAL.red,PAL.org,PAL.yel,PAL.grn,PAL.blu,PAL.mag];
+  let bx=1;
+  for(let i=0;i<letters.length;i++){
+    const col=cols[i];
+    put(0,bx,' ',blk,col);
+    put(0,bx+1,letters[i],blk,col);
+    put(0,bx+2,' ',blk,col);
+    bx+=3;
+  }
+  // row 1: bottom of the box — corners + horizontal bars
+  put(1,0,'\u2514',blk,gry);
+  for(let c=1;c<19;c++)put(1,c,'\u2500',blk,gry);
+  put(1,19,'\u2518',blk,gry);
+  // version text starts at col 20 (grey bg on row0/row1 for its first cells,
+  // then black beyond col 19 boundary — matches decode: text is black-on-grey
+  // only within the strip; beyond the strip it is white-on-black)
+  put(0,20,'4.0 + background mod',PAL.wht);
+  put(1,23,'by Craig Smith',PAL.wht);
+  // menu
+  put(3,1,'<F1> Upload',PAL.gry);      put(3,20,'<F2> Send/Read File',PAL.gry);
+  put(4,1,'<F3> Download',PAL.gry);    put(4,20,'<F4> Buffer Commands',PAL.gry);
+  put(5,1,'<F5> Disk Command',PAL.gry);put(5,20,'<F6> Directory',PAL.gry);
+  put(6,1,'<F7> Dialer/Parms',PAL.gry);put(6,20,'<F8> Switch Terms',PAL.gry);
+  put(8,1,'Graphics Terminal Ready.',PAL.grn);
+  put(10,1,'CONNECT 1200',PAL.gry);
+  put(12,1,'CONNECTION!!!!',PAL.gry);
+  put(14,1,'HIT RETURN:\u2190',PAL.gry);
+  draw();
+}
+
+// ── replay: full-height 25×10 playfield, per-character movement ─────────
+// Layout: playfield cols 0-9 rows 0-24 (1 char per block, no border),
+// white bar col 10, info panel col 12+. Blocks draw as C64 cell glyph:
+// fill color + black line on bottom and right (repeating forms the grid).
+let lastOps=null,SPEED=1;
+document.querySelectorAll('.spd').forEach(b=>b.onclick=()=>{SPEED=+b.dataset.s;});
+const PIECE_COL={I:PAL.cyn,O:PAL.yel,T:PAL.mag,S:PAL.grn,Z:PAL.red,J:'#4F4FE0',L:PAL.org};
+// canvas block: fill + delineation lines (bottom, right)
+function blockCell(r,c,col){grid[r][c]=' ';colr[r][c]=col;bgc[r][c]='CELL:'+col;}
+function eraseCell(r,c){grid[r][c]=' ';colr[r][c]=PAL.ink;bgc[r][c]=null;}
+function cellsOf(k,rot){return _V_SHAPES[k][rot];}
+function absCells(k,rot,x,y){const out=[];const cs=cellsOf(k,rot);
+  for(let r=0;r<cs.length;r++)for(let c=0;c<cs[r].length;c++)
+    if(cs[r][c]){const br=y+r,bc=x+c;if(br>=0&&br<25&&bc>=0&&bc<10)out.push([br,bc]);}
+  return out;}
+// Collision-aware path: BFS over (rot,x,y) legal states from spawn to the
+// stream's final placement. Moves = {down,left,right,rotCW}, a state is legal
+// iff no cell overlaps the board or exits the sides/floor. Mirrors game
+// movement rules, so the piece visibly routes AROUND existing blocks
+// (tucks/slides included). Erased cells were empty by construction.
+function collides(board,k,rot,x,y){const cs=cellsOf(k,rot);
+  for(let r=0;r<cs.length;r++)for(let c=0;c<cs[r].length;c++){
+    if(!cs[r][c])continue;const br=y+r,bc=x+c;
+    if(bc<0||bc>9||br>24)return true;
+    if(br>=0&&board[br*10+bc])return true;}
+  return false;}
+function findPath(board,pc){
+  const K=pc.k,tgt=(pc.rot*10+pc.x)*30+(pc.drop_y+4);
+  const enc=(rot,x,y)=>(rot*10+x)*30+(y+4);
+  const spawn={rot:0,x:3,y:Math.min(0,pc.drop_y)};
+  if(collides(board,K,spawn.rot,spawn.x,spawn.y))return null;
+  const prev=new Map();const q=[spawn];prev.set(enc(spawn.rot,spawn.x,spawn.y),null);
+  while(q.length){const s=q.shift();const se=enc(s.rot,s.x,s.y);
+    if(se===tgt){const path=[];let e=se;
+      while(e!==null){path.push(e);e=prev.get(e);}
+      return path.reverse().map(v=>({rot:Math.floor(v/300),x:Math.floor(v/30)%10,y:v%30-4}));}
+    const nexts=[{rot:(s.rot+1)%4,x:s.x,y:s.y},{rot:s.rot,x:s.x-1,y:s.y},
+      {rot:s.rot,x:s.x+1,y:s.y},{rot:s.rot,x:s.x,y:s.y+1}]; // maneuver first, drop last
+    for(const n of nexts){if(n.x<0||n.x>9||n.y>24)continue;
+      const ne=enc(n.rot,n.x,n.y);if(prev.has(ne))continue;
+      if(collides(board,K,n.rot,n.x,n.y))continue;
+      prev.set(ne,se);q.push(n);}}
+  return null;}
+function pieceOps(pc,board){
+  const col=PIECE_COL[pc.k]||PAL.wht;
+  const path=findPath(board,pc);
+  if(!path){const fin=absCells(pc.k,pc.rot,pc.x,pc.drop_y);
+    return {ops:[{erase:[],drawc:fin,col,kind:'spawn'}],finalCells:fin,col,pathErr:true};}
+  // Split BFS path into ordered maneuvers (rot/x deltas) and total downs,
+  // then re-interleave like live play: the piece falls one row per gravity
+  // tick while maneuvers execute between ticks — never a 4-column scoot.
+  const mans=[];let downs=0;
+  for(let i=1;i<path.length;i++){const a=path[i-1],b=path[i];
+    if(b.y===a.y+1&&b.rot===a.rot&&b.x===a.x)downs++;
+    else mans.push({dr:(b.rot-a.rot+4)%4?1:0,dx:b.x-a.x});}
+  const states=[{rot:0,x:3,y:path[0].y}];
+  let s={...states[0]},m=0,guard=0,downsDone=0;
+  while((s.rot!==pc.rot%4||s.x!==pc.x||s.y!==pc.drop_y)&&guard++<500){
+    let acted=false;
+    // one maneuver per step if legal at current height
+    if(m<mans.length){const mv=mans[m];
+      const t={rot:(s.rot+(mv.dr?1:0))%4,x:s.x+mv.dx,y:s.y};
+      if(!collides(board,pc.k,t.rot,t.x,t.y)){
+        s=t;states.push({...s,kind:'man'});m++;acted=true;}}
+    // gravity: drop one row if still above target depth and legal
+    if(downsDone<downs&&!collides(board,pc.k,s.rot,s.x,s.y+1)&&s.y<pc.drop_y){
+      s={...s,y:s.y+1};states.push({...s,kind:'down'});downsDone++;acted=true;}
+    if(!acted)break; // stuck: fall through to BFS-order remainder
+  }
+  if(s.rot!==pc.rot%4||s.x!==pc.x||s.y!==pc.drop_y){
+    // rare tuck livelock: finish along original BFS order from current state
+    let idx=path.findIndex(q=>q.rot===s.rot&&q.x===s.x&&q.y===s.y);
+    if(idx<0)idx=0;
+    for(let i=idx+1;i<path.length;i++)states.push({...path[i],
+      kind:(path[i].y===path[i-1].y+1&&path[i].rot===path[i-1].rot&&path[i].x===path[i-1].x)?'down':'man'});
+  }
+  const ops=[];let prev=absCells(pc.k,states[0].rot,states[0].x,states[0].y);
+  ops.push({erase:[],drawc:prev,col,kind:'spawn'});
+  for(let i=1;i<states.length;i++){const st=states[i];
+    const cur=absCells(pc.k,st.rot,st.x,st.y);
+    const curSet=new Set(cur.map(p=>p[0]*10+p[1]));
+    const prevSet=new Set(prev.map(p=>p[0]*10+p[1]));
+    ops.push({erase:prev.filter(p=>!curSet.has(p[0]*10+p[1])),
+      drawc:cur.filter(p=>!prevSet.has(p[0]*10+p[1])),col,kind:st.kind});
+    prev=cur;}
+  return {ops,finalCells:prev,col,pathErr:false};
+}
+// Detect an opposite-direction slide in the actual BFS path: returns the
+// number of units the piece traveled AGAINST its initial lateral direction
+// (0 if none). This flags tucks that reverse — the hardest human moves.
+function _slideReversal(board,pc){
+  const path=findPath(board,pc);if(!path)return 0;
+  let initDir=0,revUnits=0,peakX=path[0].x,valX=path[0].x;
+  for(let i=1;i<path.length;i++){
+    const dx=path[i].x-path[i-1].x;if(dx===0)continue;
+    if(initDir===0)initDir=Math.sign(dx);
+    if(Math.sign(dx)===initDir){if(initDir>0)peakX=Math.max(peakX,path[i].x);
+      else valX=Math.min(valX,path[i].x);}
+    else{ // moving against initial direction
+      const extreme=initDir>0?peakX:valX;
+      revUnits=Math.max(revUnits,Math.abs(path[i].x-extreme));}
+  }
+  return revUnits;
+}
+function ghostCandidates(board,ti){
+  const shapes=_V_SHAPES[_V_PIECE_ORDER[ti]];
+  const fitsAt=(cells,x,gy)=>{for(let r=0;r<cells.length;r++)
+    for(let c=0;c<cells[r].length;c++){if(!cells[r][c])continue;
+      const br=gy+r,bc=x+c;if(br<0)continue;
+      if(br>=25||bc<0||bc>=10||board[br*10+bc])return false;}return true;};
+  const cands=[];
+  for(let rot=0;rot<shapes.length;rot++){const cells=shapes[rot],cw=cells[0].length;
+    for(let x=0;x<=10-cw;x++){if(!fitsAt(cells,x,0))continue;
+      let gy=0;while(fitsAt(cells,x,gy+1))gy++;
+      const tb=new Uint8Array(board);
+      for(let r=0;r<cells.length;r++)for(let c=0;c<cw;c++)
+        if(cells[r][c]&&gy+r>=0&&gy+r<25)tb[(gy+r)*10+x+c]=1;
+      const nb=new Uint8Array(250);let dr=24,cl=0;
+      for(let r=24;r>=0;r--){let full=true;
+        for(let c=0;c<10;c++)if(!tb[r*10+c]){full=false;break;}
+        if(!full){nb.set(tb.subarray(r*10,r*10+10),dr*10);dr--;}else cl++;}
+      cands.push({rot:rot%4,x,gy,sc:cl*800+_vScoreBoard(nb)});}}
+  cands.sort((a,b)=>b.sc-a.sc);
+  const out=[],used=new Set();
+  for(const cd of cands){if(out.length>=4)break;
+    const fp=absCells(_V_PIECE_ORDER[ti],cd.rot,cd.x,cd.gy).map(p=>p[0]*10+p[1]);
+    if(fp.some(k=>used.has(k)))continue;
+    fp.forEach(k=>used.add(k));out.push(cd);}
+  return out;}
+function drawGhost(cells,num){
+  for(const [r,c] of cells){grid[r][c]=String(num);colr[r][c]=PAL.gry;bgc[r][c]='#2A2A2A';}}
+function panel(n,ms,hps,total,sc,lv,ln,opt){
+  for(let r=0;r<25;r++)for(let c=12;c<COLS;c++)eraseCell(r,c);
+  put(1,12,'CELLTOWER VERIFY',PAL.lite);
+  put(3,12,'PIECE '+String(n+1).padStart(4,'0')+'/'+total,PAL.lite);
+  put(5,12,'SCORE '+(sc|0),PAL.wht);
+  put(6,12,'LEVEL '+lv,PAL.cyn);
+  put(7,12,'LINES '+ln,PAL.cyn);
+  put(9,12,'MS '+ms,PAL.yel);
+  put(11,12,'HPS '+(hps===null?'N/A':hps.toFixed(2)),
+    hps===null?PAL.gry:(hps>=0.72?PAL.grn:hps>=0.5?PAL.yel:PAL.red));
+  put(13,12,opt===0?'':(opt>0?'GHOST OPT '+opt:'STRATEGIC *'),opt>0?PAL.grn:PAL.org);
+  put(15,12,'SPEED '+SPEED+'X',PAL.gry);
+}
+function redrawField(colorBoard){
+  for(let r=0;r<25;r++)for(let c=0;c<10;c++){
+    if(colorBoard[r*10+c])blockCell(r,c,colorBoard[r*10+c]);else eraseCell(r,c);}
+  for(let r=0;r<25;r++)put(r,10,'\u2588',PAL.wht);
+}
+async function run(fast){
+  const txt=document.getElementById('stream').value;
+  const st=document.getElementById('status');
+  st.textContent='verifying chain\u2026';
+  const v=await _verifyStream(txt);
+  const cls=v.valid?(v.hpsLabel==='PASS'?'PASS':v.hpsLabel):'FAIL';
+  st.innerHTML='CHAIN: <span class="'+(v.valid?'PASS':'FAIL')+'">'+(v.valid?'VALID':'INVALID')+'</span>'
+    +'  HPS: <span class="'+cls+'">'+(v.hps===null?'N/A':v.hps.toFixed(3))+' '+v.hpsLabel+'</span>'
+    +'  PIECES: '+v.piecesReplayed
+    +(v.npfFlag?'  <span class="FAIL">'+v.npfFlag+'</span>':'')
+    +(v.error?'\n'+v.error:'');
+  const p=_parseStreamForReplay(txt);
+  if(!p){st.textContent+='\nparse failed';return;}
+  await boot(fast);
+  const board=new Uint8Array(250);
+  let colorBoard=new Array(250).fill(null);
+  const PO=_V_PIECE_ORDER;const F=1000/60;
+  const timings=[],complx=[];const allOps=[];
+  let lines=0,level=1,shownScore=0;
+  const totalLines=Math.max(1,p.lines);
+  // forensic + receipt accumulators
+  const suspects=[];let strategicN=0,optN=0,towresLines=0;
+  RECEIPT_ROWS.length=0;
+  let hfStreak=0,hfBest=0,neverHoled=true;
+  clr(PAL.blk);redrawField(colorBoard);
+  RECEIPT.playerName=p.playerName;RECEIPT.meta=p;RECEIPT.stream=txt;
+  RECEIPT.verify=v;RECEIPT.suspects=suspects;
+  for(let n=0;n<p.pieces.length;n++){
+    const pc=p.pieces[n];const ti=PO.indexOf(pc.k);
+    timings.push(pc.ms);complx.push(_vBoardComplexity(board));
+    const gcs=ghostCandidates(board,ti);
+    let opt=-1;
+    for(let i=0;i<gcs.length;i++)
+      if(gcs[i].rot===pc.rot%4&&gcs[i].x===pc.x&&gcs[i].gy===pc.drop_y){opt=i+1;break;}
+    if(opt>0)optN++;else strategicN++;
+    const {ops,finalCells,col,pathErr}=pieceOps(pc,board);
+    // Move mark for the receipt column:
+    //   '1'..'4' = matched ghost option; 'S' = strategic (no match).
+    //   For strategic slides that reverse direction (end opposite the first
+    //   lateral push), use lowercase a/b/c/d for 1/2/3/4+ reversed units.
+    let moveMark;
+    if(opt>0){moveMark=String(opt);}
+    else{
+      // reconstruct lateral step sequence from ops path
+      let cols=[];{let cx2=3;cols.push(cx2);
+        for(let i=1;i<ops.length;i++){const o=ops[i];
+          if(o.kind==='man'){ // infer x from drawn cells min-col delta is unreliable;
+            // instead track via finalCells later — approximate using path replay
+          }}}
+      // Simpler: use spawn x=3 vs first-move direction vs final x=pc.x
+      const firstDir=Math.sign((pc.x)-3)||0; // net direction spawn->final
+      // detect reversal by scanning states rebuilt in pieceOps? approximate:
+      // a reversal exists when the BFS path moved one way then came back.
+      const rev=_slideReversal(board,pc);
+      if(rev>0)moveMark='abcd'[Math.min(rev,4)-1];
+      else moveMark='S';
+    }
+    RECEIPT_ROWS.push({piece:n+1,mark:moveMark,col,k:pc.k});
+    const gravMs=Math.max(F,(48-4*Math.min(11,level))*F);
+    // natural time at true game rates: downs at gravity, maneuvers at 60fps
+    let natural=0;for(let i=1;i<ops.length;i++)natural+=ops[i].kind==='down'?gravMs:F;
+    natural=Math.max(F,natural);
+    let scale=1,pauseMs=0;
+    if(pc.ms<natural)scale=pc.ms/natural;             // soft-drop / fast play
+    else if(pc.ms>natural*1.25+1000)pauseMs=pc.ms-natural; // suspicious pause
+    else scale=pc.ms/natural;                          // mild stretch, honest fit
+    const hpsNow=_vComputeHPS(timings.slice(0,n),complx.slice(0,n));
+    panel(n,pc.ms,hpsNow,p.pieces.length,shownScore,level,lines,opt>0?opt:-1);
+    if(pathErr)put(19,12,'PATHERR '+(n+1),PAL.red);
+    if(pauseMs>0){put(17,12,'PAUSE? +'+(pauseMs/1000).toFixed(1)+'S',PAL.red);
+      suspects.push({piece:n+1,excess:pauseMs});}
+    if(opt>0){const g=gcs[opt-1];drawGhost(absCells(pc.k,g.rot,g.x,g.gy),opt);}
+    for(let i=0;i<ops.length;i++){const op=ops[i];
+      for(const [r,c] of op.erase)if(!board[r*10+c])eraseCell(r,c);
+      for(const [r,c] of op.drawc)if(!board[r*10+c])blockCell(r,c,col);
+      draw();
+      if(!fast&&i>0)await sleep(((op.kind==='down'?gravMs:F)*scale)/SPEED);}
+    if(!fast&&pauseMs>0)await sleep(Math.min(pauseMs,2500)/SPEED); // note, capped
+    const cleared=_vApply(board,ti,pc.rot,pc.x,pc.drop_y);
+    if(cleared===4)towresLines+=4;
+    // hole tracking for the receipt's hole-free streak
+    let holes=0;
+    for(let c=0;c<10;c++){let seen=false;
+      for(let r=0;r<25;r++){if(board[r*10+c])seen=true;
+        else if(seen)holes++;}}
+    if(holes>0){neverHoled=false;hfStreak=0;}else{hfStreak++;if(hfStreak>hfBest)hfBest=hfStreak;}
+    for(const [r,c] of finalCells)colorBoard[r*10+c]=col;
+    if(cleared>0){
+      const nb=new Array(250).fill(null);const keep=[];
+      {const pre=colorBoard.slice();let full;
+       for(let r=24;r>=0;r--){full=true;
+         for(let c=0;c<10;c++)if(!pre[r*10+c])full=false;
+         if(!full)keep.push(r);}}
+      let dst=24;
+      for(const r of keep){for(let c=0;c<10;c++)nb[dst*10+c]=colorBoard[r*10+c];dst--;}
+      colorBoard=nb;
+      lines+=cleared;
+      const nl=Math.floor(lines/10)+1;if(nl>level)level=nl;
+      shownScore=Math.round(p.score*Math.min(1,lines/totalLines));
+    }
+    for(let i=0;i<250;i++){
+      if(!board[i])colorBoard[i]=null;
+      else if(!colorBoard[i])colorBoard[i]=PAL.gry;}
+    redrawField(colorBoard);
+    const hps=_vComputeHPS(timings,complx);
+    if(n===p.pieces.length-1)shownScore=p.score;
+    panel(n,pc.ms,hps,p.pieces.length,shownScore,level,lines,opt>0?opt:-1);
+    if(pauseMs>0)put(17,12,'PAUSE? +'+(pauseMs/1000).toFixed(1)+'S',PAL.red);
+    draw();
+    allOps.push({pc,ops,col,cleared,opt,mark:moveMark,boardAfter:colorBoard.slice()});
+    Object.assign(RECEIPT,{idx:n+1,score:shownScore,level,lines,hps,
+      pieces:n+1,strategicN,optN,towresLines,hfBest,neverHoled,hfStreak});
+  }
+  lastOps=allOps;
+  ['btnSeq','btnAns','btnPlayer','btnReceipt'].forEach(id=>document.getElementById(id).disabled=false);
+}
+document.getElementById('btnVerify').onclick=()=>run(false);
+document.getElementById('btnFast').onclick=()=>run(true);
+
+// ── exports: cursor-code movement streams, two encodings ────────────────
+function dl(name,bytes,mime){const b=new Blob([bytes],{type:mime||'application/octet-stream'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();}
+// ANSI: absolute addressing CSI r;cH, per-piece color, MS plaintext at row 25.
+const ANSI_COL={};ANSI_COL[PAL.cyn]='36';ANSI_COL[PAL.yel]='33';ANSI_COL[PAL.mag]='35';
+ANSI_COL[PAL.grn]='32';ANSI_COL[PAL.red]='31';ANSI_COL['#4F4FE0']='34';ANSI_COL[PAL.org]='33;1';
+function toANS(){let out='\x1b[2J';
+  for(let r=1;r<=25;r++)out+='\x1b['+r+';11H\x1b[47m \x1b[0m';
+  for(const A of lastOps){
+    for(const op of A.ops){
+      for(const [r,c] of op.erase)out+='\x1b['+(r+1)+';'+(c+1)+'H ';
+      const ac=ANSI_COL[A.col]||'37';
+      for(const [r,c] of op.drawc)out+='\x1b['+(r+1)+';'+(c+1)+'H\x1b['+ac+'m\u2586\x1b[0m';
+    }
+    if(A.cleared>0){ // full field redraw after clears
+      for(let r=0;r<25;r++)for(let c=0;c<10;c++){
+        const col=A.boardAfter[r*10+c];
+        out+='\x1b['+(r+1)+';'+(c+1)+'H'+(col?'\x1b['+(ANSI_COL[col]||'37')+'m\u2586\x1b[0m':' ');}}
+    out+='\x1b[25;14H\x1b[0K';
+    {const mk=A.mark||'S';let tag;
+      if(/[1-4]/.test(mk))tag='OPT '+mk;
+      else if(/[a-d]/.test(mk))tag='STRATEGY ('+mk+')';
+      else tag='STRATEGY';
+      out+=tag+'\n';}
+    out+='MS '+A.pc.ms+'\n';
+  }
+  return out;}
+// PETSCII: HOME(0x13)+CRSR DOWN(0x11)xR+RIGHT(0x1D)xC addressing, colors,
+// RVS-space blocks. Cell glyph: colored RVS space (grid line = TODO, see note).
+const PET_COL={};PET_COL[PAL.cyn]=0x9F;PET_COL[PAL.yel]=0x9E;PET_COL[PAL.mag]=0x9C;
+PET_COL[PAL.grn]=0x1E;PET_COL[PAL.red]=0x1C;PET_COL['#4F4FE0']=0x1F;PET_COL[PAL.org]=0x81;
+function petGoto(bytes,r,c){bytes.push(0x13);for(let i=0;i<r;i++)bytes.push(0x11);
+  for(let i=0;i<c;i++)bytes.push(0x1D);}
+function toSEQ(){const bytes=[0x93];const push=s=>{for(const ch of s){let b=ch.charCodeAt(0);
+    if(b>=97&&b<=122)b-=32;bytes.push(b);}};
+  bytes.push(0x05);for(let r=0;r<25;r++){petGoto(bytes,r,10);bytes.push(0x12);push(' ');bytes.push(0x92);}
+  for(const A of lastOps){
+    const pcol=PET_COL[A.col]||0x05;
+    for(const op of A.ops){
+      for(const [r,c] of op.erase){petGoto(bytes,r,c);push(' ');}
+      for(const [r,c] of op.drawc){petGoto(bytes,r,c);bytes.push(pcol,0x12);push(' ');bytes.push(0x92);}
+    }
+    if(A.cleared>0){for(let r=0;r<25;r++)for(let c=0;c<10;c++){
+      const col=A.boardAfter[r*10+c];petGoto(bytes,r,c);
+      if(col){bytes.push(PET_COL[col]||0x05,0x12);push(' ');bytes.push(0x92);}else push(' ');}}
+    petGoto(bytes,23,14);bytes.push(0x05);
+    {const mk=A.mark||'S';
+     let tag;
+     if(/[1-4]/.test(mk))tag='OPT '+mk;
+     else if(/[a-d]/.test(mk))tag='STRATEGY ('+mk+')'; // reversed-slide notation
+     else tag='STRATEGY';
+     push(tag);}
+    bytes.push(0x0D);
+    petGoto(bytes,24,14);bytes.push(0x05);push('MS '+A.pc.ms);bytes.push(0x0D);
+  }
+  return new Uint8Array(bytes);}
+const PLAYER=`#!/bin/sh
+# CELLTOWER dumb-terminal player: literate-dumb \u2014 reads the MS value it
+# just displayed and sleeps exactly that long. Usage: sh play.sh replay.ans
+awk '{print; if($1=="MS") system("sleep " $2/1000)}' "$1"
+`;
+document.getElementById('btnAns').onclick=()=>dl('replay.ans',toANS(),'text/plain');
+document.getElementById('btnSeq').onclick=()=>dl('replay.seq',toSEQ());
+document.getElementById('btnPlayer').onclick=()=>dl('play.sh',PLAYER,'text/plain');
+
+// ── RECEIPT: exact parent PLAYBACK RECEIPT (buildReceiptDOM _replayMode
+// branch, DM_COLS=38). Parent dingbat \x01 rendered as '*'.
+const RECEIPT_ROWS=[];
+const RECEIPT={idx:0,score:0,level:1,lines:0,hps:null,playerName:'',meta:null,stream:''};
+const DM_COLS=38;
+function rcenter(t){const pad=Math.max(0,DM_COLS-t.length);
+  return ' '.repeat(pad>>1)+t+' '.repeat(pad-(pad>>1));}
+function showReceipt(){
+  const P=document.getElementById('rcpt-paper');P.innerHTML='';
+  const L=(t,o)=>{const d=document.createElement('div');d.textContent=t;
+    if(o&&o.inv)d.className='rl-inv';else if(o&&o.bold)d.className='rl-b';
+    if(o&&o.green)d.classList.add('rl-green');P.appendChild(d);};
+  // rich line: parts = [{t,rev?}] — reversed marks get inverse video inline
+  const LR=(parts,grid)=>{const d=document.createElement('div');
+    if(grid)d.className='rl-grid';
+    for(const pt of parts){const s=document.createElement('span');
+      s.textContent=pt.t;
+      if(pt.rev)s.className='rl-rev';
+      if(pt.cell){s.className='rl-cell';
+        if(pt.bg){s.style.background=pt.bg;
+          s.style.color=_contrastInk(pt.bg);}}
+      d.appendChild(s);}
+    P.appendChild(d);};
+  // pick black or white ink for legibility on a colored cell
+  const _contrastInk=(hex)=>{const m=hex.replace('#','');
+    const r=parseInt(m.slice(0,2),16),g=parseInt(m.slice(2,4),16),b=parseInt(m.slice(4,6),16);
+    return (0.299*r+0.587*g+0.114*b)>140?'#000':'#fff';};
+  const SP=px=>{const d=document.createElement('div');d.style.height=px+'px';P.appendChild(d);};
+  const HR=(c,nn)=>L((c||'=').repeat(nn||DM_COLS));
+  const row=(a,b)=>{const pad=Math.max(1,DM_COLS-a.length-b.length);return a+' '.repeat(pad)+b;};
+  const M=RECEIPT.meta||{score:0,lines:0,level:1,pieces:[]};
+  const now=new Date();
+  // ── HEADER (full game receipt, matches parent buildReceiptDOM) ──
+  SP(10);
+  L(rcenter('* THE * CELLTOWER * DISTRICT *'),{inv:true,bold:true});
+  SP(2);
+  L(rcenter('777 OLIVE AVE'));
+  L(rcenter('FRESNO  CA  93728'));
+  L(rcenter('(559) 485-9050'));
+  SP(4);
+  HR('=');
+  L(rcenter('* CELLTOWER  GAME  RECEIPT *'));
+  L(rcenter(now.toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'})));
+  // Two green minute-stamps: total play duration, and review (now).
+  let _playMs=0;if(M.pieces)for(const q of M.pieces)_playMs+=q.ms||0;
+  const _mm=Math.floor(_playMs/60000),_ss=Math.floor((_playMs%60000)/1000);
+  const _hm=t=>t.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  L(rcenter('GAME PLAYED:  '+_mm+'M '+String(_ss).padStart(2,'0')+'S'),{green:true});
+  L(rcenter('REVIEWED:  '+_hm(now)),{green:true});
+  SP(2);
+  L('  PLAYER:  '+(RECEIPT.playerName||'???'),{bold:true});
+  HR('=');
+  SP(4);
+  // ── TOTALS SUMMARY ──
+  const lines=RECEIPT.lines||M.lines||0;
+  const level=RECEIPT.level||M.level||1;
+  const pieces=(M.pieces&&M.pieces.length)||RECEIPT.pieces||0;
+  const score=(M.score!=null?M.score:RECEIPT.score)||0;
+  if(lines>0)L(row('  LINES CLEARED',String(lines)));
+  if(level>=2)L(row('  LEVEL REACHED',String(level)));
+  L(row('  PIECES PLACED',String(pieces)));
+  if(lines>0){
+    if(RECEIPT.neverHoled&&RECEIPT.towresLines>=2)
+      L(row('  HOLE-FREE STREAK','PERFECT GAME! '+pieces+'CS'),{bold:true});
+    else if(RECEIPT.neverHoled)
+      L(row('  HOLE-FREE STREAK',pieces+'CS  NO HOLES'));
+    else if(RECEIPT.hfBest>0)
+      L(row('  HOLE-FREE STREAK',RECEIPT.hfBest+'CS'));
+    const tpct=Math.round((RECEIPT.towresLines||0)/lines*100);
+    L(row('  TOWRES %',tpct+'%  ('+(RECEIPT.towresLines||0)+' of '+lines+' lines)'));
+  }
+  SP(2);
+  // ── FORENSIC BLOCK (verify-only addition) ──
+  // ── MOVE LOG (colored by block type, no index, centered) ──
+  // Every cell's BACKGROUND is the piece's game color, so each move reads as
+  // a reversed block in that piece's hue — exactly like the playfield. Glyph
+  // on top: '1'-'4' = ghost option; ' ' (blank) = strategic; 'a'-'d' = bold
+  // lowercase for a strategic slide reversed 1/2/3/4+ units. 38 cells/line.
+  if(RECEIPT_ROWS.length){
+    HR('-');
+    L(rcenter('\u2014 MOVE LOG \u2014'),{bold:true});
+    L(rcenter('1-4 GHOST  BLANK STRAT  a-d REV'));
+    SP(1);
+    const PERROW=38;
+    for(let i=0;i<RECEIPT_ROWS.length;i+=PERROW){
+      const parts=[];
+      for(let j=i;j<Math.min(i+PERROW,RECEIPT_ROWS.length);j++){
+        const rw=RECEIPT_ROWS[j];const mk=rw.mark;
+        let glyph;
+        if(mk==='S')glyph=' ';                 // strategic: blank, no letter
+        else if(/[abcd]/.test(mk))glyph=mk;     // bold lowercase (LR bolds cells)
+        else glyph=mk;                          // ghost option digit
+        parts.push({t:glyph,cell:true,bg:rw.col||'#808080'});
+      }
+      LR(parts,true);
+    }
+    SP(1);
+  }
+  HR('-');
+  L(rcenter('\u2014 VERIFICATION ANALYSIS \u2014'),{bold:true});  HR('-');
+  L(rcenter('\u2014 VERIFICATION ANALYSIS \u2014'),{bold:true});  HR('-');
+  L(rcenter('\u2014 VERIFICATION ANALYSIS \u2014'),{bold:true});  HR('-');
+  L(rcenter('\u2014 VERIFICATION ANALYSIS \u2014'),{bold:true});
+  SP(1);
+  const vf=RECEIPT.verify||{};
+  L(row('  CHAIN',vf.valid?'VALID':'INVALID'));
+  L(row('  HPS',(vf.hps==null?'N/A':vf.hps.toFixed(3))+' '+(vf.hpsLabel||'')));
+  L(row('  GHOST-OPT PLACEMENTS',String(RECEIPT.optN||0)));
+  L(row('  STRATEGIC PLACEMENTS',String(RECEIPT.strategicN||0)));
+  const susp=RECEIPT.suspects||[];
+  L(row('  PAUSE FLAGS',String(susp.length)));
+  if(susp.length){SP(1);
+    for(const s of susp.slice(0,8))
+      L('    PIECE '+s.piece+'  +'+(s.excess/1000).toFixed(1)+'S');
+    if(susp.length>8)L('    ...+'+(susp.length-8)+' more');}
+  HR('-');
+  SP(2);
+  L(row('  SUBTOTAL',score.toLocaleString()));
+  L(row('  TAX / FEES','N/A'));
+  HR('=');
+  SP(2);
+  L(row('  *** TOTAL ***',score.toLocaleString()),{inv:true,bold:true});
+  SP(6);
+  // ── FOOTER ──
+  L(rcenter('"Building CellTowers in the Tower District"'));
+  SP(2);
+  L(rcenter('-- Tower District Design Review Board *'));
+  SP(4);
+  L(rcenter('WATCH THE GHOST PIECES.'));
+  L(rcenter('TRUST THE NUMBERS.'));
+  SP(4);
+  HR('~');
+  L(rcenter('PRODUCED BY'));
+  L(rcenter('ANTHROPIC CLAUDE AI'));
+  SP(2);
+  L(rcenter('THANK YOU FOR PLAYING!'));
+  L(rcenter('COME BACK SOON'));
+  SP(2);
+  L(rcenter(Date.now().toString(36).toUpperCase()));
+  SP(8);
+  document.getElementById('rcpt-overlay').classList.add('show');
+}
+document.getElementById('btnReceipt').onclick=showReceipt;
+
+// ── DAG staleness check (best effort, non-blocking) ─────────────────────
+(async()=>{try{
+  const r=await fetch('https://raw.githubusercontent.com/AaHigh/CELLTOWER/main/ct-core.js');
+  if(!r.ok)return;const t=await r.text();
+  const hsh=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t));
+  const hex=Array.from(new Uint8Array(hsh)).map(b=>b.toString(16).padStart(2,'0')).join('').slice(0,16);
+  if(hex!=='13cdb118ec2477f8')document.getElementById('status').innerHTML=
+    '<span class="FAIL">STALE CHILD NODE: parent core changed ('+hex+') \u2014 regenerate verify.html</span>';
+}catch(e){}})();
+clr(PAL.bg);put(10,7,'PASTE STREAM \u2022 PRESS VERIFY',PAL.ink);draw();
+</script></body></html>
