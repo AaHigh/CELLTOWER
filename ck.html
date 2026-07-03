@@ -14,7 +14,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CELLTOWER VERIFY</title>
 <style>
-:root{--c64border:#3E31A2;--c64bg:#3E31A2;--c64ink:#7C70DA;--c64lite:#B9AFFF}
+:root{--c64border:#7C70DA;--c64bg:#3E31A2;--c64ink:#7C70DA;--c64lite:#7C70DA}
 body{background:#000;color:#ccc;font-family:monospace;margin:0;padding:12px;max-width:900px;margin:auto}
 h1{color:var(--c64lite);font-size:18px;letter-spacing:2px}
 textarea{width:100%;height:90px;background:#111;color:#8f8;border:1px solid #444;font-family:monospace;font-size:11px}
@@ -744,11 +744,12 @@ function fitCanvas(){
   PX=Math.max(1,Math.floor(cssW/(COLS*GW)));
   cv.width=COLS*GW*PX;cv.height=ROWS*GH*PX;
 }
-const PAL={bg:'#6953F5',ink:'#B19EFF',lite:'#B19EFF',wht:'#FFFFFF',
+const PAL={bg:'#3E31A2',ink:'#7C70DA',lite:'#7C70DA',wht:'#FFFFFF',
  grn:'#54FC54',red:'#FC5454',org:'#A85400',mag:'#A800A8',gry:'#A8A8A8',
  dgry:'#545454',lgry:'#CCCCCC',cyn:'#54FCFC',yel:'#FCFC00',blu:'#5454FC',
  lblu:'#B19EFF',blk:'#000000',lred:'#FC5454',lgrn:'#54FC54',brn:'#A85400'}
 let grid,colr,bgc,SCRBG=PAL.bg;
+function setBorder(c){const w=document.getElementById('screenwrap');if(w)w.style.background=c;}
 function clr(bg){SCRBG=bg||PAL.bg;
   grid=Array.from({length:ROWS},()=>Array(COLS).fill(' '));
   colr=Array.from({length:ROWS},()=>Array(COLS).fill(PAL.ink));
@@ -758,8 +759,9 @@ function put(r,c,s,col,bg){if(r<0||r>=ROWS)return;
     grid[r][c+i]=s[i];colr[r][c+i]=col||PAL.ink;bgc[r][c+i]=bg||null;}}
 const C64BOX={"─":[0,0,0,0,255,0,0,0],"━":[0,0,0,255,255,0,0,0],"│":[16,16,16,16,16,16,16,16],"┌":[0,0,0,0,31,16,16,16],"┐":[0,0,0,0,240,16,16,16],"└":[16,16,16,16,31,0,0,0],"┘":[16,16,16,16,240,0,0,0],"▔":[255,0,0,0,0,0,0,0],"▁":[0,0,0,0,0,0,0,255],"▏":[128,128,128,128,128,128,128,128],"▕":[1,1,1,1,1,1,1,1]};
 function glyph(ch){if(typeof C64BOX!=="undefined"&&C64BOX[ch])return C64BOX[ch];if(C64FONT[ch])return C64FONT[ch];if(typeof C64LOW!=='undefined'&&C64LOW[ch])return C64LOW[ch];return C64FONT[ch&&ch.toUpperCase&&ch.toUpperCase()]||null;}
+let COL_OFFSET=0;              // shift whole screen; -1 during game playback
 function drawCell(r,c){
-  const x0=c*GW*PX,y0=r*GH*PX;
+  const x0=(c+COL_OFFSET)*GW*PX,y0=r*GH*PX;
   const bg=bgc[r][c];
   // cell-delineation block: fill + black line bottom+right (grid look)
   if(bg&&typeof bg==='string'&&bg.startsWith('CELL:')){
@@ -789,6 +791,20 @@ function click(){try{const a=ac();if(!a)return;const o=a.createOscillator(),g=a.
   o.type='square';o.frequency.value=2200+Math.random()*600;
   g.gain.setValueAtTime(0.06,a.currentTime);g.gain.exponentialRampToValueAtTime(0.0001,a.currentTime+0.02);
   o.connect(g).connect(a.destination);o.start();o.stop(a.currentTime+0.025);}catch(e){}}
+function towresSound(){try{const a=ac();if(!a)return;const t0=a.currentTime;
+  const blip=(f,dur,vol,dt)=>{const o=a.createOscillator(),g=a.createGain();
+    o.type='square';o.frequency.setValueAtTime(f,t0+dt);
+    g.gain.setValueAtTime(vol,t0+dt);g.gain.exponentialRampToValueAtTime(0.0001,t0+dt+dur);
+    o.connect(g);g.connect(a.destination);o.start(t0+dt);o.stop(t0+dt+dur+0.005);};
+  // Towres ascending fanfare — ported verbatim from index.html sndLineClear(4)
+  [[262,0],[330,0.03],[415,0.06],[523,0.09],[659,0.12],[784,0.15],[988,0.18],[1319,0.21]]
+    .forEach(([f,dt])=>blip(f,0.09,0.20,dt));
+  blip(262,0.40,0.22,0.26);blip(392,0.40,0.20,0.26);blip(523,0.40,0.18,0.26);
+  const o=a.createOscillator(),g=a.createGain();o.type='triangle';
+  o.frequency.setValueAtTime(1047,t0+0.28);g.gain.setValueAtTime(0.16,t0+0.28);
+  g.gain.exponentialRampToValueAtTime(0.0001,t0+0.28+0.35);
+  o.connect(g);g.connect(a.destination);o.start(t0+0.28);o.stop(t0+0.65);
+}catch(e){}}
 function carrier(){try{const a=ac();if(!a)return;const t=a.currentTime;
   [[1200,0,.18],[2100,.2,.2],[1650,.42,.25]].forEach(([f,d,len])=>{
     const o=a.createOscillator(),g=a.createGain();o.frequency.value=f;
@@ -814,6 +830,7 @@ async function boot(fast){
 }
 // CCGMS 4.0 + background mod screen — per reference capture
 function ccgms(fast){
+  setBorder('#000000');           // CCGMS sets border+screen to black
   clr(PAL.blk);                                   // CCGMS sets bg to black
   const gry=PAL.gry, blk=PAL.blk;
   // Header is a 2-row box drawn black-on-grey (decoded cell-by-cell from ref):
@@ -824,17 +841,10 @@ function ccgms(fast){
   // row 0 vertical bars at col 0 and col 19
   put(0,0,'\u2502',blk,gry);
   put(0,19,'\u2502',blk,gry);
-  // logo color blocks cols 1-18 (each letter spans 3 cols: space,letter,space)
+  // logo color blocks — one cell per letter, adjacent (no inter-letter spaces).
   const letters=['C','C','G','M','S','!'];
   const cols=[PAL.red,PAL.org,PAL.yel,PAL.grn,PAL.blu,PAL.mag];
-  let bx=1;
-  for(let i=0;i<letters.length;i++){
-    const col=cols[i];
-    put(0,bx,' ',blk,col);
-    put(0,bx+1,letters[i],blk,col);
-    put(0,bx+2,' ',blk,col);
-    bx+=3;
-  }
+  for(let i=0;i<letters.length;i++) put(0,1+i,letters[i],blk,cols[i]);
   // row 1: bottom of the box — corners + horizontal bars
   put(1,0,'\u2514',blk,gry);
   for(let c=1;c<19;c++)put(1,c,'\u2500',blk,gry);
@@ -885,61 +895,269 @@ function collides(board,k,rot,x,y){const cs=cellsOf(k,rot);
 function findPath(board,pc){
   const K=pc.k,tgt=(pc.rot*10+pc.x)*30+(pc.drop_y+4);
   const enc=(rot,x,y)=>(rot*10+x)*30+(y+4);
-  const spawn={rot:0,x:3,y:Math.min(0,pc.drop_y)};
-  if(collides(board,K,spawn.rot,spawn.x,spawn.y))return null;
-  const prev=new Map();const q=[spawn];prev.set(enc(spawn.rot,spawn.x,spawn.y),null);
-  while(q.length){const s=q.shift();const se=enc(s.rot,s.x,s.y);
-    if(se===tgt){const path=[];let e=se;
+  // If the recorded target itself collides, it is not a legal placement in our
+  // coordinate model — bail to the caller's guaranteed-legal drop synthesizer.
+  if(collides(board,K,pc.rot%4,pc.x,pc.drop_y))return null;
+  // BFS from a top spawn. Try a few spawn columns/rotations so a scoot target
+  // that the rigid x=3 spawn cannot reach is still solved.
+  const spawnCands=[{rot:0,x:3},{rot:0,x:pc.x},{rot:pc.rot%4,x:pc.x},{rot:0,x:4}];
+  for(const sp of spawnCands){
+    const sy=0;
+    if(collides(board,K,sp.rot,sp.x,sy))continue;
+    const prev=new Map();const q=[{rot:sp.rot,x:sp.x,y:sy}];
+    prev.set(enc(sp.rot,sp.x,sy),null);
+    let found=null;
+    while(q.length){const s=q.shift();const se=enc(s.rot,s.x,s.y);
+      if(se===tgt){found=se;break;}
+      const nexts=[{rot:(s.rot+1)%4,x:s.x,y:s.y},{rot:s.rot,x:s.x-1,y:s.y},
+        {rot:s.rot,x:s.x+1,y:s.y},{rot:s.rot,x:s.x,y:s.y+1}];
+      for(const n of nexts){if(n.x<0||n.x>9||n.y>24)continue;
+        const ne=enc(n.rot,n.x,n.y);if(prev.has(ne))continue;
+        if(collides(board,K,n.rot,n.x,n.y))continue;
+        prev.set(ne,se);q.push(n);}}
+    if(found!==null){const path=[];let e=found;
       while(e!==null){path.push(e);e=prev.get(e);}
       return path.reverse().map(v=>({rot:Math.floor(v/300),x:Math.floor(v/30)%10,y:v%30-4}));}
-    const nexts=[{rot:(s.rot+1)%4,x:s.x,y:s.y},{rot:s.rot,x:s.x-1,y:s.y},
-      {rot:s.rot,x:s.x+1,y:s.y},{rot:s.rot,x:s.x,y:s.y+1}]; // maneuver first, drop last
-    for(const n of nexts){if(n.x<0||n.x>9||n.y>24)continue;
-      const ne=enc(n.rot,n.x,n.y);if(prev.has(ne))continue;
-      if(collides(board,K,n.rot,n.x,n.y))continue;
-      prev.set(ne,se);q.push(n);}}
+  }
   return null;}
-function pieceOps(pc,board){
-  const col=PIECE_COL[pc.k]||PAL.wht;
-  const path=findPath(board,pc);
-  if(!path){const fin=absCells(pc.k,pc.rot,pc.x,pc.drop_y);
-    return {ops:[{erase:[],drawc:fin,col,kind:'spawn'}],finalCells:fin,col,pathErr:true};}
-  // Split BFS path into ordered maneuvers (rot/x deltas) and total downs,
-  // then re-interleave like live play: the piece falls one row per gravity
-  // tick while maneuvers execute between ticks — never a 4-column scoot.
-  const mans=[];let downs=0;
-  for(let i=1;i<path.length;i++){const a=path[i-1],b=path[i];
-    if(b.y===a.y+1&&b.rot===a.rot&&b.x===a.x)downs++;
-    else mans.push({dr:(b.rot-a.rot+4)%4?1:0,dx:b.x-a.x});}
-  const states=[{rot:0,x:3,y:path[0].y}];
-  let s={...states[0]},m=0,guard=0,downsDone=0;
-  while((s.rot!==pc.rot%4||s.x!==pc.x||s.y!==pc.drop_y)&&guard++<500){
-    let acted=false;
-    // one maneuver per step if legal at current height
-    if(m<mans.length){const mv=mans[m];
-      const t={rot:(s.rot+(mv.dr?1:0))%4,x:s.x+mv.dx,y:s.y};
-      if(!collides(board,pc.k,t.rot,t.x,t.y)){
-        s=t;states.push({...s,kind:'man'});m++;acted=true;}}
-    // gravity: drop one row if still above target depth and legal
-    if(downsDone<downs&&!collides(board,pc.k,s.rot,s.x,s.y+1)&&s.y<pc.drop_y){
-      s={...s,y:s.y+1};states.push({...s,kind:'down'});downsDone++;acted=true;}
-    if(!acted)break; // stuck: fall through to BFS-order remainder
+// Ghost-placed pieces: we have NO record of the pre-decision maneuvering (the
+// player pressed a numbered button). The honest, natural-looking model is that
+// the piece FALLS STRAIGHT DOWN until the decision is made — no rotation, no
+// lateral scoot — and only steers when a straight drop would collide, veering
+// to the DEEPER side (where it can fall further) rather than climbing into the
+// stack. Since a ghost target column is clear from the top by construction, the
+// common case is a pure vertical drop into the target column.
+function ghostFlowPath(board,k,tgtRot,tgtX,tgtGy){
+  // Ghost-placed piece: no record of pre-button maneuvering. Model the ambiguity
+  // honestly — the piece enters at the SPAWN column in its final rotation and
+  // FALLS STRAIGHT DOWN. It only moves sideways when a straight drop is blocked,
+  // and then steers to the DEEPER neighbor (more fall room) — never climbing —
+  // drifting toward the target column until it can settle at the ghost position.
+  // No rotation mid-fall; rotation is treated as already decided pre-button.
+  const rot=tgtRot;
+  const SPAWN_X=3;
+  // Enter at spawn column if legal; if spawn column top is blocked, enter at the
+  // nearest legal column toward the target (still no climbing).
+  let x=SPAWN_X,y=0;
+  if(collides(board,k,rot,x,y)){
+    let best=null,bd=1e9;
+    for(let sx=0;sx<=9;sx++){
+      if(collides(board,k,rot,sx,0))continue;
+      const d=Math.abs(sx-SPAWN_X);
+      if(d<bd){bd=d;best=sx;}
+    }
+    if(best===null)return null;
+    x=best;
   }
-  if(s.rot!==pc.rot%4||s.x!==pc.x||s.y!==pc.drop_y){
-    // rare tuck livelock: finish along original BFS order from current state
-    let idx=path.findIndex(q=>q.rot===s.rot&&q.x===s.x&&q.y===s.y);
-    if(idx<0)idx=0;
-    for(let i=idx+1;i<path.length;i++)states.push({...path[i],
-      kind:(path[i].y===path[i-1].y+1&&path[i].rot===path[i-1].rot&&path[i].x===path[i-1].x)?'down':'man'});
+  const states=[{rot,x,y}];
+  let guard=0;
+  while(guard++<400){
+    if(x===tgtX&&y===tgtGy)return states;
+    // 1) prefer straight down — this is the default ambiguous behavior
+    if(y<24&&!collides(board,k,rot,x,y+1)){y++;states.push({rot,x,y});continue;}
+    // 2) blocked below. If already at target column and target depth, done above.
+    //    Otherwise steer horizontally, but ONLY toward a column that lets us keep
+    //    falling (deeper side). Bias toward the target column when both sides are
+    //    equally deep, so it converges without climbing.
+    // 2a) Blocked below. First try to steer toward a DEEPER neighbor (keep
+    //     falling) — this is the "veer to the open side" behavior mid-fall.
+    let pick=null,pickDepth=0;
+    const order=(tgtX>=x)?[1,-1]:[-1,1];               // bias toward target
+    for(const dd of order){
+      const nx=x+dd;if(nx<0||nx>9)continue;
+      if(collides(board,k,rot,nx,y))continue;
+      let depth=0;while(y+depth+1<=24&&!collides(board,k,rot,nx,y+depth+1))depth++;
+      if(depth>pickDepth){pickDepth=depth;pick=nx;}
+    }
+    if(pick!==null){x=pick;states.push({rot,x,y});continue;}
+    // 2b) No deeper neighbor (e.g. resting on a flat floor). The decision is now
+    //     made — slide horizontally toward the target column at the same depth,
+    //     one step, as long as it does not climb and stays legal. This is the
+    //     final settle into the ghost spot.
+    if(x!==tgtX){
+      const dir=Math.sign(tgtX-x);
+      const nx=x+dir;
+      if(nx>=0&&nx<=9&&!collides(board,k,rot,nx,y)){
+        x=nx;states.push({rot,x,y});continue;}
+    }
+    // 3) stuck: can't fall, can't steer, can't slide — give up (caller BFS).
+    break;
   }
-  const ops=[];let prev=absCells(pc.k,states[0].rot,states[0].x,states[0].y);
+  return null;
+}
+// ── Game-faithful committed path (ported from index.html buildSlideCandidates)
+// The game animates a committed placement with a breadcrumb of moves D/L/R/CW/CCW:
+// drop straight from spawn, slide at the rest row, drop further, optionally
+// rotate + drop. Applying a slide at a HIGH rest row then dropping produces the
+// signature "fly up sideways and back down around the corner" motion the game is
+// designed to show. We reconstruct the move-path whose final (rot,x,dropY)
+// matches the committed placement, so playback swoops exactly like the game.
+const _MAX_SLIDE=4;
+const _ROTATE_PIECES=new Set(['T','S','Z','L','J']);
+function _isOkB(board,k,rot,x,y){return !collides(board,k,rot,x,y);}
+function gameMovePath(board,pc){
+  const k=pc.k,tR=pc.rot%4,tX=pc.x,tY=pc.drop_y;
+  const rots=_V_SHAPES[k];
+  // 1) STRAIGHT DROP candidates: spawn at target rot & each column, drop straight.
+  //    If a straight drop lands exactly on the target, that's the path (N x 'D').
+  for(let sx=0;sx<=10;sx++){
+    const cells=rots[tR];if(!cells||!cells[0])break;
+    const pw=cells[0].length;if(sx+pw>10)break;
+    if(!_isOkB(board,k,tR,sx,0))continue;
+    let gy=0;while(_isOkB(board,k,tR,sx,gy+1))gy++;
+    if(sx===tX&&gy===tY) return Array(gy).fill('D');
+  }
+  // 2) SLIDE / ROTATE candidates — mirror buildSlideCandidates exactly.
+  for(let ri=0;ri<4;ri++){
+    const cells=rots[ri];if(!cells||!cells[0]||!cells[0].length)continue;
+    const pw=cells[0].length;
+    for(let spawnX=0;spawnX<=10-pw;spawnX++){
+      if(!_isOkB(board,k,ri,spawnX,0))continue;
+      let gy=0;while(_isOkB(board,k,ri,spawnX,gy+1))gy++;
+      const dropPath=Array(gy).fill('D');
+      for(let dir=-1;dir<=1;dir+=2){
+        const move=dir<0?'L':'R';
+        let sx=spawnX;const slidePath=[...dropPath];
+        for(let step=1;step<=_MAX_SLIDE;step++){
+          const nx=sx+dir;
+          if(nx<0||nx+pw>10)break;
+          if(!_isOkB(board,k,ri,nx,gy))break;
+          sx=nx;slidePath.push(move);
+          let ny=gy;const extra=[];
+          while(_isOkB(board,k,ri,sx,ny+1)){ny++;extra.push('D');}
+          if(ri===tR&&sx===tX&&ny===tY) return [...slidePath,...extra];
+          if(_ROTATE_PIECES.has(k)){
+            for(const [rMove,rDelta] of [['CW',1],['CCW',3]]){
+              const nr=(ri+rDelta)%4;const nc=rots[nr];
+              if(!nc||!nc[0]||!nc[0].length)continue;
+              if(!_isOkB(board,k,nr,sx,ny))continue;
+              let ry=ny;const rd=[];
+              while(_isOkB(board,k,nr,sx,ry+1)){ry++;rd.push('D');}
+              if(nr===tR&&sx===tX&&ry===tY) return [...slidePath,...extra,rMove,...rd];
+            }
+          }
+        }
+      }
+    }
+  }
+  return null; // no game-model path matched -> caller falls back
+}
+// Convert a move-path (from a known spawn) into positional states for rendering.
+// We must recover the spawn the path started from: replay forward from each
+// legal spawn until the moves reproduce the target. Simpler: re-derive states by
+// walking the moves from the spawn that the builder used. Since the builder
+// embeds the spawn implicitly, we reconstruct by simulating the SAME loop and
+// capturing states for the matching candidate.
+function gameStatesFor(board,pc){
+  const k=pc.k,tR=pc.rot%4,tX=pc.x,tY=pc.drop_y;
+  const rots=_V_SHAPES[k];
+  const walk=(rot0,x0,moves)=>{
+    let rot=rot0,x=x0,y=0;const st=[{rot,x,y}];
+    for(const m of moves){
+      if(m==='D')y++;
+      else if(m==='L')x--;
+      else if(m==='R')x++;
+      else if(m==='CW')rot=(rot+1)%4;
+      else if(m==='CCW')rot=(rot+3)%4;
+      st.push({rot,x,y});
+    }
+    return st;
+  };
+  // straight drops
+  for(let sx=0;sx<=10;sx++){
+    const cells=rots[tR];if(!cells||!cells[0])break;
+    const pw=cells[0].length;if(sx+pw>10)break;
+    if(!_isOkB(board,k,tR,sx,0))continue;
+    let gy=0;while(_isOkB(board,k,tR,sx,gy+1))gy++;
+    if(sx===tX&&gy===tY) return walk(tR,sx,Array(gy).fill('D'));
+  }
+  for(let ri=0;ri<4;ri++){
+    const cells=rots[ri];if(!cells||!cells[0]||!cells[0].length)continue;
+    const pw=cells[0].length;
+    for(let spawnX=0;spawnX<=10-pw;spawnX++){
+      if(!_isOkB(board,k,ri,spawnX,0))continue;
+      let gy=0;while(_isOkB(board,k,ri,spawnX,gy+1))gy++;
+      const dropPath=Array(gy).fill('D');
+      for(let dir=-1;dir<=1;dir+=2){
+        const move=dir<0?'L':'R';
+        let sx=spawnX;const slidePath=[...dropPath];
+        for(let step=1;step<=_MAX_SLIDE;step++){
+          const nx=sx+dir;if(nx<0||nx+pw>10)break;
+          if(!_isOkB(board,k,ri,nx,gy))break;
+          sx=nx;slidePath.push(move);
+          let ny=gy;const extra=[];
+          while(_isOkB(board,k,ri,sx,ny+1)){ny++;extra.push('D');}
+          if(ri===tR&&sx===tX&&ny===tY) return walk(ri,spawnX,[...slidePath,...extra]);
+          if(_ROTATE_PIECES.has(k)){
+            for(const [rMove,rDelta] of [['CW',1],['CCW',3]]){
+              const nr=(ri+rDelta)%4;const nc=rots[nr];
+              if(!nc||!nc[0]||!nc[0].length)continue;
+              if(!_isOkB(board,k,nr,sx,ny))continue;
+              let ry=ny;const rd=[];
+              while(_isOkB(board,k,nr,sx,ry+1)){ry++;rd.push('D');}
+              if(nr===tR&&sx===tX&&ry===tY) return walk(ri,spawnX,[...slidePath,...extra,rMove,...rd]);
+            }
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+function statesToOps(states,col){
+  const ops=[];let prev=absCells2(states[0]);
   ops.push({erase:[],drawc:prev,col,kind:'spawn'});
-  for(let i=1;i<states.length;i++){const st=states[i];
-    const cur=absCells(pc.k,st.rot,st.x,st.y);
+  for(let i=1;i<states.length;i++){const a=states[i-1],b=states[i];
+    const kind=(b.y===a.y+1&&b.rot===a.rot&&b.x===a.x)?'down':'man';
+    const cur=absCells2(b);
     const curSet=new Set(cur.map(p=>p[0]*10+p[1]));
     const prevSet=new Set(prev.map(p=>p[0]*10+p[1]));
     ops.push({erase:prev.filter(p=>!curSet.has(p[0]*10+p[1])),
-      drawc:cur.filter(p=>!prevSet.has(p[0]*10+p[1])),col,kind:st.kind});
+      drawc:cur.filter(p=>!prevSet.has(p[0]*10+p[1])),col,kind});
+    prev=cur;}
+  return {ops,finalCells:prev};
+}
+let _soK=null;
+function absCells2(s){return absCells(_soK,s.rot,s.x,s.y);}
+
+function pieceOps(pc,board,isGhost){
+  const col=PIECE_COL[pc.k]||PAL.wht;
+  // Reproduce the GAME's committed animation (fly up/over/around) for every
+  // placement — this is how index.html animates a committed piece. We rebuild
+  // the exact move-path whose final (rot,x,dropY) equals the committed spot.
+  _soK=pc.k;
+  const gstates=gameStatesFor(board,pc);
+  if(gstates&&gstates.length){
+    const {ops,finalCells}=statesToOps(gstates,col);
+    return {ops,finalCells,col,pathErr:false};
+  }
+  const path=findPath(board,pc);
+  if(!path){
+    // No soft-drop path to this placement. The game DOES allow such placements,
+    // so this is not an error to paper over — we must NOT invent a fake route,
+    // because the judge evaluates the player's real movement decisions. Draw the
+    // piece directly at its final cells (instant, no fabricated travel); it will
+    // color WHITE, honestly flagging "reached by a move our BFS can't reproduce."
+    const fin=absCells(pc.k,pc.rot%4,pc.x,pc.drop_y);
+    return {ops:[{erase:[],drawc:fin,col,kind:'spawn'}],finalCells:fin,col,pathErr:true};}
+  // Render the BFS path DIRECTLY. It is already a complete, ordered,
+  // collision-free sequence of single-step moves from spawn to the resting
+  // position — including tucks (slide UNDER an overhang only at the correct
+  // depth). An earlier "interleave rebuild" tried to spread maneuvers across
+  // the fall for a prettier strafe, but it reapplied a tuck's final slide at a
+  // height where it collided, got stuck, and left the piece parked short of its
+  // target — which then locked elsewhere and greyed. Direct rendering can't
+  // desync from the real placement: the path's last state IS (rot,x,drop_y).
+  const ops=[];
+  let prev=absCells(pc.k,path[0].rot,path[0].x,path[0].y);
+  ops.push({erase:[],drawc:prev,col,kind:'spawn'});
+  for(let i=1;i<path.length;i++){const a=path[i-1],b=path[i];
+    const kind=(b.y===a.y+1&&b.rot===a.rot&&b.x===a.x)?'down':'man';
+    const cur=absCells(pc.k,b.rot,b.x,b.y);
+    const curSet=new Set(cur.map(p=>p[0]*10+p[1]));
+    const prevSet=new Set(prev.map(p=>p[0]*10+p[1]));
+    ops.push({erase:prev.filter(p=>!curSet.has(p[0]*10+p[1])),
+      drawc:cur.filter(p=>!prevSet.has(p[0]*10+p[1])),col,kind});
     prev=cur;}
   return {ops,finalCells:prev,col,pathErr:false};
 }
@@ -987,13 +1205,14 @@ function ghostCandidates(board,ti){
   return out;}
 function drawGhost(cells,num){
   for(const [r,c] of cells){grid[r][c]=String(num);colr[r][c]=PAL.gry;bgc[r][c]='#2A2A2A';}}
-function panel(n,ms,hps,total,sc,lv,ln,opt){
+function panel(n,ms,hps,total,sc,lv,ln,opt,holes){
   for(let r=0;r<25;r++)for(let c=12;c<COLS;c++)eraseCell(r,c);
   put(1,12,'CELLTOWER VERIFY',PAL.lite);
   put(3,12,'PIECE '+String(n+1).padStart(4,'0')+'/'+total,PAL.lite);
   put(5,12,'SCORE '+(sc|0),PAL.wht);
   put(6,12,'LEVEL '+lv,PAL.cyn);
   put(7,12,'LINES '+ln,PAL.cyn);
+  put(8,12,'HOLES '+(holes|0),(holes>0)?PAL.red:PAL.grn);
   put(9,12,'MS '+ms,PAL.yel);
   put(11,12,'HPS '+(hps===null?'N/A':hps.toFixed(2)),
     hps===null?PAL.gry:(hps>=0.72?PAL.grn:hps>=0.5?PAL.yel:PAL.red));
@@ -1003,7 +1222,7 @@ function panel(n,ms,hps,total,sc,lv,ln,opt){
 function redrawField(colorBoard){
   for(let r=0;r<25;r++)for(let c=0;c<10;c++){
     if(colorBoard[r*10+c])blockCell(r,c,colorBoard[r*10+c]);else eraseCell(r,c);}
-  for(let r=0;r<25;r++)put(r,10,'\u2588',PAL.wht);
+  for(let r=0;r<25;r++)put(r,10,'\u2502',PAL.wht,PAL.blk); // right-edge bar
 }
 async function run(fast){
   const txt=document.getElementById('stream').value;
@@ -1028,7 +1247,11 @@ async function run(fast){
   // forensic + receipt accumulators
   const suspects=[];let strategicN=0,optN=0,towresLines=0;
   RECEIPT_ROWS.length=0;
-  let hfStreak=0,hfBest=0,neverHoled=true;
+  let hfStreak=0,hfBest=0,neverHoled=true,curHoles=0;
+  // Game playback: white border. Playfield is columns 0-9; a single white
+  // vertical bar in column 10 delineates its right edge (no offset, no outline).
+  setBorder('#FFFFFF');
+  COL_OFFSET=0;
   clr(PAL.blk);redrawField(colorBoard);
   RECEIPT.playerName=p.playerName;RECEIPT.meta=p;RECEIPT.stream=txt;
   RECEIPT.verify=v;RECEIPT.suspects=suspects;
@@ -1040,7 +1263,7 @@ async function run(fast){
     for(let i=0;i<gcs.length;i++)
       if(gcs[i].rot===pc.rot%4&&gcs[i].x===pc.x&&gcs[i].gy===pc.drop_y){opt=i+1;break;}
     if(opt>0)optN++;else strategicN++;
-    const {ops,finalCells,col,pathErr}=pieceOps(pc,board);
+    const {ops,finalCells,col,pathErr}=pieceOps(pc,board,opt>0);
     // Move mark for the receipt column:
     //   '1'..'4' = matched ghost option; 'S' = strategic (no match).
     //   For strategic slides that reverse direction (end opposite the first
@@ -1063,35 +1286,124 @@ async function run(fast){
       else moveMark='S';
     }
     RECEIPT_ROWS.push({piece:n+1,mark:moveMark,col,k:pc.k});
-    const gravMs=Math.max(F,(48-4*Math.min(11,level))*F);
-    // natural time at true game rates: downs at gravity, maneuvers at 60fps
-    let natural=0;for(let i=1;i<ops.length;i++)natural+=ops[i].kind==='down'?gravMs:F;
-    natural=Math.max(F,natural);
-    let scale=1,pauseMs=0;
-    if(pc.ms<natural)scale=pc.ms/natural;             // soft-drop / fast play
-    else if(pc.ms>natural*1.25+1000)pauseMs=pc.ms-natural; // suspicious pause
-    else scale=pc.ms/natural;                          // mild stretch, honest fit
+    // NES per-level gravity (ms per row) — pulled verbatim from the game's
+    // NES_SP table. Level 1 = 800ms/row (very slow), ramping up per level.
+    const NES_SP=[800,717,633,550,467,383,300,217,133,100,83,83,83,67,67,67,50,50,50,33,33,33,33,33,33,33,33,33,33,17];
+    const gravMs=NES_SP[Math.min(level-1,NES_SP.length-1)];
+    // ── two-phase descent scheduler (pure timing over the FIXED op stream) ──
+    // The ops[] sequence (the PETSCII travel) is invariant. We only compute a
+    // per-op DELAY. Model: the piece cruises slowly, then at the COMMITMENT
+    // POINT — the last instant from which dropping at 16.6ms/row still arrives
+    // on time — it drops fast (F=16.6ms/row) so total elapsed == recorded ms.
+    // 'down' ops are the descent rows; maneuvers (rot/shift) cost F each and,
+    // where vertical room allows, ride within the slow phase without outpacing
+    // gravity. If we're ever behind schedule, delay clamps to 0 (never negative,
+    // never reorder/drop bytes). Very fast player -> commit immediately.
+    const delays=new Array(ops.length).fill(0);
+    {
+      // index the 'down' ops; each committed row costs exactly F.
+      const downIdx=[];
+      for(let i=1;i<ops.length;i++)if(ops[i].kind==='down')downIdx.push(i);
+      const nDown=downIdx.length;
+      const manIdx=[];
+      for(let i=1;i<ops.length;i++)if(ops[i].kind!=='down')manIdx.push(i);
+      const budget=Math.max(F,pc.ms);
+      // Fast phase grows from the END: committing at down-row k (0-based from
+      // the last) costs (k+1)*F. Find the largest fastRows whose cost fits the
+      // budget minus the minimum maneuver cost — the rest is the slow phase.
+      const manCost=manIdx.length*F;              // maneuvers always cost F each
+      let fastRows=nDown;                          // default: whole drop is fast
+      // slow phase must cover the non-fast downs + all maneuvers within
+      // (budget - fastRows*F). Choose smallest fastRows s.t. slow time >= its
+      // natural minimum; equivalently largest slow time we can afford.
+      // Commitment: fastRows = min(nDown, ceil((budget-manCost)/F) shortfall)
+      // Simpler exact form: fastCost = fastRows*F. We want the LAST possible
+      // commit, i.e. the SMALLEST fastRows such that remaining slow time is
+      // still >= 0 after paying manCost and slow-down minimum (F each).
+      // slowDowns = nDown-fastRows ; slowMin=(slowDowns)*F + manCost.
+      // Need budget >= slowMin + fastRows*F  => budget >= nDown*F + manCost
+      // which is the survival floor. If budget below floor -> all fast (clamp).
+      const floor=nDown*F+manCost;               // survival floor (all-fast)
+      // Maneuvers always cost exactly F (one frame) and are emitted first along
+      // the path; they consume manCost of the budget. The remaining time is for
+      // the descent: nDown rows. Split the descent into a SLOW phase (early
+      // rows) and a FAST phase (final rows at exactly F). Commitment point =
+      // the last row from which F/row still lands on time.
+      //   fastRows*F + slowRows*slowPerRow == budget - manCost, slowPerRow>=F.
+      // Put ALL descent rows in slow phase, then pull rows into the fast phase
+      // from the bottom until the slow pool can no longer keep slowPerRow>=F.
+      // The slow cruise runs at the LEVEL'S GRAVITY RATE (gravMs/row) — a piece
+      // never falls faster than gravity during the cruise, so level 1 (800ms/row)
+      // visibly creeps. The number of slow rows is whatever the recorded time can
+      // afford at that rate; the remaining rows snap fast at the end. If the
+      // player took MORE time than a full gravity descent, all rows are slow and
+      // the extra shows as pause. If they took LESS (soft-dropped), fewer slow
+      // rows / more fast rows — the drop is legitimately quicker.
+      const descentBudget=Math.max(0,budget-manCost);
+      let slowRows,fastRowsN,slowPerRow;
+      if(descentBudget<=nDown*F){
+        // faster than even the animation floor: everything fast
+        slowRows=0; fastRowsN=nDown; slowPerRow=0;
+      } else {
+        slowPerRow=gravMs;                              // cruise at true gravity
+        // how many gravity-rate rows fit in the budget (rest snap fast at ~5ms)
+        slowRows=Math.min(nDown, Math.floor(descentBudget/gravMs));
+        // ensure a visible fast tail only when there IS spare (else all slow)
+        if(slowRows>=nDown){ slowRows=nDown; }          // full slow descent
+        fastRowsN=nDown-slowRows;
+        // distribute any remainder so total still equals the recorded budget:
+        // put leftover ms as extra dwell spread over the slow rows.
+        const used=slowRows*gravMs+fastRowsN*5;
+        const leftover=descentBudget-used;
+        if(slowRows>0 && leftover>0) slowPerRow=gravMs+leftover/slowRows;
+      }
+      // Maneuver (rotate/scoot) delay draws the judge's eye by how far the move
+      // departs from a standardized ghost option — playback emphasis, not realism:
+      //   ghost (1-4): normal strafe timing (F/move)
+      //   strategic S: 8ms/move — flag "not a standard choice, look here"
+      //   reversing slide a-d: 100ms/move — hardest/most suspicious, watch closely
+      let manDelay;
+      if(/[1-4]/.test(moveMark)) manDelay=F;
+      else if(/[abcd]/.test(moveMark)) manDelay=100;
+      else manDelay=8;                                    // 'S'
+      for(const i of manIdx) delays[i]=manDelay;
+      // descent: top rows slow-cruise, bottom rows fast-drop at 5ms/row (was 0)
+      for(let k=0;k<downIdx.length;k++){
+        delays[downIdx[k]] = (k<slowRows)?slowPerRow:5;
+      }
+      var natural=floor;
+      // Pause flag = IMPLAUSIBLE total time. The player's plausible ceiling is
+      // set by the LEVEL GRAVITY rate (how long the piece could ride down before
+      // topping out), not the fast-drop floor. Flag only when recorded time
+      // exceeds that gravity-rate ceiling by a wide margin (walked-away case).
+      const ceiling=nDown*gravMs+manCost;
+      var pauseMs=(budget>ceiling*1.25+1000)?(budget-ceiling):0;
+    }
     const hpsNow=_vComputeHPS(timings.slice(0,n),complx.slice(0,n));
-    panel(n,pc.ms,hpsNow,p.pieces.length,shownScore,level,lines,opt>0?opt:-1);
+    panel(n,pc.ms,hpsNow,p.pieces.length,shownScore,level,lines,opt>0?opt:-1,curHoles);
     if(pathErr)put(19,12,'PATHERR '+(n+1),PAL.red);
     if(pauseMs>0){put(17,12,'PAUSE? +'+(pauseMs/1000).toFixed(1)+'S',PAL.red);
       suspects.push({piece:n+1,excess:pauseMs});}
     if(opt>0){const g=gcs[opt-1];drawGhost(absCells(pc.k,g.rot,g.x,g.gy),opt);}
+    // Emit the FIXED op stream; apply precomputed delays. Delay never goes
+    // negative — if behind schedule we emit immediately (no reorder/no drop).
     for(let i=0;i<ops.length;i++){const op=ops[i];
       for(const [r,c] of op.erase)if(!board[r*10+c])eraseCell(r,c);
       for(const [r,c] of op.drawc)if(!board[r*10+c])blockCell(r,c,col);
       draw();
-      if(!fast&&i>0)await sleep(((op.kind==='down'?gravMs:F)*scale)/SPEED);}
-    if(!fast&&pauseMs>0)await sleep(Math.min(pauseMs,2500)/SPEED); // note, capped
+      if(!fast&&i>0){const d=Math.max(0,delays[i])/SPEED;if(d>0)await sleep(d);}}
     const cleared=_vApply(board,ti,pc.rot,pc.x,pc.drop_y);
-    if(cleared===4)towresLines+=4;
+    if(cleared===4){towresLines+=4;if(!fast)towresSound();}
     // hole tracking for the receipt's hole-free streak
     let holes=0;
     for(let c=0;c<10;c++){let seen=false;
       for(let r=0;r<25;r++){if(board[r*10+c])seen=true;
         else if(seen)holes++;}}
     if(holes>0){neverHoled=false;hfStreak=0;}else{hfStreak++;if(hfStreak>hfBest)hfBest=hfStreak;}
-    for(const [r,c] of finalCells)colorBoard[r*10+c]=col;
+    curHoles=holes;
+    // pathErr => reached by a move our BFS can't reproduce: color it WHITE to
+    // honestly flag the teleport; otherwise use the piece's true color.
+    {const cc=pathErr?PAL.wht:col;for(const [r,c] of finalCells)colorBoard[r*10+c]=cc;}
     if(cleared>0){
       const nb=new Array(250).fill(null);const keep=[];
       {const pre=colorBoard.slice();let full;
@@ -1111,7 +1423,7 @@ async function run(fast){
     redrawField(colorBoard);
     const hps=_vComputeHPS(timings,complx);
     if(n===p.pieces.length-1)shownScore=p.score;
-    panel(n,pc.ms,hps,p.pieces.length,shownScore,level,lines,opt>0?opt:-1);
+    panel(n,pc.ms,hps,p.pieces.length,shownScore,level,lines,opt>0?opt:-1,curHoles);
     if(pauseMs>0)put(17,12,'PAUSE? +'+(pauseMs/1000).toFixed(1)+'S',PAL.red);
     draw();
     allOps.push({pc,ops,col,cleared,opt,mark:moveMark,boardAfter:colorBoard.slice()});
