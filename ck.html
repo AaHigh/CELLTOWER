@@ -88,73 +88,82 @@ function _fromB92(str) {
   return n;
 }
 
-// Encode arbitrary bytes (Uint8Array) as a fixed-width B92 string via BigInt.
-function _bytesToB92(bytes, width) {
-
 // ═════════════════════════════════════════════════════════════════════════════
-// TOWRES MINIMAL INTERPRETER PRIMITIVES — VISUAL MEMORY SUBSTRATE (ALPHA ROOT)
-// ═════════════════════════════════════════════════════════════════════════════
-// This is the foundational memory model for the platform.
-// All game logic should eventually run on a well-defined interpreter.
-// These short, clean operations are the stable primitives of that interpreter.
-//
-// - SCR + COL (2000 bytes) = ground truth game state (visual substrate)
-// - poke/peek allow direct manipulation (including temporary/noisy use as workspace)
-// - reconcile() produces clean, auditable frames after noisy periods
-// - Normal drawing through put() stays automatically synchronized
-// - Designed to be the minimal root that future extensions reduce back to
+// C64 SUBSTRATE — the ONLY game-state store. Two flat 1000-cell (40×25)
+// globals, single letter on purpose:
+//   S = characters   (one glyph per cell)
+//   C = color byte   (high nybble = bg, low nybble = fg, both real C64
+//                      indices 0-15 — packed exactly like real color RAM
+//                      would if it stored two nybbles instead of one)
+// Everything reads/writes S and C directly. There is no second copy.
 // ═════════════════════════════════════════════════════════════════════════════
 
-const SCR = new Uint8Array(1000);
-const COL = new Uint8Array(1000);
-let _dirty = new Set();
+// Authentic C64 16-color palette (VICE/Pepto reference values), index =
+// native C64 color code. The game's own PAL can use whatever richer hex
+// colors it wants for calling poke()/put() — toC64Index() quantizes any
+// hex/PAL-name/index down to the nearest of these 16 before it's packed.
+const C64_PALETTE = [
+  '#000000','#FFFFFF','#68372B','#70A4B2',
+  '#6F3D86','#588D43','#352879','#B8C76F',
+  '#6F4F25','#433900','#9A6759','#444444',
+  '#6C6C6C','#9AD284','#6C5EB5','#959595'
+];
+const C64_NAMES = [
+  'black','white','red','cyan','purple','green','blue','yellow',
+  'orange','brown','lightred','darkgrey','grey','lightgreen','lightblue','lightgrey'
+];
 
-function poke(x, y, code, fg, bg = 0) {
+const _c64Cache = new Map();
+// Accepts a C64 index (0-15) already, a PAL key ('wht','grn',...), a raw hex
+// string ('#7C70DA'), or null/undefined (→ black). Always returns 0-15.
+function toC64Index(color) {
+  if (typeof color === 'number') return color & 15;
+  if (color == null) return 0;
+  if (_c64Cache.has(color)) return _c64Cache.get(color);
+  let hex = color;
+  if (color[0] !== '#') hex = (typeof PAL !== 'undefined' && PAL[color]) || '#000000';
+  const r = parseInt(hex.slice(1, 3), 16) || 0;
+  const g = parseInt(hex.slice(3, 5), 16) || 0;
+  const b = parseInt(hex.slice(5, 7), 16) || 0;
+  let best = 0, bestD = Infinity;
+  for (let i = 0; i < 16; i++) {
+    const ph = C64_PALETTE[i];
+    const pr = parseInt(ph.slice(1, 3), 16), pg = parseInt(ph.slice(3, 5), 16), pb = parseInt(ph.slice(5, 7), 16);
+    const d = (r - pr) ** 2 + (g - pg) ** 2 + (b - pb) ** 2;
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  _c64Cache.set(color, best);
+  return best;
+}
+
+const S = new Array(1000).fill(' ');
+const C = new Uint8Array(1000);
+const BLOCK = '\uE000';   // sentinel glyph: delineated placed-piece block (see blockCell)
+
+// bg omitted → falls back to the current screen background (SCRBG), so a
+// plain put() with no bg still looks right against whatever screen it's on.
+function poke(x, y, ch, fg, bg) {
   if (x < 0 || x > 39 || y < 0 || y > 24) return false;
   const i = y * 40 + x;
-  SCR[i] = code & 255;
-  COL[i] = ((bg & 15) << 4) | (fg & 15);   // high nybble = bg, low nybble = fg
-  _dirty.add(i);
+  S[i] = ch;
+  C[i] = (toC64Index(bg === undefined ? SCRBG : bg) << 4) | toC64Index(fg);
   return true;
 }
 
 function peek(x, y) {
-  if (x < 0 || x > 39 || y < 0 || y > 24) return {code: 32, color: 0};
-  const i = y * 40 + x;
-  return {code: SCR[i], color: COL[i]};
+  if (x < 0 || x > 39 || y < 0 || y > 24) return {ch: ' ', fg: 0, bg: 0};
+  const i = y * 40 + x, byte = C[i];
+  return {ch: S[i], fg: byte & 15, bg: (byte >> 4) & 15};
 }
 
-function print(x, y, str, color) {
-  for (let i = 0; i < str.length && (x + i) < 40; i++) {
-    poke(x + i, y, str.charCodeAt(i), color);
-  }
+function clear(bg) {
+  const bi = toC64Index(bg === undefined ? SCRBG : bg);
+  S.fill(' ');
+  C.fill((bi << 4) | bi);
 }
 
-function fill(x, y, w, h, code, color) {
-  for (let yy = 0; yy < h; yy++) {
-    for (let xx = 0; xx < w; xx++) {
-      poke(x + xx, y + yy, code, color);
-    }
-  }
-}
-
-function clear(bg = 0) {
-  SCR.fill(32);
-  COL.fill(bg & 15);
-  _dirty.clear();
-}
-
-function reconcile() {
-  if (_dirty.size === 0) return;
-  for (const i of _dirty) {
-    const y = (i / 40) | 0;
-    const x = i % 40;
-    if (typeof put === 'function') {
-      put(y, x, SCR[i], COL[i]);
-    }
-  }
-  _dirty.clear();
-}
+// Encode arbitrary bytes (Uint8Array) as a fixed-width B92 string via BigInt.
+function _bytesToB92(bytes, width) {
   let v = 0n;
   for (const b of bytes) v = (v << 8n) | BigInt(b);
   let s = '';
@@ -813,25 +822,14 @@ const PAL={bg:'#3E31A2',ink:'#7C70DA',lite:'#7C70DA',wht:'#FFFFFF',
  grn:'#54FC54',red:'#FC5454',org:'#A85400',mag:'#A800A8',gry:'#A8A8A8',
  dgry:'#545454',lgry:'#CCCCCC',cyn:'#54FCFC',yel:'#FCFC00',blu:'#5454FC',
  lblu:'#B19EFF',blk:'#000000',lred:'#FC5454',lgrn:'#54FC54',brn:'#A85400'}
-let grid,colr,bgc,SCRBG=PAL.bg;
+let SCRBG=PAL.bg;
 function setBorder(c){const w=document.getElementById('screenwrap');if(w)w.style.background=c;}
-function clr(bg){SCRBG=bg||PAL.bg;
-  grid=Array.from({length:ROWS},()=>Array(COLS).fill(' '));
-  colr=Array.from({length:ROWS},()=>Array(COLS).fill(PAL.ink));
-  bgc=Array.from({length:ROWS},()=>Array(COLS).fill(null));draw();}
+function clr(bg){SCRBG=bg||PAL.bg;clear(SCRBG);draw();}
 function put(r, c, s, col, bg) {
   if (r < 0 || r >= ROWS) return;
-
   for (let i = 0; i < s.length && c + i < COLS; i++) {
     if (c + i < 0) continue;
-
-    // Keep memory substrate in sync
-    poke(c + i, r, s.charCodeAt(i), col, bg);
-
-    // Original visual layer updates (required for rendering)
-    grid[r][c + i] = s[i];
-    colr[r][c + i] = col || PAL.ink;
-    bgc[r][c + i] = bg || null;
+    poke(c + i, r, s[i], col, bg);
   }
 }
 const C64BOX={"─":[0,0,0,0,255,0,0,0],"━":[0,0,0,255,255,0,0,0],"│":[16,16,16,16,16,16,16,16],"┌":[0,0,0,0,31,16,16,16],"┐":[0,0,0,0,240,16,16,16],"└":[16,16,16,16,31,0,0,0],"┘":[16,16,16,16,240,0,0,0],"▔":[255,0,0,0,0,0,0,0],"▁":[0,0,0,0,0,0,0,255],"▏":[128,128,128,128,128,128,128,128],"▕":[1,1,1,1,1,1,1,1]};
@@ -839,18 +837,19 @@ function glyph(ch){if(typeof C64BOX!=="undefined"&&C64BOX[ch])return C64BOX[ch];
 let COL_OFFSET=0;              // shift whole screen; -1 during game playback
 function drawCell(r,c){
   const x0=(c+COL_OFFSET)*GW*PX,y0=r*GH*PX;
-  const bg=bgc[r][c];
-  // cell-delineation block: fill + black line bottom+right (grid look)
-  if(bg&&typeof bg==='string'&&bg.startsWith('CELL:')){
-    const col=bg.slice(5);cx.fillStyle=col;cx.fillRect(x0,y0,GW*PX,GH*PX);
+  const i=r*40+c,byte=C[i];
+  const bgHex=C64_PALETTE[(byte>>4)&15],fgHex=C64_PALETTE[byte&15];
+  const ch=S[i];
+  // BLOCK sentinel: delineated placed-piece block (fill + black line bottom+right)
+  if(ch===BLOCK){
+    cx.fillStyle=fgHex;cx.fillRect(x0,y0,GW*PX,GH*PX);
     cx.fillStyle='#000';cx.fillRect(x0,y0+(GH-1)*PX,GW*PX,PX);
     cx.fillRect(x0+(GW-1)*PX,y0,PX,GH*PX);return;}
-  if(bg){cx.fillStyle=bg;cx.fillRect(x0,y0,GW*PX,GH*PX);}
-  const ch=grid[r][c];
+  cx.fillStyle=bgHex;cx.fillRect(x0,y0,GW*PX,GH*PX);
   if(ch===' '||ch===undefined)return;
-  if(ch==='\u2588'){cx.fillStyle=colr[r][c];cx.fillRect(x0,y0,GW*PX,GH*PX);return;}
+  if(ch==='\u2588'){cx.fillStyle=fgHex;cx.fillRect(x0,y0,GW*PX,GH*PX);return;}
   const g=glyph(ch);if(!g){return;}
-  cx.fillStyle=colr[r][c];
+  cx.fillStyle=fgHex;
   for(let py=0;py<8;py++){const row=g[py];
     for(let pxi=0;pxi<8;pxi++){if(row&(0x80>>pxi))
       cx.fillRect(x0+pxi*PX,y0+py*PX,PX,PX);}}
@@ -951,8 +950,8 @@ let lastOps=null,SPEED=1;
 document.querySelectorAll('.spd').forEach(b=>b.onclick=()=>{SPEED=+b.dataset.s;});
 const PIECE_COL={I:PAL.cyn,O:PAL.yel,T:PAL.mag,S:PAL.grn,Z:PAL.red,J:'#4F4FE0',L:PAL.org};
 // canvas block: fill + delineation lines (bottom, right)
-function blockCell(r,c,col){grid[r][c]=' ';colr[r][c]=col;bgc[r][c]='CELL:'+col;}
-function eraseCell(r,c){grid[r][c]=' ';colr[r][c]=PAL.ink;bgc[r][c]=null;}
+function blockCell(r,c,col){poke(c,r,BLOCK,col);}
+function eraseCell(r,c){poke(c,r,' ',PAL.ink);}
 function cellsOf(k,rot){return _V_SHAPES[k][rot];}
 function absCells(k,rot,x,y){const out=[];const cs=cellsOf(k,rot);
   for(let r=0;r<cs.length;r++)for(let c=0;c<cs[r].length;c++)
@@ -1404,7 +1403,7 @@ function ghostCandidates(board,ti){
     fp.forEach(k=>used.add(k));out.push(cd);}
   return out;}
 function drawGhost(cells,num){
-  for(const [r,c] of cells){grid[r][c]=String(num);colr[r][c]=PAL.gry;bgc[r][c]='#2A2A2A';}}
+  for(const [r,c] of cells){poke(c,r,String(num),PAL.gry,'#2A2A2A');}}
 function panel(n,ms,hps,total,sc,lv,ln,opt,holes){
   for(let r=0;r<25;r++)for(let c=12;c<COLS;c++)eraseCell(r,c);
   put(1,12,'CELLTOWER VERIFY',PAL.lite);
