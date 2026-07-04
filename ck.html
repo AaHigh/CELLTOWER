@@ -1437,8 +1437,8 @@ async function run(fast){
     +(v.error?'\n'+v.error:'');
   const p=_parseStreamForReplay(txt);
   if(!p){st.textContent+='\nparse failed';return;}
-  await boot(fast);
   clr();
+  await boot(fast);
   const board=new Uint8Array(250);
   let colorBoard=new Array(250).fill(null);
   const PO=_V_PIECE_ORDER;const F=1000/60;
