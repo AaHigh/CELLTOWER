@@ -90,6 +90,71 @@ function _fromB92(str) {
 
 // Encode arbitrary bytes (Uint8Array) as a fixed-width B92 string via BigInt.
 function _bytesToB92(bytes, width) {
+
+// ═════════════════════════════════════════════════════════════════════════════
+// TOWRES MINIMAL INTERPRETER PRIMITIVES — VISUAL MEMORY SUBSTRATE (ALPHA ROOT)
+// ═════════════════════════════════════════════════════════════════════════════
+// This is the foundational memory model for the platform.
+// All game logic should eventually run on a well-defined interpreter.
+// These short, clean operations are the stable primitives of that interpreter.
+//
+// - SCR + COL (2000 bytes) = ground truth game state (visual substrate)
+// - poke/peek allow direct manipulation (including temporary/noisy use as workspace)
+// - reconcile() produces clean, auditable frames after noisy periods
+// - Normal drawing through put() stays automatically synchronized
+// - Designed to be the minimal root that future extensions reduce back to
+// ═════════════════════════════════════════════════════════════════════════════
+
+const SCR = new Uint8Array(1000);
+const COL = new Uint8Array(1000);
+let _dirty = new Set();
+
+function poke(x, y, code, color) {
+  if (x < 0 || x > 39 || y < 0 || y > 24) return false;
+  const i = y * 40 + x;
+  SCR[i] = code & 255;
+  COL[i] = color & 15;
+  _dirty.add(i);
+  return true;
+}
+
+function peek(x, y) {
+  if (x < 0 || x > 39 || y < 0 || y > 24) return {code: 32, color: 0};
+  const i = y * 40 + x;
+  return {code: SCR[i], color: COL[i]};
+}
+
+function print(x, y, str, color) {
+  for (let i = 0; i < str.length && (x + i) < 40; i++) {
+    poke(x + i, y, str.charCodeAt(i), color);
+  }
+}
+
+function fill(x, y, w, h, code, color) {
+  for (let yy = 0; yy < h; yy++) {
+    for (let xx = 0; xx < w; xx++) {
+      poke(x + xx, y + yy, code, color);
+    }
+  }
+}
+
+function clear(bg = 0) {
+  SCR.fill(32);
+  COL.fill(bg & 15);
+  _dirty.clear();
+}
+
+function reconcile() {
+  if (_dirty.size === 0) return;
+  for (const i of _dirty) {
+    const y = (i / 40) | 0;
+    const x = i % 40;
+    if (typeof put === 'function') {
+      put(y, x, SCR[i], COL[i]);
+    }
+  }
+  _dirty.clear();
+}
   let v = 0n;
   for (const b of bytes) v = (v << 8n) | BigInt(b);
   let s = '';
@@ -755,6 +820,7 @@ function clr(bg){SCRBG=bg||PAL.bg;
   colr=Array.from({length:ROWS},()=>Array(COLS).fill(PAL.ink));
   bgc=Array.from({length:ROWS},()=>Array(COLS).fill(null));draw();}
 function put(r,c,s,col,bg){if(r<0||r>=ROWS)return;
+  poke(c, r, ch, col);
   for(let i=0;i<s.length&&c+i<COLS;i++){if(c+i<0)continue;
     grid[r][c+i]=s[i];colr[r][c+i]=col||PAL.ink;bgc[r][c+i]=bg||null;}}
 const C64BOX={"─":[0,0,0,0,255,0,0,0],"━":[0,0,0,255,255,0,0,0],"│":[16,16,16,16,16,16,16,16],"┌":[0,0,0,0,31,16,16,16],"┐":[0,0,0,0,240,16,16,16],"└":[16,16,16,16,31,0,0,0],"┘":[16,16,16,16,240,0,0,0],"▔":[255,0,0,0,0,0,0,0],"▁":[0,0,0,0,0,0,0,255],"▏":[128,128,128,128,128,128,128,128],"▕":[1,1,1,1,1,1,1,1]};
@@ -1120,15 +1186,138 @@ function statesToOps(states,col){
 let _soK=null;
 function absCells2(s){return absCells(_soK,s.rot,s.x,s.y);}
 
+// ── PHASE 1: contemplation drop (GHOST pieces only) ────────────────────
+// Before the player presses a number, the piece falls STRAIGHT DOWN at the drop
+// rate in its spawn column — zero lateral movement. The ONLY exception is an
+// imminent collision: if the next straight step would hit the stack, the piece
+// moves the minimum sideways amount, as it drops, to avoid it. No preemptive
+// steering ever. If the spawn column is clear for the whole contemplation
+// distance, nothing runs but a straight drop.
+// Spawn column matches the game: I(w4)->3, O(w2)->4, else 3.
+function _spawnCol(k){const w=_V_SHAPES[k][0][0].length;return w===4?3:(w===2?4:3);}
+function phase1Contemplation(board,pc,waitRows){
+  const k=pc.k, rot=pc.rot%4;      // rotation is fixed during contemplation
+  let x=_spawnCol(k), y=0;
+  const states=[{rot,x,y}];
+  // Fall straight for up to waitRows; steer minimally only to dodge a collision.
+  for(let step=0; step<waitRows; step++){
+    if(y>=24) break;
+    if(!collides(board,k,rot,x,y+1)){ y++; states.push({rot,x,y}); continue; }
+    // Imminent collision straight below. Move the MINIMUM sideways to keep
+    // falling; prefer the side that needs the fewest columns. If neither side
+    // opens a downward step, contemplation ends here (piece is resting).
+    let moved=false;
+    for(let dist=1; dist<=9 && !moved; dist++){
+      for(const dir of [1,-1]){          // check both sides at this distance
+        const nx=x+dir*dist;
+        if(nx<0||nx>9) continue;
+        // must be legal to occupy the shifted column at current height AND be
+        // able to drop from there (otherwise it's not avoiding, just sliding)
+        if(collides(board,k,rot,nx,y)) continue;
+        if(collides(board,k,rot,nx,y+1)) continue;
+        // walk laterally to nx (one column per state), then take the drop
+        const s=Math.sign(dir);
+        let cx2=x;let ok=true;
+        for(let t=0;t<dist;t++){
+          const step_x=cx2+s;
+          if(collides(board,k,rot,step_x,y)){ok=false;break;}
+          cx2=step_x;states.push({rot,x:cx2,y});
+        }
+        if(!ok){ // undo partial (shouldn't happen often); stop contemplation
+          break;
+        }
+        x=cx2; y++; states.push({rot,x,y}); moved=true; break;
+      }
+    }
+    if(!moved) break;   // can't fall or dodge — contemplation drop is done
+  }
+  return states;   // states[last] = position where Phase 2 will take over
+}
+
+// Ghost committed path FROM THE TRUE SPAWN COLUMN. The piece must appear at the
+// real spawn column (I->3,O->4,else 3), not teleport to the target column. We
+// replay the game's slide mechanic but fix spawnX to the real spawn, so the
+// visible motion is: enter at spawn (top) -> straight drop -> slide at rest ->
+// drop -> (opt rotate) -> drop, landing on the committed (rot,x,dropY).
+function ghostCommittedStates(board,pc){
+  const k=pc.k,tR=pc.rot%4,tX=pc.x,tY=pc.drop_y;
+  const rots=_V_SHAPES[k];
+  const sc=_spawnCol(k);
+  const walk=(rot0,x0,moves)=>{let rot=rot0,x=x0,y=0;const st=[{rot,x,y}];
+    for(const m of moves){if(m==='D')y++;else if(m==='L')x--;else if(m==='R')x++;
+      else if(m==='CW')rot=(rot+1)%4;else if(m==='CCW')rot=(rot+3)%4;
+      st.push({rot,x,y});}return st;};
+  // The piece spawns at rot 0 (game spawns pieces at rotation 0), column sc.
+  const spawnRot=0;
+  if(collides(board,k,spawnRot,sc,0)) return null;   // can't even enter
+  // straight drop from spawn
+  let gy=0;while(!collides(board,k,spawnRot,sc,gy+1))gy++;
+  // Case A: no rotation/slide needed — straight drop reaches target as-is.
+  if(spawnRot===tR&&sc===tX&&gy===tY) return walk(spawnRot,sc,Array(gy).fill('D'));
+  // Case B: slide/rotate from the spawn column's rest row to the target.
+  //   at rest row gy, try sliding toward tX, dropping, optional rotate.
+  const dir = tX>=sc ? 1 : -1;
+  const move = dir<0 ? 'L' : 'R';
+  let sx=sc; const path=Array(gy).fill('D');
+  for(let step=1; step<=Math.abs(tX-sc)+_MAX_SLIDE; step++){
+    const nx=sx+dir;
+    if(nx<0||nx>9) break;
+    if(collides(board,k,spawnRot,nx,gy)) break;
+    sx=nx; path.push(move);
+    let ny=gy; const extra=[];
+    while(!collides(board,k,spawnRot,sx,ny+1)){ny++;extra.push('D');}
+    if(spawnRot===tR&&sx===tX&&ny===tY) return walk(spawnRot,sc,[...path,...extra]);
+    // optional single rotation into target rot then drop
+    if(spawnRot!==tR){
+      for(const [rMove,rDelta] of [['CW',1],['CCW',3]]){
+        const nr=(spawnRot+rDelta)%4;
+        if(nr!==tR) continue;
+        if(collides(board,k,nr,sx,ny)) continue;
+        let ry=ny;const rd=[];
+        while(!collides(board,k,nr,sx,ry+1)){ry++;rd.push('D');}
+        if(sx===tX&&ry===tY) return walk(spawnRot,sc,[...path,...extra,rMove,...rd]);
+      }
+    }
+    path.push(...extra); // continue sliding from deeper rest if not matched
+    // (path accumulates D's from extra so subsequent slides start at new depth)
+    // NOTE: reset gy tracking to ny for next iteration
+  }
+  return null; // couldn't reach from spawn column via simple slide -> caller
+}
+
 function pieceOps(pc,board,isGhost){
   const col=PIECE_COL[pc.k]||PAL.wht;
-  // Reproduce the GAME's committed animation (fly up/over/around) for every
-  // placement — this is how index.html animates a committed piece. We rebuild
-  // the exact move-path whose final (rot,x,dropY) equals the committed spot.
   _soK=pc.k;
+  // GHOST pieces get a PHASE 1 contemplation drop: straight down in the spawn
+  // column (steer only to dodge collisions) BEFORE the committed animation.
+  // The committed path (gameStatesFor) already starts at the top (spawn, y0) and
+  // descends to the target — that IS the piece falling and flying into place.
+  // For a GHOST piece we do NOT prepend a separate drop (that caused the piece to
+  // fall to the floor, jump back to the top, and drop again). Instead the ghost
+  // simply HOLDS at the spawn position (clamped to the top) for one contemplation
+  // interval, then the committed path plays. The hold is one extra state at the
+  // spawn position; the timing layer stretches it to the contemplation delay.
+  if(isGhost){
+    // Ghost: enter at TRUE spawn column, hold at top (contemplation), then the
+    // committed slide/drop to target — the game's exact ghost animation. Only
+    // accept it if the final cells EXACTLY match the committed target (else the
+    // color board would desync/grey); otherwise fall through to the reliable path.
+    const gs=ghostCommittedStates(board,pc);
+    if(gs&&gs.length){
+      const last=gs[gs.length-1];
+      if(last.rot===pc.rot%4&&last.x===pc.x&&last.y===pc.drop_y){
+        const states=[gs[0]].concat(gs);
+        const {ops,finalCells}=statesToOps(states,col);
+        return {ops,finalCells,col,pathErr:false};
+      }
+    }
+    // fall through: reliable committed path, still held at top for contemplation
+  }
   const gstates=gameStatesFor(board,pc);
   if(gstates&&gstates.length){
-    const {ops,finalCells}=statesToOps(gstates,col);
+    let states=gstates;
+    if(isGhost) states=[gstates[0]].concat(gstates); // hold at top
+    const {ops,finalCells}=statesToOps(states,col);
     return {ops,finalCells,col,pathErr:false};
   }
   const path=findPath(board,pc);
@@ -1246,6 +1435,9 @@ async function run(fast){
   const totalLines=Math.max(1,p.lines);
   // forensic + receipt accumulators
   const suspects=[];let strategicN=0,optN=0,towresLines=0;
+  // Four-state counts: [ghost|strategic] x [slide|noslide] — reviewer watches
+  // the mix; standardized play is ghost-heavy, AI-assisted skews strategic.
+  let cGhostNo=0,cGhostSlide=0,cStratNo=0,cStratSlide=0;
   RECEIPT_ROWS.length=0;
   let hfStreak=0,hfBest=0,neverHoled=true,curHoles=0;
   // Game playback: white border. Playfield is columns 0-9; a single white
@@ -1264,6 +1456,19 @@ async function run(fast){
       if(gcs[i].rot===pc.rot%4&&gcs[i].x===pc.x&&gcs[i].gy===pc.drop_y){opt=i+1;break;}
     if(opt>0)optN++;else strategicN++;
     const {ops,finalCells,col,pathErr}=pieceOps(pc,board,opt>0);
+    // Slide detection (Phase 3): did a lateral/rotational move happen at or near
+    // the resting depth? Track the deepest row reached, and flag a slide if any
+    // 'man' op occurs once the piece is within one row of its final drop_y.
+    let didSlide=false;{
+      let deepest=-1;
+      for(const o of ops){
+        const rows=o.drawc.map(p=>p[0]);
+        if(rows.length){const mx=Math.max(...rows);if(mx>deepest)deepest=mx;}
+        if(o.kind==='man'&&deepest>=pc.drop_y-1)didSlide=true;
+      }
+    }
+    if(opt>0){ if(didSlide)cGhostSlide++; else cGhostNo++; }
+    else     { if(didSlide)cStratSlide++; else cStratNo++; }
     // Move mark for the receipt column:
     //   '1'..'4' = matched ghost option; 'S' = strategic (no match).
     //   For strategic slides that reverse direction (end opposite the first
@@ -1428,7 +1633,8 @@ async function run(fast){
     draw();
     allOps.push({pc,ops,col,cleared,opt,mark:moveMark,boardAfter:colorBoard.slice()});
     Object.assign(RECEIPT,{idx:n+1,score:shownScore,level,lines,hps,
-      pieces:n+1,strategicN,optN,towresLines,hfBest,neverHoled,hfStreak});
+      pieces:n+1,strategicN,optN,towresLines,hfBest,neverHoled,hfStreak,
+      cGhostNo,cGhostSlide,cStratNo,cStratSlide});
   }
   lastOps=allOps;
   ['btnSeq','btnAns','btnPlayer','btnReceipt'].forEach(id=>document.getElementById(id).disabled=false);
@@ -1600,9 +1806,6 @@ function showReceipt(){
     SP(1);
   }
   HR('-');
-  L(rcenter('\u2014 VERIFICATION ANALYSIS \u2014'),{bold:true});  HR('-');
-  L(rcenter('\u2014 VERIFICATION ANALYSIS \u2014'),{bold:true});  HR('-');
-  L(rcenter('\u2014 VERIFICATION ANALYSIS \u2014'),{bold:true});  HR('-');
   L(rcenter('\u2014 VERIFICATION ANALYSIS \u2014'),{bold:true});
   SP(1);
   const vf=RECEIPT.verify||{};
@@ -1610,6 +1813,14 @@ function showReceipt(){
   L(row('  HPS',(vf.hps==null?'N/A':vf.hps.toFixed(3))+' '+(vf.hpsLabel||'')));
   L(row('  GHOST-OPT PLACEMENTS',String(RECEIPT.optN||0)));
   L(row('  STRATEGIC PLACEMENTS',String(RECEIPT.strategicN||0)));
+  // Four-state mix (ghost/strategic x slide/no-slide). Standardized play is
+  // ghost-heavy; an AI-assisted player skews toward strategic / slide-in.
+  SP(1);
+  L('  MOVEMENT MIX (ghost/strat x slide):');
+  L(row('    GHOST  no-slide',String(RECEIPT.cGhostNo||0)));
+  L(row('    GHOST  slide-in',String(RECEIPT.cGhostSlide||0)));
+  L(row('    STRAT  no-slide',String(RECEIPT.cStratNo||0)));
+  L(row('    STRAT  slide-in',String(RECEIPT.cStratSlide||0)));
   const susp=RECEIPT.suspects||[];
   L(row('  PAUSE FLAGS',String(susp.length)));
   if(susp.length){SP(1);
