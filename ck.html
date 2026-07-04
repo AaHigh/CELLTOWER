@@ -1443,6 +1443,7 @@ async function run(fast){
   // Game playback: white border. Playfield is columns 0-9; a single white
   // vertical bar in column 10 delineates its right edge (no offset, no outline).
   setBorder('#FFFFFF');
+  clear(0);
   COL_OFFSET=0;
   clr(PAL.blk);redrawField(colorBoard);
   RECEIPT.playerName=p.playerName;RECEIPT.meta=p;RECEIPT.stream=txt;
