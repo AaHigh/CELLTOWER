@@ -109,11 +109,11 @@ const SCR = new Uint8Array(1000);
 const COL = new Uint8Array(1000);
 let _dirty = new Set();
 
-function poke(x, y, code, color) {
+function poke(x, y, code, fg, bg = 0) {
   if (x < 0 || x > 39 || y < 0 || y > 24) return false;
   const i = y * 40 + x;
   SCR[i] = code & 255;
-  COL[i] = color & 15;
+  COL[i] = ((bg & 15) << 4) | (fg & 15);   // high nybble = bg, low nybble = fg
   _dirty.add(i);
   return true;
 }
@@ -821,7 +821,8 @@ function clr(bg){SCRBG=bg||PAL.bg;
   bgc=Array.from({length:ROWS},()=>Array(COLS).fill(null));draw();}
 function put(r,c,s,col,bg){if(r<0||r>=ROWS)return;
   for(let i=0;i<s.length&&c+i<COLS;i++){if(c+i<0)continue;
-    poke(c+i, r, ch, col);grid[r][c+i]=s[i];colr[r][c+i]=col||PAL.ink;bgc[r][c+i]=bg||null;}}
+    poke(c + i, r, s.charCodeAt(i), col, bg);
+grid[r][c+i]=s[i];colr[r][c+i]=col||PAL.ink;bgc[r][c+i]=bg||null;}}
 const C64BOX={"─":[0,0,0,0,255,0,0,0],"━":[0,0,0,255,255,0,0,0],"│":[16,16,16,16,16,16,16,16],"┌":[0,0,0,0,31,16,16,16],"┐":[0,0,0,0,240,16,16,16],"└":[16,16,16,16,31,0,0,0],"┘":[16,16,16,16,240,0,0,0],"▔":[255,0,0,0,0,0,0,0],"▁":[0,0,0,0,0,0,0,255],"▏":[128,128,128,128,128,128,128,128],"▕":[1,1,1,1,1,1,1,1]};
 function glyph(ch){if(typeof C64BOX!=="undefined"&&C64BOX[ch])return C64BOX[ch];if(C64FONT[ch])return C64FONT[ch];if(typeof C64LOW!=='undefined'&&C64LOW[ch])return C64LOW[ch];return C64FONT[ch&&ch.toUpperCase&&ch.toUpperCase()]||null;}
 let COL_OFFSET=0;              // shift whole screen; -1 during game playback
