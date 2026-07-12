@@ -1,6 +1,6 @@
 # 📱 CELLTOWER
 
-### v0.6112026 — *First Playable Release*
+### v0.6112026 — *Second Playable Release* (4/20 was first)
 
 > FABLE IS OUT .. but still pre-fable
 
@@ -38,7 +38,7 @@ This is piece one of a larger puzzle.
 
 -----
 
-## What’s In v0.420
+## What is in the latest version:
 
 - ✅ Full NES-accurate piece set with authentic rotation system
 - ✅ NES speed curve (Level 1 through kill-screen territory)
@@ -114,6 +114,7 @@ Fresno, CA
 
 |Version    |Notes                                                                                                                                          |
 |-----------|-----------------------------------------------------------------------------------------------------------------------------------------------|
+|v0.6112026 |Second playable release - format mirrors June11'26
 |v0.420     |First playable release on GitHub Pages. TAP TO PLAY works on iPhone Safari. Ghost outlines, T-BONUS, ticker, receipt, AUTO mode all functional.|
 |v0.1–v0.419|Development builds. Canvas rendering architecture, ghost piece system, scoring engine, iOS Safari compatibility debugging.                     |
 
