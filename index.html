@@ -457,6 +457,7 @@ const tla = urlParams.get('tla');
 if (tla && tla.length === 3) {
     sessionStorage.setItem('ct_initials', tla.toUpperCase());
 }
+console.log("TLA from URL:", tla);
 
 <script>
 // ── HTTP SHIM: crypto.subtle unavailable over plain HTTP ──────────────────────
