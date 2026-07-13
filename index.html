@@ -451,6 +451,13 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
 
 </style>
 
+// URL override for initials
+const urlParams = new URLSearchParams(window.location.search);
+const tla = urlParams.get('tla');
+if (tla && tla.length === 3) {
+    sessionStorage.setItem('ct_initials', tla.toUpperCase());
+}
+
 <script>
 // ── HTTP SHIM: crypto.subtle unavailable over plain HTTP ──────────────────────
 // Replaces SHA-256 with a fast non-cryptographic stub so the game runs locally
