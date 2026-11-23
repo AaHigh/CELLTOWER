@@ -293,6 +293,11 @@ canvas#cv{display:block;position:fixed;top:0;left:0;touch-action:none}
   display:flex;flex-direction:column;gap:10px;
   box-sizing:border-box;
 }
+#copy-overlay.ai #copy-card{
+  border-color:#cc3333;
+  box-shadow:0 0 32px rgba(220,40,40,0.25),0 0 8px rgba(180,40,40,0.15) inset;
+}
+#copy-overlay.ai #copy-eyebrow{color:#aa4444;}
 #copy-eyebrow{
   font-size:.6rem;letter-spacing:.25em;color:#336644;text-transform:uppercase;
   text-align:center;
@@ -560,6 +565,7 @@ var _replayMeta={score:0,lines:0,level:0,pieces:0};
 var _pendingReplayStream=null, _replayPromptVisible=false;
 var _replaySource=null;       // stream that finished — enables restart
 var _replayDisplayName=null;  // name shown in badge during replay — never touches _currentPlayer
+var _replayAiVerdictP=null;   // pending AI verdict for the replay being loaded
 var _replayInterruptedIdentity=false; // true if CTRL-V fired while name-entry screen was open
 var _gameCommitted=false;
 var _notify=null; // {msg,detail,severity,until} // false until player's first input — piece hovers, timers hold, can exit freely
@@ -574,6 +580,7 @@ var _libraryImportText='';      // mirrors import-sink value for canvas renderin
 var _libraryImportValid=false;  // true once pasted text passes _looksLikeStream
 var _libraryImportValidAt=0;    // Date.now() when stream was validated (drives resolve anim)
 var _justPlayedStream=null; // verified stream from the most recent live human game
+var _justPlayedStreamAi=false; // true when that stream was machine-played (AUTO)
 
 // Built-in sample games selectable from the HIGH score display.
 // JSON-encoded so backslash/quote chars survive the JS string literal.
@@ -1412,7 +1419,7 @@ function drawPreGameTutorial(t, _alpha){
 
 
 function _streamNotify(msg,severity,detail){
-  const dur=severity==='error'?5000:severity==='warn'?4000:3000;
+  const dur=severity==='error'?5000:severity==='warn'?6000:3000;
   _notify={msg:msg.toUpperCase(),detail:detail?detail.toUpperCase():null,
            severity:severity||'error',until:performance.now()+dur};
 }
@@ -2938,7 +2945,7 @@ if(R && R.auto && !(_replayMode) && !(_replaySource && dead)){
       // COPY / PASTE / READY / RECEIPT button
       const _isCopy = (dead && _justPlayedStream && !_replaySource && !_replayMode) ||
                       (_replayMode && !_replayPaused && _justPlayedStream && _replaySource===_justPlayedStream);
-      if(_isCopy){ showCopyOverlay(_justPlayedStream); return; }
+      if(_isCopy){ showCopyOverlay(_justPlayedStream, _justPlayedStreamAi); return; }
       if(_replayMode && !_replayPaused){
         showPasteOverlay();
         return;
@@ -7333,8 +7340,18 @@ function _genRandomName() {
 function _getHiTable(){
   try{ return JSON.parse(localStorage.getItem('ct_hi_v2')||'{}'); }catch(e){ return {}; }
 }
-function _saveHiScore(sc, stream, playerName){
+// ── AI replays are session-only: they show in the table while the page is
+// open, but are never written to localStorage and vanish on refresh. ──
+var _sessionAiHi={};   // name -> {score,stream,playerName,ai:true} (memory only)
+var _sessionAiLib=[];  // AI library entries (memory only)
+function _getHiTableView(){
+  const tbl=_getHiTable();
+  for(const k of Object.keys(_sessionAiHi)) if(!tbl[k]) tbl[k]=_sessionAiHi[k];
+  return tbl; // stored wins on name collision — an AI entry never evicts a real one
+}
+function _saveHiScore(sc, stream, playerName, isAI){
   if(!playerName) return;
+  if(isAI){ _sessionAiHi[playerName]={score:sc,stream,playerName,ai:true}; return; }
   try{
     const tbl=_getHiTable();
     if(!tbl[playerName]||sc>tbl[playerName].score){
@@ -7342,6 +7359,7 @@ function _saveHiScore(sc, stream, playerName){
       localStorage.setItem('ct_hi_v2',JSON.stringify(tbl));
       if(_currentPlayer&&_currentPlayer.name===playerName) _hiStream=stream;
     }
+    delete _sessionAiHi[playerName]; // a real save evicts the session AI entry
   }catch(e){}
 }
 function _loadHiScore(name){
@@ -7352,6 +7370,7 @@ function _loadHiScore(name){
 }
 function _resetHiScore(name){
   if(!name) return;
+  delete _sessionAiHi[name]; // drop any session-only AI entry under this name too
   try{
     const tbl=_getHiTable();
     delete tbl[name];
@@ -7362,8 +7381,17 @@ function _resetHiScore(name){
 function _getLibrary(){
   try{ return JSON.parse(localStorage.getItem('ct_library_v1')||'[]'); }catch(e){ return []; }
 }
-function _addToLibrary(stream, playerName, score, lines, level, pieces){
+function _addToLibrary(stream, playerName, score, lines, level, pieces, isAI){
   if(!stream||!playerName) return;
+  if(isAI){ // session-only: never localStorage, never evicts real entries
+    if(_sessionAiLib.some(e=>e.stream===stream)) return;
+    _sessionAiLib.push({id:'ai_'+Date.now()+'_'+Math.random().toString(36).slice(2),
+              stream,playerName,score:score||0,lines:lines||0,
+              level:level||0,pieces:pieces||0,addedAt:Date.now(),ai:true,
+              external:!_isKnownName(playerName)});
+    if(_sessionAiLib.length>100) _sessionAiLib=_sessionAiLib.slice(_sessionAiLib.length-100);
+    return;
+  }
   try{
     let lib=_getLibrary();
     if(lib.some(e=>e.stream===stream)) return; // already present
@@ -7376,10 +7404,46 @@ function _addToLibrary(stream, playerName, score, lines, level, pieces){
   }catch(e){}
 }
 function _removeFromLibrary(playerName){
+  _sessionAiLib=_sessionAiLib.filter(e=>e.playerName!==playerName);
+  delete _sessionAiHi[playerName];
   try{
     const lib=_getLibrary().filter(e=>e.playerName!==playerName);
     localStorage.setItem('ct_library_v1',JSON.stringify(lib));
   }catch(e){}
+}
+// Startup purge: delete every AI replay from the stored tables, so a refresh
+// leaves only human entries. Post-fix AI entries never reach storage, so this
+// exists to clean up entries saved before the fix. Stored streams are
+// re-verified from their stream text (HPS FAIL or NPF_SUSPECT = machine play).
+function _purgeAiEntries(){
+  try{
+    const tbl=_getHiTable(); let ch=false;
+    for(const k of Object.keys(tbl)) if(tbl[k]&&tbl[k].ai){ delete tbl[k]; ch=true; }
+    if(ch) localStorage.setItem('ct_hi_v2',JSON.stringify(tbl));
+    const lib=_getLibrary().filter(e=>!e.ai);
+    if(lib.length!==_getLibrary().length) localStorage.setItem('ct_library_v1',JSON.stringify(lib));
+  }catch(e){}
+  (async()=>{
+    try{
+      const tbl=_getHiTable(); let ch=false;
+      for(const k of Object.keys(tbl)){
+        const e=tbl[k]; if(!e||!e.stream) continue;
+        const v=await _verifyStream(e.stream);
+        if(v.hpsLabel==='FAIL'||v.npfFlag){ delete tbl[k]; ch=true; }
+        await new Promise(r=>setTimeout(r,0)); // yield so startup stays responsive
+      }
+      if(ch) localStorage.setItem('ct_hi_v2',JSON.stringify(tbl));
+      const lib=_getLibrary(); let ch2=false;
+      for(const e of lib){
+        if(e.stream&&!e.ai){
+          const v=await _verifyStream(e.stream);
+          if(v.hpsLabel==='FAIL'||v.npfFlag){ e._purge=true; ch2=true; }
+        }
+        await new Promise(r=>setTimeout(r,0));
+      }
+      if(ch2) localStorage.setItem('ct_library_v1',JSON.stringify(lib.filter(e=>!e._purge)));
+    }catch(e){}
+  })();
 }
 function _getKnownNames(){
   try{ return JSON.parse(localStorage.getItem('ct_known_names')||'[]'); }catch(e){ return []; }
@@ -7510,7 +7574,7 @@ function _showIdentityModal(onComplete) {
 }
 
 function startGame(){
-  if(!_replayMode) _justPlayedStream=null; // clear own-game stream when starting fresh
+  if(!_replayMode){ _justPlayedStream=null; _justPlayedStreamAi=false; } // clear own-game stream when starting fresh
   ui.gameStarted = true;
   // Belt-and-suspenders: always hide the overlay when game starts
   try{
@@ -8189,6 +8253,16 @@ async function _verifyStream(streamText) {
   }
 }
 
+// AI verdict for an imported stream: HPS FAIL or an NPF flag means machine
+// play. Streams too broken to verify have no verdict (they are rejected
+// before any save anyway).
+async function _aiVerdict(streamText){
+  try{
+    const v=await _verifyStream(streamText);
+    return {isAI: v.hpsLabel==='FAIL' || !!v.npfFlag, hpsLabel:v.hpsLabel||'N/A', npfFlag:v.npfFlag||null};
+  }catch(e){ return {isAI:false, hpsLabel:'N/A', npfFlag:null}; }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // END PORTABLE VERIFICATION CORE
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -8206,6 +8280,7 @@ async function _selfCheck() {
     const npfStr = result.npfFlag ? ` | ⚠ ${result.npfFlag} (${result.npfHits} hits, ratio=${result.npfRatio})` : '';
     // Persist hi score with its verified stream so clicking HIGH replays it
     _justPlayedStream = stream; // enable COPY + self-replay after own game
+    _justPlayedStreamAi = autoUsed; // AUTO game => AI stream (red rain + session-only)
     if (!autoUsed && score >= hi && score > 0) {
       _saveHiScore(score, stream, _currentPlayer ? _currentPlayer.name : '');
     }
@@ -8239,6 +8314,7 @@ async function _selfCheck() {
     } else {
       // v2 (5-char seed) or v3 (6-char seed): suppress, save anyway
       _justPlayedStream = stream;
+      _justPlayedStreamAi = autoUsed; // AUTO game => AI stream (red rain + session-only)
       if (!autoUsed && score >= hi && score > 0) {
         _saveHiScore(score, stream, _currentPlayer ? _currentPlayer.name : '');
       }
@@ -8691,6 +8767,13 @@ function _startReplayMode(streamText){
                pieces:parsed.pieces.length};
   _replaySource=streamText;
   _replayDisplayName=parsed.playerName||null;
+  // AI check runs in the background: an AI replay warns on load and its score
+  // is session-only (never persisted) when the replay ends.
+  const _vp=_aiVerdict(streamText);
+  _replayAiVerdictP=_vp;
+  _vp.then(v=>{
+    if(v.isAI && _replayAiVerdictP===_vp) _streamNotify('AI REPLAY - FOR FUN ONLY','warn','GONE WHEN YOU REFRESH');
+  });
   startGame(); // full board/score reset; spawn() → startSelTimer() → _startReplayPlay()
   autoUsed=true; // prevent replay score from overwriting human hi score
 }
@@ -8720,9 +8803,15 @@ function _startReplayPlay(){
     dead=true; _deadAt=performance.now();
     // Save replayed performance under the original player's name
     if(_replayDisplayName&&_replayMeta&&_replaySource){
-      _saveHiScore(_replayMeta.score,_replaySource,_replayDisplayName);
-      _addToLibrary(_replaySource,_replayDisplayName,_replayMeta.score,
-                    _replayMeta.lines,_replayMeta.level,_replayMeta.pieces);
+      // Session-only for AI replays: wait for the verdict kicked off at load,
+      // then save to memory only (never localStorage) when the replay is AI.
+      const _rs=_replaySource,_rn=_replayDisplayName,_rm=_replayMeta;
+      const _saveReplay=(isAI)=>{
+        _saveHiScore(_rm.score,_rs,_rn,isAI);
+        _addToLibrary(_rs,_rn,_rm.score,_rm.lines,_rm.level,_rm.pieces,isAI);
+      };
+      if(_replayAiVerdictP) _replayAiVerdictP.then(v=>_saveReplay(v.isAI));
+      else _saveReplay(false);
     }
     const _gov=document.getElementById('gov');
     if(_gov) _gov.style.display=_killScreenActive?'none':'flex';
@@ -8774,7 +8863,7 @@ function _openLibrary(){
   _libraryScroll=0;
   // Default to BUILT-IN tab when no user scores exist yet, so new users see content immediately.
   // Once any real scores are recorded, default to PLAYERS — that's what they want to see.
-  const _hiEntries=Object.keys(_getHiTable());
+  const _hiEntries=Object.keys(_getHiTableView());
   _libraryTab=(_hiEntries.length===0)?'builtin':'players';
   // Auto-pause any active game so the gravity timer stops
   if(ui.gameStarted && !dead && !paused && !_replayMode){
@@ -8802,11 +8891,11 @@ function _getLibraryEntries(){
     });
   }
   if(_libraryTab==='players'){
-    const tbl=_getHiTable();
+    const tbl=_getHiTableView();
     return Object.values(tbl).sort((a,b)=>b.score-a.score);
   }
   // 'top': library pool sorted by score desc — sample streams never appear here
-  return _getLibrary().sort((a,b)=>b.score-a.score);
+  return _getLibrary().concat(_sessionAiLib).sort((a,b)=>b.score-a.score);
 }
 
 function drawLibraryScreen(t){
@@ -9126,8 +9215,11 @@ function _doLibraryImport(s){
   _libraryImportValidAt=Date.now();
   const parsed=_parseStreamForReplay(s);
   if(parsed&&parsed.playerName){
-    _saveHiScore(parsed.score,s,parsed.playerName);
-    _addToLibrary(s,parsed.playerName,parsed.score,parsed.lines,parsed.level,parsed.pieces);
+    _aiVerdict(s).then(v=>{
+      _saveHiScore(parsed.score,s,parsed.playerName,v.isAI);
+      _addToLibrary(s,parsed.playerName,parsed.score,parsed.lines,parsed.level,parsed.pieces,v.isAI);
+      if(v.isAI) _streamNotify('AI REPLAY - FOR FUN ONLY','warn','GONE WHEN YOU REFRESH');
+    });
   }
   const sk=document.getElementById('import-sink');
   if(sk){ sk.classList.remove('active'); sk.blur(); }
@@ -9302,7 +9394,7 @@ function showReceipt() {
 
 let _rainRaf=null;
 
-function _startRain(){
+function _startRain(isAI){
   const cv2=document.getElementById('copy-rain');
   if(!cv2) return;
   const ctx2=cv2.getContext('2d');
@@ -9311,11 +9403,13 @@ function _startRain(){
   const drops=Array.from({length:cols},()=>Math.random()*cv2.height/14|0);
   const chars='アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン01';
   function frame(){
-    ctx2.fillStyle='rgba(0,2,6,0.18)';
+    ctx2.fillStyle=isAI?'rgba(6,0,2,0.18)':'rgba(0,2,6,0.18)';
     ctx2.fillRect(0,0,cv2.width,cv2.height);
     ctx2.font='13px monospace';
     for(let i=0;i<drops.length;i++){
-      ctx2.fillStyle=i%7===0?'rgba(180,255,200,0.9)':'rgba(0,200,80,0.7)';
+      ctx2.fillStyle=isAI
+        ? (i%7===0?'rgba(255,205,195,0.9)':'rgba(220,40,40,0.7)')
+        : (i%7===0?'rgba(180,255,200,0.9)':'rgba(0,200,80,0.7)');
       ctx2.fillText(chars[Math.random()*chars.length|0],i*14,drops[i]*14);
       if(drops[i]*14>cv2.height&&Math.random()>0.97) drops[i]=0;
       drops[i]++;
@@ -9339,8 +9433,9 @@ const _FLAVORS=[
   '"Every pause between pieces\nwas a thought. This is evidence."',
   '"The simulation logged your cognition.\nThis is the receipt."',
 ];
+const _AI_FLAVOR='"Machine-played. No humanity claim.\nFor fun only. It won\'t stick around."';
 
-function showCopyOverlay(stream){
+function showCopyOverlay(stream, isAI){
   if(!stream) return;
   const ov=document.getElementById('copy-overlay');
   if(!ov) return;
@@ -9360,7 +9455,7 @@ function showCopyOverlay(stream){
     'FRAGMENT · '+termHash.slice(0,10).toUpperCase()+' · '+new Date().toISOString().slice(0,10);
   // Flavor text
   document.getElementById('copy-flavor').innerHTML=
-    _FLAVORS[Math.floor(Math.random()*_FLAVORS.length)].replace(/\n/g,'<br>');
+    (isAI?_AI_FLAVOR:_FLAVORS[Math.floor(Math.random()*_FLAVORS.length)]).replace(/\n/g,'<br>');
   // Clear feedback
   document.getElementById('copy-feedback').textContent='';
   // Wire copy button
@@ -9370,21 +9465,22 @@ function showCopyOverlay(stream){
     if(navigator.clipboard&&navigator.clipboard.writeText){
       navigator.clipboard.writeText(stream).then(()=>{
         btn.textContent='✓  COPIED';
-        btn.style.borderColor='#00ff88';
+        btn.style.borderColor=isAI?'#ff4444':'#00ff88';
         btn.style.color='#ffffff';
-        fb.textContent='STREAM IN CLIPBOARD · SHARE IT';
-        fb.style.color='#00ff88';
-      }).catch(()=>_copyFallback(stream,btn));
+        fb.textContent=isAI?'AI STREAM IN CLIPBOARD · FOR FUN ONLY':'STREAM IN CLIPBOARD · SHARE IT';
+        fb.style.color=isAI?'#ff6666':'#00ff88';
+      }).catch(()=>_copyFallback(stream,btn,isAI));
     } else {
-      _copyFallback(stream,btn);
+      _copyFallback(stream,btn,isAI);
     }
   };
-  // Show overlay + start rain
+  // Show overlay + start rain (red rain + red card for AI streams)
   ov.classList.add('show');
-  setTimeout(_startRain,40);
+  ov.classList.toggle('ai',!!isAI);
+  setTimeout(()=>_startRain(isAI),40);
 }
 
-function _copyFallback(stream,btn){
+function _copyFallback(stream,btn,isAI){
   // Textarea select method for browsers without clipboard API
   const ta=document.createElement('textarea');
   ta.value=stream;
@@ -9395,7 +9491,7 @@ function _copyFallback(stream,btn){
     document.execCommand('copy');
     const fb=document.getElementById('copy-feedback');
     btn.textContent='✓  COPIED';
-    if(fb){ fb.textContent='STREAM IN CLIPBOARD'; fb.style.color='#00ff88'; }
+    if(fb){ fb.textContent=isAI?'AI STREAM IN CLIPBOARD':'STREAM IN CLIPBOARD'; fb.style.color=isAI?'#ff6666':'#00ff88'; }
   }catch(e){
     const fb=document.getElementById('copy-feedback');
     if(fb){ fb.textContent='SELECT + COPY MANUALLY ↑'; fb.style.color='#ffaa44'; }
@@ -9438,8 +9534,14 @@ function _tryLoadPasteStream(){
       // Library import: add to library/hi table, stay in library view
       const parsed = _parseStreamForReplay(s);
       if(parsed && parsed.playerName){
-        _saveHiScore(parsed.score, s, parsed.playerName);
-        _addToLibrary(s, parsed.playerName, parsed.score, parsed.lines, parsed.level, parsed.pieces);
+        _aiVerdict(s).then(v=>{
+          _saveHiScore(parsed.score, s, parsed.playerName, v.isAI);
+          _addToLibrary(s, parsed.playerName, parsed.score, parsed.lines, parsed.level, parsed.pieces, v.isAI);
+          if(v.isAI){
+            if(st){ st.textContent='⚠ AI REPLAY - FOR FUN ONLY'; st.style.color='#ffaa44'; }
+            _streamNotify('AI REPLAY - FOR FUN ONLY','warn','GONE WHEN YOU REFRESH');
+          }
+        });
       }
       if(st){ st.textContent='✓ IMPORTED — '+((parsed&&parsed.playerName)||'?'); st.style.color='#00ff88'; }
       setTimeout(()=>{ hidePasteOverlay(); _pasteImportOnly=false; }, 900);
@@ -9471,6 +9573,7 @@ function hideReceipt() {
 // Single-canvas startup
 window.addEventListener('DOMContentLoaded', function(){
   try {
+    _purgeAiEntries(); // drop any AI replays saved before this fix — refresh starts clean
     dbg('DOM ready...');
     // Paint something immediately so we know canvas is alive
     const cv2 = document.getElementById('cv');
